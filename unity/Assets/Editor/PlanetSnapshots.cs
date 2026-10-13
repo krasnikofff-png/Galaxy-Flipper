@@ -79,6 +79,108 @@ namespace PlanetTrader.EditorTools
         }
 
         /// <summary>
+        /// Все виды жителей: десять пикетов на планетах разных типов, у каждого свой вид, кожа и одежда.
+        /// unity run … -executeMethod PlanetTrader.EditorTools.PlanetSnapshots.RenderSpeciesFromCommandLine -snapOut путь.png
+        /// </summary>
+        public static void RenderSpeciesFromCommandLine()
+        {
+            var args = System.Environment.GetCommandLineArgs();
+            string path = "residents.png";
+            for (int i = 0; i < args.Length - 1; i++)
+                if (args[i] == "-snapOut") path = args[i + 1];
+            int code = 0;
+            try { RenderSpecies(path); }
+            catch (System.Exception e) { Debug.LogException(e); code = 1; }
+            EditorApplication.Exit(code);
+        }
+
+        public static void RenderSpecies(string path)
+        {
+            const int w = 640, h = 440, cols = 5;
+            int count = Residents.Count;
+            var looks = new[] { PlanetLook.Jungle, PlanetLook.Rocky, PlanetLook.Ice, PlanetLook.Crystal, PlanetLook.Anomaly, PlanetLook.Gas };
+            var root = new GameObject("Жители") { hideFlags = HideFlags.DontSave };
+            var skyTex = PlanetShowcase.BakeSky(2048, 777);
+            var skyMat = new Material(Shader.Find("PlanetTrader/PlanetSky"));
+            try
+            {
+                var cam = new GameObject("Камера").AddComponent<Camera>();
+                cam.transform.SetParent(root.transform, false);
+                cam.clearFlags = CameraClearFlags.SolidColor;
+                cam.backgroundColor = Color.black;
+                cam.fieldOfView = 30;
+                cam.nearClipPlane = 0.005f;
+                cam.farClipPlane = 100;
+                cam.enabled = false;
+                var sun = new GameObject("Солнце").AddComponent<Light>();
+                sun.transform.SetParent(root.transform, false);
+                sun.type = LightType.Directional;
+                sun.color = new Color(1f, 0.97f, 0.92f);
+                sun.intensity = 1.1f;
+                sun.transform.rotation = Quaternion.LookRotation(-new Vector3(-0.5f, 0.4f, -0.78f).normalized);
+                skyMat.SetTexture("_MainTex", skyTex);
+                var sky = new GameObject("Небо").transform;
+                sky.SetParent(root.transform, false);
+                sky.localScale = Vector3.one * 40;
+                sky.gameObject.AddComponent<MeshFilter>().sharedMesh = SphereMesh.Build(64, 32);
+                sky.gameObject.AddComponent<MeshRenderer>().sharedMaterial = skyMat;
+
+                var rt = new RenderTexture(w, h, 24, RenderTextureFormat.ARGB32) { antiAliasing = 8 };
+                cam.targetTexture = rt;
+                int rows = (count + cols - 1) / cols;
+                var sheet = new Texture2D(w * cols, h * rows, TextureFormat.RGB24, false);
+                for (int i = 0; i < count; i++)
+                {
+                    var place = new GameObject("Планета " + i).transform;
+                    place.SetParent(root.transform, false);
+                    place.position = new Vector3(i * 200, 0, 0);
+                    var pivot = new GameObject("Ось").transform;
+                    pivot.SetParent(place, false);
+                    pivot.localRotation = Quaternion.Euler(14, 0, 0);
+                    var view = new GameObject("Планета").AddComponent<PlanetView>();
+                    view.transform.SetParent(pivot, false);
+                    view.transform.localRotation = Quaternion.Euler(0, 0, 18);
+                    view.Look = looks[i % looks.Length];
+                    view.Seed = 100 + i * 37;
+                    view.Resolution = 1024;
+                    view.Rebuild();
+                    var buildings = new PlanetBuildings();
+                    buildings.Sync(view, new PlanetStructures { Settlement = true, Strike = true, SpeciesOverride = i, Accent = new Color(0.35f, 0.95f, 0.45f) });
+                    Transform target = null;
+                    foreach (Transform t in view.Surface)
+                        if (t.name == "picket") target = t;
+                    view.TurnToward(target.localPosition.normalized, PlanetPortrait.FacingDir);
+                    var focus = target.position;
+                    var up = (focus - view.transform.position).normalized;
+                    var toViewer = Vector3.ProjectOnPlane(-place.forward, up);
+                    var front = Vector3.ProjectOnPlane(target.TransformDirection(Vector3.forward), up);
+                    target.Rotate(up, Vector3.SignedAngle(front, toViewer, up), Space.World);
+                    foreach (var m in place.GetComponentsInChildren<BuildingMotion>()) m.Pose(0.3f + i * 0.17f);
+                    foreach (var sm in place.GetComponentsInChildren<SmokeEmitter>()) sm.Pose(1.5f);
+                    PlanetPortrait.PlaceCamera(cam.transform, place, 1, focus, view.transform.position, yaw: 0, elevation: 14, zoom: 0.27f);
+                    sky.position = cam.transform.position;
+                    cam.Render();
+                    RenderTexture.active = rt;
+                    sheet.ReadPixels(new Rect(0, 0, w, h), (i % cols) * w, (rows - 1 - i / cols) * h);
+                    RenderTexture.active = null;
+                    Debug.Log($"Жители {i}: {Residents.SpeciesName(i)} на планете {view.Look}");
+                }
+                sheet.Apply();
+                File.WriteAllBytes(Path.GetFullPath(path), sheet.EncodeToPNG());
+                Object.DestroyImmediate(sheet);
+                cam.targetTexture = null;
+                rt.Release();
+                Object.DestroyImmediate(rt);
+            }
+            finally
+            {
+                Object.DestroyImmediate(root);
+                Object.DestroyImmediate(skyTex);
+                Object.DestroyImmediate(skyMat);
+            }
+        }
+
+        /// <summary>
         /// Крупный план одной модели в движении (например, пикета): камера у самой модели, медленно смещается.
         /// unity run … -executeMethod PlanetTrader.EditorTools.PlanetSnapshots.RenderCloseUpFromCommandLine -model picket -frameDir папка
         /// </summary>

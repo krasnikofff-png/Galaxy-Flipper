@@ -36,6 +36,9 @@ namespace PlanetTrader.Visuals
             ["crane_top"] = new Spec { Kind = Kind.Rock, Axis = Vector3.up, Amplitude = 55, Period = 22 },
             ["travel_block"] = new Spec { Kind = Kind.Bob, Axis = Vector3.up, Amplitude = 0.12f, Period = 5 },
             ["dish"] = new Spec { Kind = Kind.Rock, Axis = Vector3.up, Amplitude = 35, Period = 14 },
+            // Жители машут рукой (щупальцем, крылом, клешнёй), медуза покачивается в воздухе.
+            ["gesture"] = new Spec { Kind = Kind.Rock, Axis = Vector3.forward, Amplitude = 18, Period = 1.2f },
+            ["hover"] = new Spec { Kind = Kind.Bob, Axis = Vector3.up, Amplitude = 0.015f, Period = 2.6f },
             // Пикетчики поднимают плакаты в такт.
             ["placards"] = new Spec { Kind = Kind.Bob, Axis = Vector3.up, Amplitude = 0.05f, Period = 1.3f },
         };

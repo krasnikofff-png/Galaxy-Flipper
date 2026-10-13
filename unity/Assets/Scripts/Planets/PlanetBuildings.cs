@@ -50,6 +50,9 @@ namespace PlanetTrader.Visuals
         public bool Epidemic;
         /// <summary>Шахту недавно разбили: обломки на её месте.</summary>
         public WreckLook Wreck;
+        /// <summary>Вид жителей; null — по зерну планеты (для показа видов).</summary>
+        public int? SpeciesOverride;
+        public int Species => SpeciesOverride ?? -1;
 
         public bool IsEmpty => Mine == MineLook.None && (Extractors == null || Extractors.Length == 0) && !Settlement && !School && !Guard && !Ruins
                                && !Strike && !Epidemic && Wreck == WreckLook.None;
@@ -59,7 +62,7 @@ namespace PlanetTrader.Visuals
         {
             var sb = new System.Text.StringBuilder();
             sb.Append((int)Mine).Append(Settlement ? 'S' : '-').Append(School ? 'K' : '-').Append(Guard ? 'G' : '-').Append(Ruins ? 'R' : '-');
-            sb.Append(Accident ? 'A' : '-').Append(Strike ? 'T' : '-').Append(Epidemic ? 'E' : '-').Append((int)Wreck);
+            sb.Append(Accident ? 'A' : '-').Append(Strike ? 'T' : '-').Append(Epidemic ? 'E' : '-').Append((int)Wreck).Append(Species);
             sb.Append(ColorUtility.ToHtmlStringRGB(Accent));
             if (Extractors != null)
                 foreach (var c in Extractors) sb.Append(ColorUtility.ToHtmlStringRGB(c));
@@ -84,6 +87,9 @@ namespace PlanetTrader.Visuals
         readonly MaterialPropertyBlock _block = new MaterialPropertyBlock();
         Transform _parent;
         string _key;
+        int _seed, _species = -1;
+        /// <summary>Модели, где стоят жители: на их места «…__resident» ставятся инопланетяне планеты.</summary>
+        static readonly HashSet<string> WithResidents = new HashSet<string> { "settlement", "picket", "quarantine" };
 
         /// <summary>Главная точка построек в пространстве планеты: её поворачивают к камере.</summary>
         public Vector3 Focus { get; private set; }
@@ -122,6 +128,8 @@ namespace PlanetTrader.Visuals
         {
             var noise = new PlanetNoise(seed);
             var rnd = new System.Random(seed * 31 + 7);
+            _seed = seed;
+            _species = s.Species;
             bool gas = look == PlanetLook.Gas;
             var used = new List<Vector3>();
             int extractors = s.Extractors?.Length ?? 0;
@@ -280,6 +288,8 @@ namespace PlanetTrader.Visuals
             float offset = (float)rnd.NextDouble();
             BuildingMotion.Attach(model3d, offset);
             SmokeEmitter.Attach(model3d, offset, working);
+            if (WithResidents.Contains(model))
+                Residents.Populate(model3d, _seed, _placed.Count, Material, _block, _species);
             SetLights(go, 1.3f, 0, accent);
             _placed.Add(go);
             return go;

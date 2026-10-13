@@ -58,6 +58,8 @@ namespace PlanetTrader.Client
             "Показ (F3): метеорит разбил шахту. Дальше F3 — обломки после бунта.",
             "Показ (F3): бунтовщики разнесли шахту, забастовка продолжается. F3 — выключить показ.",
         };
+        /// <summary>F4 — показать на выбранной планете другой вид жителей; −1 — вид, который на ней живёт.</summary>
+        int _speciesShown = -1;
         /// <summary>Сколько ходов лежат обломки разбитой шахты (если новую не начали строить раньше).</summary>
         const int WreckTurns = 8;
 
@@ -98,6 +100,13 @@ namespace PlanetTrader.Client
             {
                 _buildingsDemo = (_buildingsDemo + 1) % DemoNames.Length;
                 Log(DemoNames[_buildingsDemo]);
+            }
+            // Показ видов жителей: только картинка в окне планеты.
+            if (Input.GetKeyDown(KeyCode.F4))
+            {
+                _speciesShown = _speciesShown + 1 >= Residents.Count ? -1 : _speciesShown + 1;
+                Log(_speciesShown < 0 ? "Жители снова свои (F4 — показать другие виды)."
+                    : $"Показ (F4): жители — {Residents.SpeciesName(_speciesShown)}, {_speciesShown + 1} из {Residents.Count}. Видно в пикете, поселении и карантине; F3 — показать их.");
             }
             if (RivalsTurn && Time.unscaledTime - _rivalsTurnStarted >= RivalsTurnSeconds) FinishTurn();
             if (_pending.Count > 0)
@@ -169,6 +178,7 @@ namespace PlanetTrader.Client
                 Guard = p.Guarded,
                 Ruins = p.Knowledge == Knowledge.Explored && p.HasUnlootedRuins,
                 Accent = p.Owner == Owner.Registry ? new Color(0.75f, 0.78f, 0.85f) : RingColor(p),
+                SpeciesOverride = _speciesShown >= 0 ? _speciesShown : (int?)null,
                 Accident = p.Mine == MineState.Working && p.AccidentTurnsLeft > 0,
                 Strike = p.Inhabited && p.OnStrike,
                 Epidemic = p.Inhabited && p.EpidemicTurnsLeft > 0,
@@ -192,6 +202,7 @@ namespace PlanetTrader.Client
                 Guard = true,
                 Ruins = true,
                 Accent = p.Owner == Owner.Registry ? Fmt.OwnerColor(Owner.Player, false) : RingColor(p),
+                SpeciesOverride = _speciesShown >= 0 ? _speciesShown : (int?)null,
                 Accident = _buildingsDemo == 3,
                 Strike = _buildingsDemo == 3 || _buildingsDemo == 5,
                 Epidemic = _buildingsDemo == 3,
@@ -926,6 +937,7 @@ namespace PlanetTrader.Client
             var b = g.Balance;
             GUILayout.Space(8);
             GUILayout.Label("Жители", _header);
+            Line("Кто", Residents.SpeciesName(Residents.SpeciesOf(Describe(p).Seed)));
             double delta = g.LoyaltyChangePerTurn(p);
             string trend = delta >= 0 ? $"<color=#7be38b>+{Fmt.Amount(delta)}</color>" : $"<color=#ff8a7a>{Fmt.Amount(delta)}</color>";
             Line("Лояльность", $"{Mathf.RoundToInt((float)p.Loyalty)} из 100, за ход {trend}");
