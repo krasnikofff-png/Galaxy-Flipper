@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Чистый C# без Unity. netstandard2.1 и C# 9 — то, что поддерживает Unity 2021+. -->
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <LangVersion>9.0</LangVersion>
+    <Nullable>disable</Nullable>
+    <RootNamespace>PlanetTrader.Core</RootNamespace>
+  </PropertyGroup>
+
+</Project>
