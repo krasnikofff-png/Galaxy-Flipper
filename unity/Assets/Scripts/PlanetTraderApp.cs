@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using PlanetTrader.Core;
 using UnityEngine;
+using PlanetTrader.Visuals;
 
 namespace PlanetTrader.Client
 {
@@ -59,6 +60,12 @@ namespace PlanetTrader.Client
 
         void Update()
         {
+            // Витрина планет: крупный план планет каждого типа.
+            if (Input.GetKeyDown(KeyCode.F2))
+            {
+                PlanetShowcase.Toggle(this);
+                return;
+            }
             if (RivalsTurn && Time.unscaledTime - _rivalsTurnStarted >= RivalsTurnSeconds) FinishTurn();
             if (_pending.Count > 0)
             {
@@ -285,6 +292,8 @@ namespace PlanetTrader.Client
             if (mode != _probeMode) Later(() => _probeMode = mode);
             if (GUILayout.Button("Конец хода ▶", _button, GUILayout.Width(150), GUILayout.Height(34)))
                 Later(RequestEndTurn);
+            if (GUILayout.Button("Планеты (F2)", _button, GUILayout.Width(130), GUILayout.Height(34)))
+                Later(() => PlanetShowcase.Toggle(this));
             if (GUILayout.Button("Новая игра", _button, GUILayout.Width(120), GUILayout.Height(34)))
                 Later(NewGame);
             GUILayout.EndHorizontal();
