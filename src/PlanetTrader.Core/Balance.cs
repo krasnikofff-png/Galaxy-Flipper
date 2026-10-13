@@ -38,7 +38,7 @@ namespace PlanetTrader.Core
     public sealed class Balance
     {
         // --- Старт ---
-        public double StartMoney = 1300;
+        public double StartMoney = 1800;
         public double StartDebt = 1000;
         /// <summary>Есть ли на стартовой планете готовая шахта (допущение).</summary>
         public bool StartPlanetHasMine = true;
@@ -69,12 +69,12 @@ namespace PlanetTrader.Core
 
         // --- Сделки с планетами ---
         public double ResaleCommission = 0.10;
-        public double AuctionMarkup = 0.25;
+        public double AuctionMarkup = 0.15;
         /// <summary>Ставка дисконтирования при оценке планеты.</summary>
         public double DiscountRate = 0.10;
         /// <summary>Запас планеты случайный ±20% от среднего.</summary>
         public double ReserveSpread = 0.20;
-        public int MineBuildTurns = 3;
+        public int MineBuildTurns = 2;
 
         // --- Биржа ---
         /// <summary>Цена падает на SalesImpact × (продано / глубина рынка).</summary>
@@ -91,8 +91,8 @@ namespace PlanetTrader.Core
         /// <summary>Объём заказа в ходах добычи одной планеты (допущение).</summary>
         public int OrderMinTurnsOfOutput = 3;
         public int OrderMaxTurnsOfOutput = 7;
-        /// <summary>Срок на выполнение заказа (допущение, пример из дизайн-документа).</summary>
-        public int OrderDeadlineTurns = 5;
+        /// <summary>Срок заказа, включая доставку заказчику (допущение; до этапа 3 было 5 ходов без доставки).</summary>
+        public int OrderDeadlineTurns = 7;
 
         // --- Риски ---
         public double AccidentChance = 0.06;
@@ -109,9 +109,36 @@ namespace PlanetTrader.Core
         /// <summary>Шанс, что ИИ выставит одну из своих планет на продажу (допущение).</summary>
         public double AiResaleChance = 0.10;
 
-        // --- Зонды ---
-        public double ProbeCost = 400;
-        public double ProbeFindChance = 0.60;
+        // --- Разведка и зонды (этап 3, всё — допущения) ---
+        /// <summary>Зонды: дороже — дальше, быстрее и шире скан. «Стандарт» соответствует старому зонду из таблицы (400, 60%).</summary>
+        public ProbeType[] ProbeTypes =
+        {
+            new ProbeType("Москит", cost: 150, range: 0.35, speed: 0.35, scanRadius: 0.12, findChance: 0.30),
+            new ProbeType("Стандарт", cost: 400, range: 0.70, speed: 0.50, scanRadius: 0.20, findChance: 0.60),
+            new ProbeType("Дальнобой", cost: 900, range: 1.50, speed: 0.90, scanRadius: 0.30, findChance: 0.80),
+        };
+        /// <summary>Сколько ходов зонд изучает планету при полной разведке, сверх полёта.</summary>
+        public int ExploreTurnsOnSite = 0;
+        /// <summary>Ошибка оценки запаса в реестре: настоящий запас отличается от оценки до ±20%.</summary>
+        public double RegistryEstimateSpread = 0.20;
+        /// <summary>«Подвох»: у части планет реестр сильно завышает запас. Видно только после разведки.</summary>
+        public double DudChance = 0.15;
+        /// <summary>Сколько на самом деле у планеты с подвохом от оценки реестра.</summary>
+        public double DudReserveShare = 0.40;
+        /// <summary>Планеты в этом радиусе от стартовой видны сканом с самого начала.</summary>
+        public double StartScanRadius = 0.25;
+        public double RuinsChance = 0.15;
+        public double RuinsMinValue = 300;
+        public double RuinsMaxValue = 1200;
+        public double InhabitedChance = 0.20;
+
+        // --- Карта и доставка (допущения) ---
+        /// <summary>Где на карте галактическая биржа.</summary>
+        public double ExchangeX = 0.5, ExchangeY = 0.5;
+        /// <summary>Скорость грузовиков: расстояние за ход.</summary>
+        public double ShipSpeed = 0.40;
+        /// <summary>Стоимость доставки: доля базовой цены груза за единицу расстояния (вся карта — 1).</summary>
+        public double ShippingCostPerDistance = 0.08;
 
         public PlanetType[] PlanetTypes =
         {

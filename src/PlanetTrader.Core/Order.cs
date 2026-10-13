@@ -7,19 +7,25 @@ namespace PlanetTrader.Core
         public readonly string Customer;
         public readonly Resource Resource;
         public readonly double Amount;
-        /// <summary>Последний ход, на котором заказ можно выполнить.</summary>
+        /// <summary>Ход, к которому груз должен быть у заказчика.</summary>
         public readonly int DeadlineTurn;
+        /// <summary>Где заказчик: на краю сектора.</summary>
+        public readonly double X, Y;
 
-        public Order(int id, string customer, Resource resource, double amount, int deadlineTurn)
+        public Order(int id, string customer, Resource resource, double amount, int deadlineTurn, double x, double y)
         {
             Id = id;
             Customer = customer;
             Resource = resource;
             Amount = amount;
             DeadlineTurn = deadlineTurn;
+            X = x;
+            Y = y;
         }
 
-        /// <summary>Заказ платит рыночную цену с наценкой, без влияния на биржу.</summary>
-        public double Payout(Market market, Balance b) => Amount * market.Price(Resource) * b.OrderMarkup;
+        /// <summary>Заказ платит рыночную цену с наценкой, без влияния на биржу. Доставку оплачивает игрок.</summary>
+        public double GrossPayout(Market market, Balance b) => Amount * market.Price(Resource) * b.OrderMarkup;
+
+        public double Distance(Balance b) => Geometry.Distance(b.ExchangeX, b.ExchangeY, X, Y);
     }
 }

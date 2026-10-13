@@ -66,8 +66,9 @@ namespace PlanetTrader.Sim
             Directory.CreateDirectory(outDir);
 
             var results = Strategy.All.ToDictionary(s => s, s => RunMany(balance, s, runs, turns, seed));
+            var noScouting = RunMany(balance, Strategy.ActiveNoScouting, runs, turns, seed);
             var report = new StringBuilder();
-            WriteReport(report, results, runs, overrides);
+            WriteReport(report, results, noScouting, runs, overrides);
             WriteCurvesCsv(Path.Combine(outDir, "curves.csv"), results, turns);
 
             if (brakes)
@@ -112,7 +113,7 @@ namespace PlanetTrader.Sim
         static void Trace(Balance b, Strategy s, int turns, ulong seed)
         {
             var g = Game.New(b, seed);
-            var bot = new Bot(s);
+            var bot = new Bot(s, seed);
             Console.WriteLine("ход | капитал | деньги | долг | планет (выраб.) | стоим. планет | склад | расходы/ход | менеджеры");
             for (int t = 1; t <= turns; t++)
             {
@@ -127,7 +128,7 @@ namespace PlanetTrader.Sim
         static RunResult RunOne(Balance b, Strategy s, int turns, ulong seed)
         {
             var g = Game.New(b, seed);
-            var bot = new Bot(s);
+            var bot = new Bot(s, seed);
             var r = new RunResult
             {
                 StartCapital = g.Capital,
@@ -183,7 +184,7 @@ namespace PlanetTrader.Sim
 
         static string Check(bool ok) => ok ? "✅" : "❌";
 
-        static void WriteReport(StringBuilder sb, Dictionary<Strategy, List<RunResult>> results, int runs, List<string> overrides)
+        static void WriteReport(StringBuilder sb, Dictionary<Strategy, List<RunResult>> results, List<RunResult> noScouting, int runs, List<string> overrides)
         {
             sb.AppendLine("# Отчёт симулятора экономики");
             sb.AppendLine();
@@ -248,6 +249,9 @@ namespace PlanetTrader.Sim
             }
             double Roi(string name) => byType.TryGetValue(name, out var v) && v.inv > 0 ? v.ret / v.inv : double.NaN;
             double iceRoi = Roi("Ледяной карлик"), anomalyRoi = Roi("Аномалия");
+            double scout60 = Median(active.Select(r => r.Capital[60])) / Median(noScouting.Select(r => r.Capital[60]));
+            double scout120 = Median(active.Select(r => r.Capital[120])) / Median(noScouting.Select(r => r.Capital[120]));
+            sb.AppendLine($"| Разведка окупается (этап 3) | «Активный» с разведкой обгоняет того же без неё на 10%+ к 120 | ×{F(scout60, "0.00")} к 60, ×{F(scout120, "0.00")} к 120 | {Check(scout120 >= 1.1)} |");
             sb.AppendLine($"| Квантий не ломает экономику | Аномалия не сильно выгоднее Льда | Аномалия ×{F(anomalyRoi, "0.00")}, Лёд ×{F(iceRoi, "0.00")} | {Check(anomalyRoi <= iceRoi * 1.3)} |");
             sb.AppendLine();
 

@@ -38,12 +38,23 @@ namespace PlanetTrader.Core
         /// <summary>Положение на карте сектора, от 0 до 1 по каждой оси.</summary>
         public double MapX, MapY;
 
+        /// <summary>Что о планете знает игрок.</summary>
+        public Knowledge Knowledge;
+        /// <summary>Оценка начального запаса по данным реестра: с ней планету видят все, по ней считается цена.</summary>
+        public double EstimatedInitialReserve;
+        /// <summary>Руины: разовая находка, достаётся владельцу разведанной планеты. 0 — руин нет.</summary>
+        public double RuinsValue;
+        public bool RuinsLooted;
+        /// <summary>Есть жители. Пока только отметка: лояльность появится на этапе 4.</summary>
+        public bool Inhabited;
+
         public Planet(int id, PlanetType type, double reserve)
         {
             Id = id;
             Type = type;
             Reserve = reserve;
             InitialReserve = reserve;
+            EstimatedInitialReserve = reserve;
         }
 
         public Resource Resource => Type.Resource;
@@ -56,12 +67,18 @@ namespace PlanetTrader.Core
         /// <summary>Сколько ходов ещё можно добывать.</summary>
         public double RemainingTurns => Reserve / Type.OutputPerTurn;
 
-        /// <summary>Цена в реестре: пропорциональна запасу, с надбавкой аукциона, если планету видят ИИ.</summary>
+        /// <summary>Текущий запас по оценке реестра.</summary>
+        public double EstimatedReserve => InitialReserve > 0 ? EstimatedInitialReserve * Reserve / InitialReserve : 0;
+
+        public bool HasUnlootedRuins => RuinsValue > 0 && !RuinsLooted;
+
+        /// <summary>
+        /// Цена в реестре: пропорциональна запасу по оценке реестра (а не настоящему), с надбавкой аукциона,
+        /// если планету видят ИИ. Разведка показывает, переплачиваете вы или нет.
+        /// </summary>
         public double ListPrice(Balance b)
         {
-            double price = Type.Price * InitialReserve / Type.AverageReserve;
-            // Частично выработанную планету реестр продаёт пропорционально остатку.
-            price *= Reserve / InitialReserve;
+            double price = Type.Price * EstimatedReserve / Type.AverageReserve;
             // Готовая шахта продаётся вместе с планетой.
             if (Mine != MineState.None) price += Type.MineCost;
             if (!FoundByProbe) price *= 1 + b.AuctionMarkup;
@@ -72,11 +89,16 @@ namespace PlanetTrader.Core
         /// Рыночная стоимость: дисконтированный чистый доход от оставшейся добычи
         /// по базовым ценам, минус стоимость шахты, если её ещё нет. Не ниже нуля.
         /// </summary>
-        public double MarketValue(Balance b)
+        public double MarketValue(Balance b) => ValueWithReserve(b, Reserve);
+
+        /// <summary>Стоимость по оценке реестра — так планету видят все, кто её не разведал.</summary>
+        public double EstimatedValue(Balance b) => ValueWithReserve(b, EstimatedReserve);
+
+        public double ValueWithReserve(Balance b, double reserve)
         {
-            if (IsDepleted) return 0;
+            if (reserve <= 1e-9) return 0;
             double r = b.DiscountRate;
-            double n = RemainingTurns;
+            double n = reserve / Type.OutputPerTurn;
             double net = Type.OutputPerTurn * b.BasePrice(Resource) - Type.Upkeep;
             double annuity = (1 - Math.Pow(1 + r, -n)) / r;
             double value = net * annuity;

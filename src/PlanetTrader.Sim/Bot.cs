@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using PlanetTrader.Core;
 
@@ -12,17 +13,22 @@ namespace PlanetTrader.Sim
         public bool SellsSpentPlanets;
         /// <summary>Берёт кредит, чтобы купить выгодную планету.</summary>
         public bool UsesCredit;
+        /// <summary>Перед покупкой полностью разведывает планету зондом, а не верит оценке реестра.</summary>
+        public bool Explores;
 
-        public static readonly Strategy Passive = new Strategy { Name = "Пассивный" };
-        public static readonly Strategy Active = new Strategy { Name = "Активный", SellsSpentPlanets = true };
-        public static readonly Strategy ActiveCredit = new Strategy { Name = "Активный + кредит", SellsSpentPlanets = true, UsesCredit = true };
+        public static readonly Strategy Passive = new Strategy { Name = "Пассивный", Explores = true };
+        public static readonly Strategy Active = new Strategy { Name = "Активный", SellsSpentPlanets = true, Explores = true };
+        public static readonly Strategy ActiveCredit = new Strategy { Name = "Активный + кредит", SellsSpentPlanets = true, UsesCredit = true, Explores = true };
+        /// <summary>Для проверки, окупается ли разведка: тот же активный, но покупает по оценке реестра.</summary>
+        public static readonly Strategy ActiveNoScouting = new Strategy { Name = "Активный без разведки", SellsSpentPlanets = true };
 
         public static readonly Strategy[] All = { Passive, Active, ActiveCredit };
     }
 
     /// <summary>
     /// Простой, но не глупый игрок: выполняет заказы, продаёт ресурсы без обвала цены,
-    /// покупает планеты с хорошей окупаемостью, запускает зонды, когда в реестре пусто.
+    /// покупает планеты с хорошей окупаемостью, сканирует силуэты зондами.
+    /// Видит только то, что знает игрок: силуэты не покупает, просканированные оценивает по реестру.
     /// </summary>
     public sealed class Bot
     {
@@ -36,11 +42,13 @@ namespace PlanetTrader.Sim
         const double DumpPriceShare = 0.6;
 
         readonly Strategy _s;
+        readonly Rng _rng;
         bool _ranOutOfActions;
 
-        public Bot(Strategy strategy)
+        public Bot(Strategy strategy, ulong seed = 1)
         {
             _s = strategy;
+            _rng = new Rng(seed ^ 0xB07UL);
         }
 
         public void PlayTurn(Game g)
@@ -54,6 +62,7 @@ namespace PlanetTrader.Sim
             if (_s.SellsSpentPlanets) SellSpentPlanets(g);
             BuildMines(g);
             BuyPlanets(g);
+            if (_s.Explores) ExploreAhead(g);
             ManageDebt(g);
         }
 
@@ -66,7 +75,7 @@ namespace PlanetTrader.Sim
         static void FulfillOrders(Game g)
         {
             foreach (var o in g.Orders.ToList())
-                if (g.Stock(o.Resource) >= o.Amount)
+                if (g.Stock(o.Resource) >= o.Amount && g.OrderReachable(o) && g.OrderNetPayout(o) > 0)
                     g.FulfillOrder(o.Id);
         }
 
@@ -77,7 +86,7 @@ namespace PlanetTrader.Sim
                 double stock = g.Stock(r);
                 // Придерживаем ресурс под открытый заказ, если сами его добываем.
                 bool producing = g.PlayerPlanets.Any(p => p.Resource == r && p.Mine != MineState.None && !p.IsDepleted);
-                var order = g.Orders.Where(o => o.Resource == r).OrderBy(o => o.Amount).FirstOrDefault();
+                var order = g.Orders.Where(o => o.Resource == r && g.OrderReachable(o)).OrderBy(o => o.Amount).FirstOrDefault();
                 if (order != null && producing) stock = Math.Max(0, stock - order.Amount);
                 if (stock <= 0) continue;
 
@@ -113,16 +122,23 @@ namespace PlanetTrader.Sim
             }
         }
 
-        /// <summary>Чистый доход планеты за оставшуюся жизнь с учётом роста общего содержания.</summary>
+        /// <summary>
+        /// Чистый доход планеты за оставшуюся жизнь с учётом роста общего содержания, к цене.
+        /// Запас — тот, что знает игрок; у силуэтов оценки нет.
+        /// </summary>
         static double PaybackRatio(Game g, Planet p)
         {
+            var known = g.KnownReserve(p);
+            if (!known.HasValue) return 0;
             var b = g.Balance;
             int n = g.UpkeepCurvePlanets;
             double baseUpkeep = g.PlayerPlanets.Sum(x => x.BaseUpkeep(b));
             double extraUpkeep = (baseUpkeep + p.Type.Upkeep) * b.UpkeepMultiplier(n + 1) - baseUpkeep * b.UpkeepMultiplier(n);
             double net = p.Type.OutputPerTurn * b.BasePrice(p.Resource) - extraUpkeep;
+            double shipping = g.ShippingCost(p.Resource, p.Type.OutputPerTurn, g.DistanceToExchange(p));
+            double bonus = p.Knowledge == Knowledge.Explored && p.HasUnlootedRuins ? p.RuinsValue : 0;
             double cost = p.ListPrice(b) + (p.Mine == MineState.None ? p.Type.MineCost : 0);
-            return net * p.RemainingTurns / cost;
+            return ((net - shipping) * known.Value / p.Type.OutputPerTurn + bonus) / cost;
         }
 
         void BuyPlanets(Game g)
@@ -130,6 +146,7 @@ namespace PlanetTrader.Sim
             // Пока планеты не окупают расходы, не расширяемся.
             if (IncomePerTurn(g) < g.CostsPerTurn) return;
 
+            var skip = new HashSet<int>();
             while (g.ActionsLeft > 0)
             {
                 // Сколько можно потратить: деньги сверх запаса, а с кредитной стратегией — ещё и свободный кредит.
@@ -141,6 +158,7 @@ namespace PlanetTrader.Sim
                 double pickRatio = 0;
                 foreach (var p in g.PlanetsForSale)
                 {
+                    if (skip.Contains(p.Id)) continue;
                     double ratio = PaybackRatio(g, p);
                     if (ratio < MinPaybackRatio) continue;
                     anyGood = true;
@@ -153,13 +171,16 @@ namespace PlanetTrader.Sim
 
                 if (pick == null)
                 {
-                    // В реестре нет ничего выгодного — ищем зондом. Если выгодное есть, но не по карману, копим.
-                    if (!anyGood && g.Money - g.Balance.ProbeCost >= Buffer(g) + 1500)
-                    {
-                        g.LaunchProbe(out _);
-                        continue;
-                    }
+                    // Выгодного не видно — сканируем силуэты или ищем скрытые планеты. Если выгодное есть, но не по карману, копим.
+                    if (!anyGood && Scan(g)) continue;
                     return;
+                }
+
+                if (_s.Explores && pick.Knowledge != Knowledge.Explored)
+                {
+                    // Вслепую не покупаем: её разведает ExploreAhead.
+                    skip.Add(pick.Id);
+                    continue;
                 }
 
                 double shortfall = FullCost(g, pick) + Buffer(g) - g.Money;
@@ -170,6 +191,83 @@ namespace PlanetTrader.Sim
                 if (pick.Mine == MineState.None) g.BuildMine(pick.Id);
             }
             _ranOutOfActions = true;
+        }
+
+        /// <summary>
+        /// Свободным действием разведывает самую перспективную по оценке реестра планету —
+        /// заранее, пока копятся деньги, чтобы к покупке уже знать правду.
+        /// </summary>
+        void ExploreAhead(Game g)
+        {
+            if (g.ActionsLeft == 0 || g.Probes.Any(x => x.Mission == ProbeMission.Explore)) return;
+            bool borrow = _s.UsesCredit && g.UpkeepCurvePlanets < g.Balance.UpkeepShelfEnd;
+            double budget = g.Money - Buffer(g) + (borrow ? g.AvailableCredit : 0);
+
+            var candidates = g.PlanetsForSale
+                .Where(p => p.Knowledge == Knowledge.Scanned && !g.ProbeHeadingTo(p.Id))
+                .Select(p => (planet: p, ratio: PaybackRatio(g, p)))
+                .Where(x => x.ratio >= MinPaybackRatio)
+                .OrderByDescending(x => x.ratio)
+                .Select(x => x.planet)
+                .ToList();
+            // Сначала то, что можно купить уже сейчас. Дорогую цель — только если копить больше не на что.
+            var target = candidates.FirstOrDefault(p => FullCost(g, p) <= budget);
+            bool hasExploredGoal = g.PlanetsForSale.Any(p => p.Knowledge == Knowledge.Explored && PaybackRatio(g, p) >= MinPaybackRatio);
+            if (target == null && !hasExploredGoal) target = candidates.FirstOrDefault();
+            if (target == null) return;
+
+            var probe = CheapestProbe(g, target.MapX, target.MapY);
+            if (probe != null && g.Money - probe.Cost >= Buffer(g)) g.LaunchExplore(probe, target.Id);
+        }
+
+        static ProbeType CheapestProbe(Game g, double x, double y) =>
+            g.Balance.ProbeTypes.Where(t => g.InRange(t, x, y)).OrderBy(t => t.Cost).FirstOrDefault();
+
+        /// <summary>
+        /// Один скан за раз: туда, где больше всего силуэтов на единицу цены зонда.
+        /// Если силуэтов нет — в случайную точку искать скрытые планеты.
+        /// </summary>
+        bool Scan(Game g)
+        {
+            if (g.Probes.Any(x => x.Mission == ProbeMission.ScanArea)) return false;
+            var silhouettes = g.PlanetsForSale.Where(p => p.Knowledge == Knowledge.Silhouette).ToList();
+
+            ProbeType bestType = null;
+            double bestX = 0, bestY = 0, bestScore = 0;
+            foreach (var t in g.Balance.ProbeTypes)
+            {
+                if (g.Money - t.Cost < Buffer(g) + 1500) continue;
+                foreach (var target in silhouettes)
+                {
+                    if (!g.InRange(t, target.MapX, target.MapY)) continue;
+                    int covered = silhouettes.Count(p => Geometry.Distance(p.MapX, p.MapY, target.MapX, target.MapY) <= t.ScanRadius);
+                    double score = covered / t.Cost;
+                    if (score > bestScore)
+                    {
+                        bestScore = score;
+                        bestType = t;
+                        bestX = target.MapX;
+                        bestY = target.MapY;
+                    }
+                }
+            }
+
+            if (bestType == null)
+            {
+                // Силуэтов в досягаемости нет: ищем скрытые планеты «Стандартом», как раньше.
+                var t = g.Balance.ProbeTypes.FirstOrDefault(x => x.Name == "Стандарт") ?? g.Balance.ProbeTypes[0];
+                if (g.Money - t.Cost < Buffer(g) + 1500) return false;
+                for (int attempt = 0; attempt < 20 && bestType == null; attempt++)
+                {
+                    double x = _rng.Range(0.05, 0.95), y = _rng.Range(0.05, 0.95);
+                    if (!g.InRange(t, x, y)) continue;
+                    bestType = t;
+                    bestX = x;
+                    bestY = y;
+                }
+                if (bestType == null) return false;
+            }
+            return g.LaunchScan(bestType, bestX, bestY).Ok;
         }
 
         static double FullCost(Game g, Planet p) =>

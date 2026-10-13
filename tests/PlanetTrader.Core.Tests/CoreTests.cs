@@ -71,7 +71,13 @@ public class GameTests
         AiResaleChance = 0,
         OrderChancePerTurn = 0,
         MarketNoise = 0,
+        DiscoveryChancePerTurn = 0,
+        // Доставка мгновенная и бесплатная, чтобы проверять экономику отдельно от карты.
+        ShipSpeed = 100,
+        ShippingCostPerDistance = 0,
     };
+
+    static ProbeType Far(Balance b) => b.ProbeTypes.Last();
 
     [Fact]
     public void SameSeedGivesSameGame()
@@ -121,8 +127,9 @@ public class GameTests
         b.StartMoney = 100_000;
         var g = Game.New(b, 1);
 
-        for (int i = 0; i < 3; i++) Assert.True(g.LaunchProbe(out _).Ok);
-        Assert.False(g.LaunchProbe(out _).Ok);
+        var probe = Far(b);
+        for (int i = 0; i < 3; i++) Assert.True(g.LaunchScan(probe, 0.5, 0.5).Ok);
+        Assert.False(g.LaunchScan(probe, 0.5, 0.5).Ok);
 
         g.EndTurn();
         Assert.Equal(3, g.ActionsLeft);
@@ -145,6 +152,7 @@ public class GameTests
         b.StartMoney = 100_000;
         var g = Game.New(b, 3);
         var p = g.PlanetsForSale.First();
+        p.RuinsValue = 0;
         double price = p.ListPrice(b);
 
         Assert.True(g.BuyPlanet(p.Id).Ok);
@@ -200,7 +208,8 @@ public class GameTests
         var p = g.PlayerPlanets.Single();
         // Долг на весь лимит, деньги тратим, ресурсы не продаём — рано или поздно платить нечем.
         g.TakeLoan(g.AvailableCredit);
-        while (g.Money >= g.Balance.ProbeCost && g.LaunchProbe(out _).Ok) { }
+        var probe = g.Balance.ProbeTypes[0];
+        while (g.Money >= probe.Cost && g.LaunchScan(probe, p.MapX, p.MapY).Ok) { }
 
         for (int i = 0; i < 50 && g.TotalSeizures == 0; i++) g.EndTurn();
 
@@ -218,7 +227,7 @@ public class GameTests
         // Копим лёд, пока не появится заказ на лёд, который можно закрыть.
         for (int i = 0; i < 200; i++)
         {
-            var order = g.Orders.FirstOrDefault(o => g.Stock(o.Resource) >= o.Amount);
+            var order = g.Orders.FirstOrDefault(o => g.Stock(o.Resource) >= o.Amount && g.OrderReachable(o));
             if (order != null)
             {
                 double expected = order.Amount * g.Market.Price(order.Resource) * 1.5;
@@ -300,5 +309,166 @@ public class MapTests
             if (Math.Sqrt(dx * dx + dy * dy) < 0.05) tooClose++;
         }
         Assert.Equal(0, tooClose);
+    }
+}
+
+public class ExplorationTests
+{
+    static Balance Quiet() => new Balance
+    {
+        AccidentChance = 0,
+        AiBuyChance = 0,
+        AiResaleChance = 0,
+        OrderChancePerTurn = 0,
+        DiscoveryChancePerTurn = 0,
+        MarketNoise = 0,
+        StartMoney = 100_000,
+    };
+
+    [Fact]
+    public void PlayerStartsKnowingOnlyTheNeighbourhood()
+    {
+        var b = Quiet();
+        var g = Game.New(b, 2);
+        var start = g.PlayerPlanets.Single();
+        Assert.Equal(Knowledge.Explored, start.Knowledge);
+        foreach (var p in g.AllPlanets.Where(p => p != start))
+        {
+            double d = Geometry.Distance(p.MapX, p.MapY, start.MapX, start.MapY);
+            Assert.Equal(d <= b.StartScanRadius ? Knowledge.Scanned : Knowledge.Silhouette, p.Knowledge);
+        }
+    }
+
+    [Fact]
+    public void KnownReserveDependsOnKnowledge()
+    {
+        var g = Game.New(Quiet(), 2);
+        var p = g.PlanetsForSale.First();
+        p.Knowledge = Knowledge.Silhouette;
+        Assert.Null(g.KnownReserve(p));
+        p.Knowledge = Knowledge.Scanned;
+        Assert.Equal(p.EstimatedReserve, g.KnownReserve(p));
+        p.Knowledge = Knowledge.Explored;
+        Assert.Equal(p.Reserve, g.KnownReserve(p));
+    }
+
+    [Fact]
+    public void RegistryPricesByEstimateNotByTruth()
+    {
+        var b = new Balance();
+        var type = b.PlanetTypes[0];
+        var p = new Planet(1, type, type.AverageReserve) { EstimatedInitialReserve = type.AverageReserve * 1.2 };
+        Assert.Equal(type.Price * 1.2 * (1 + b.AuctionMarkup), p.ListPrice(b), 0);
+    }
+
+    [Fact]
+    public void SomeRegistryEstimatesAreDuds()
+    {
+        var g = Game.New(new Balance(), 3);
+        for (int i = 0; i < 300; i++) g.EndTurn();
+        var all = g.AllPlanets.Where(p => p.InitialReserve > 0).ToList();
+        int duds = all.Count(p => p.EstimatedInitialReserve > 2 * p.InitialReserve);
+        Assert.InRange(duds / (double)all.Count, 0.05, 0.30);
+    }
+
+    [Fact]
+    public void ExploreProbeRevealsPlanetAfterFlight()
+    {
+        var b = Quiet();
+        var g = Game.New(b, 2);
+        var target = g.PlanetsForSale.First(p => p.Knowledge != Knowledge.Explored);
+        var probe = b.ProbeTypes.Last();
+        int turns = g.ProbeTurns(probe, target.MapX, target.MapY, ProbeMission.Explore);
+
+        Assert.True(g.LaunchExplore(probe, target.Id).Ok);
+        Assert.False(g.LaunchExplore(probe, target.Id).Ok);
+        for (int i = 1; i < turns; i++)
+        {
+            g.EndTurn();
+            Assert.NotEqual(Knowledge.Explored, target.Knowledge);
+        }
+        g.EndTurn();
+        Assert.Equal(Knowledge.Explored, target.Knowledge);
+        Assert.Empty(g.Probes);
+    }
+
+    [Fact]
+    public void CheapProbeCannotReachFarPoints()
+    {
+        var b = Quiet();
+        var g = Game.New(b, 2);
+        var cheap = b.ProbeTypes[0];
+        // Угол карты дальше дальности «Москита» и от биржи, и от стартовой планеты?
+        double far = new[] { (0.0, 0.0), (1.0, 0.0), (0.0, 1.0), (1.0, 1.0) }
+            .Select(c => g.LaunchOrigin(c.Item1, c.Item2).distance).Max();
+        Assert.True(far > cheap.Range);
+        var corner = new[] { (0.0, 0.0), (1.0, 0.0), (0.0, 1.0), (1.0, 1.0) }
+            .First(c => g.LaunchOrigin(c.Item1, c.Item2).distance > cheap.Range);
+        Assert.False(g.LaunchScan(cheap, corner.Item1, corner.Item2).Ok);
+        Assert.True(g.LaunchScan(b.ProbeTypes.Last(), corner.Item1, corner.Item2).Ok);
+    }
+
+    [Fact]
+    public void ScanRevealsSilhouettesInRadius()
+    {
+        var b = Quiet();
+        var g = Game.New(b, 2);
+        var probe = b.ProbeTypes.Last();
+        var target = g.AllPlanets.First(p => p.Knowledge == Knowledge.Silhouette);
+        var inside = g.AllPlanets.Where(p => p.Knowledge == Knowledge.Silhouette
+            && Geometry.Distance(p.MapX, p.MapY, target.MapX, target.MapY) <= probe.ScanRadius).ToList();
+
+        Assert.True(g.LaunchScan(probe, target.MapX, target.MapY).Ok);
+        for (int i = 0; i < 5; i++) g.EndTurn();
+        Assert.All(inside, p => Assert.Equal(Knowledge.Scanned, p.Knowledge));
+    }
+
+    [Fact]
+    public void BuyingRevealsPlanetAndPaysRuins()
+    {
+        var b = Quiet();
+        var g = Game.New(b, 2);
+        var p = g.PlanetsForSale.First();
+        p.RuinsValue = 500;
+        double money = g.Money;
+        double price = p.ListPrice(b);
+
+        Assert.True(g.BuyPlanet(p.Id).Ok);
+        Assert.Equal(Knowledge.Explored, p.Knowledge);
+        Assert.Equal(money - price + 500, g.Money, 6);
+        Assert.True(p.RuinsLooted);
+        Assert.NotEmpty(g.Notices);
+    }
+
+    [Fact]
+    public void FarPlanetsShipSlowerAndPayForDelivery()
+    {
+        var b = Quiet();
+        b.ShipSpeed = 0.1;
+        var g = Game.New(b, 2);
+        var start = g.PlayerPlanets.Single();
+        int turns = g.ShipTurns(start);
+        Assert.True(turns >= 1);
+
+        var report = g.EndTurn();
+        Assert.True(report.Shipping > 0);
+        Assert.Equal(0, g.Stock(Resource.Ice));
+        Assert.Equal(28, g.InTransit(Resource.Ice));
+        for (int i = 0; i < turns; i++) g.EndTurn();
+        Assert.True(g.Stock(Resource.Ice) >= 28);
+    }
+
+    [Fact]
+    public void OrdersPayMinusDeliveryAndExpireWhenUnreachable()
+    {
+        var b = Quiet();
+        b.OrderChancePerTurn = 1;
+        var g = Game.New(b, 2);
+        g.EndTurn();
+        var o = g.Orders.First();
+        Assert.True(g.DeliveryTurns(o) >= 1);
+        Assert.Equal(o.GrossPayout(g.Market, b) - g.DeliveryCost(o), g.OrderNetPayout(o), 6);
+        while (g.OrderReachable(o)) g.EndTurn();
+        Assert.DoesNotContain(o, g.Orders);
     }
 }

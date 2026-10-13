@@ -28,17 +28,19 @@ namespace PlanetTrader.Core
         public double Interest;
         public double Insurance;
         public double InsurancePayout;
+        /// <summary>Доставка добытого на биржу.</summary>
+        public double Shipping;
         public int Accidents;
         /// <summary>Сколько планет забрали коллекторы.</summary>
         public int Seizures;
         public readonly List<string> Events = new List<string>();
 
-        public double TotalCosts => Upkeep + Salaries + Interest + Insurance;
+        public double TotalCosts => Upkeep + Salaries + Interest + Insurance + Shipping;
     }
 
     /// <summary>
     /// Состояние партии и все правила экономики. Один игрок против ИИ.
-    /// Действия (покупка, шахта, продажа планеты, зонд, найм) тратят очки действий,
+    /// Действия (покупка, шахта, продажа планеты, запуск зонда, найм) тратят очки действий,
     /// торговля на бирже, заказы и кредит — бесплатны.
     /// </summary>
     public sealed class Game
@@ -54,11 +56,22 @@ namespace PlanetTrader.Core
         readonly Rng _rng;
         /// <summary>Отдельный генератор для карты, чтобы раскладка планет не меняла ход партии.</summary>
         readonly Rng _mapRng;
+        /// <summary>Отдельный генератор для оценок реестра и сюрпризов.</summary>
+        readonly Rng _surveyRng;
         readonly List<Planet> _planets = new List<Planet>();
         readonly List<Order> _orders = new List<Order>();
+        readonly List<Probe> _probes = new List<Probe>();
+        readonly List<Shipment> _shipments = new List<Shipment>();
         readonly double[] _stock = new double[ResourceTypes.Count];
         int _nextPlanetId;
         int _nextOrderId;
+        int _nextProbeId;
+
+        /// <summary>
+        /// Сообщения о том, что случилось во время действий игрока (например, нашлись руины при покупке).
+        /// Интерфейс забирает их и очищает список.
+        /// </summary>
+        public readonly List<string> Notices = new List<string>();
 
         public int Turn { get; private set; } = 1;
         public double Money { get; private set; }
@@ -74,6 +87,8 @@ namespace PlanetTrader.Core
 
         public IReadOnlyList<Planet> AllPlanets => _planets;
         public IReadOnlyList<Order> Orders => _orders;
+        public IReadOnlyList<Probe> Probes => _probes;
+        public IReadOnlyList<Shipment> Shipments => _shipments;
         public IEnumerable<Planet> PlayerPlanets => _planets.Where(p => p.Owner == Owner.Player);
         public int PlayerPlanetCount => _planets.Count(p => p.Owner == Owner.Player);
 
@@ -82,6 +97,8 @@ namespace PlanetTrader.Core
 
         public double Stock(Resource r) => _stock[(int)r];
 
+        public double InTransit(Resource r) => _shipments.Where(x => x.Resource == r).Sum(x => x.Amount);
+
         public int ActionsPerTurn => Balance.BaseActionsPerTurn + Managers * Balance.ActionsPerManager;
 
         Game(Balance balance, ulong seed)
@@ -89,6 +106,7 @@ namespace PlanetTrader.Core
             Balance = balance;
             _rng = new Rng(seed);
             _mapRng = new Rng(seed ^ 0x5EC7_0A11UL);
+            _surveyRng = new Rng(seed ^ 0x50_17E5UL);
             Market = new Market(balance);
         }
 
@@ -116,7 +134,13 @@ namespace PlanetTrader.Core
                 BoughtOnTurn = 0,
             };
             g.PlaceOnMap(start);
+            start.Knowledge = Knowledge.Explored;
             g._planets.Add(start);
+
+            // Окрестности своей планеты игрок знает по скану, остальное — силуэты.
+            foreach (var p in g._planets)
+                if (p != start && Geometry.Distance(p.MapX, p.MapY, start.MapX, start.MapY) <= balance.StartScanRadius)
+                    p.Knowledge = Knowledge.Scanned;
 
             g.ActionsLeft = g.ActionsPerTurn;
             return g;
@@ -140,18 +164,34 @@ namespace PlanetTrader.Core
             double reserve = Math.Round(type.AverageReserve * _rng.Range(1 - spread, 1 + spread));
             var p = new Planet(_nextPlanetId++, type, reserve);
             PlaceOnMap(p);
+            Survey(p);
             return p;
         }
 
-        /// <summary>Случайное место на карте, не слишком близко к другим планетам.</summary>
-        void PlaceOnMap(Planet p)
+        /// <summary>Оценка реестра с ошибкой и сюрпризы, которые откроет только полная разведка.</summary>
+        void Survey(Planet p)
+        {
+            double s = Balance.RegistryEstimateSpread;
+            double estimate = p.InitialReserve * _surveyRng.Range(1 - s, 1 + s);
+            if (_surveyRng.Chance(Balance.DudChance)) estimate = p.InitialReserve / Balance.DudReserveShare;
+            p.EstimatedInitialReserve = Math.Round(estimate);
+            if (_surveyRng.Chance(Balance.RuinsChance))
+                p.RuinsValue = Math.Round(_surveyRng.Range(Balance.RuinsMinValue, Balance.RuinsMaxValue) / 10) * 10;
+            p.Inhabited = _surveyRng.Chance(Balance.InhabitedChance);
+        }
+
+        /// <summary>Случайное место на карте, не слишком близко к другим планетам и к бирже.</summary>
+        void PlaceOnMap(Planet p) => PlaceOnMap(p, 0.5, 0.5, 0.45);
+
+        void PlaceOnMap(Planet p, double centerX, double centerY, double radius)
         {
             const double minDistance = 0.09;
-            double bestX = 0.5, bestY = 0.5, bestGap = -1;
+            double bestX = centerX, bestY = centerY, bestGap = -1;
             for (int attempt = 0; attempt < 40; attempt++)
             {
-                double x = _mapRng.Range(0.05, 0.95), y = _mapRng.Range(0.05, 0.95);
-                double gap = double.MaxValue;
+                double x = Math.Min(0.95, Math.Max(0.05, centerX + _mapRng.Range(-radius, radius)));
+                double y = Math.Min(0.95, Math.Max(0.05, centerY + _mapRng.Range(-radius, radius)));
+                double gap = Geometry.Distance(x, y, Balance.ExchangeX, Balance.ExchangeY);
                 foreach (var other in _planets)
                 {
                     double dx = other.MapX - x, dy = other.MapY - y;
@@ -176,11 +216,49 @@ namespace PlanetTrader.Core
         // ------------------------------------------------------------------
 
         public double PlanetsValue => PlayerPlanets.Sum(p => p.MarketValue(Balance));
-        /// <summary>Склад по выручке, если продать всё разом, — с учётом падения цены.</summary>
-        public double StockValue => ResourceTypes.All.Sum(r => Market.Quote(r, _stock[(int)r]));
+        /// <summary>Склад и грузы в пути по выручке, если продать всё разом, — с учётом падения цены.</summary>
+        public double StockValue => ResourceTypes.All.Sum(r => Market.Quote(r, _stock[(int)r] + InTransit(r)));
 
         /// <summary>Капитал = деньги − долг + стоимость планет + стоимость склада.</summary>
         public double Capital => Money - Debt + PlanetsValue + StockValue;
+
+        /// <summary>Запас, который знает игрок: точный у своих и разведанных, оценка у просканированных, null у силуэтов.</summary>
+        public double? KnownReserve(Planet p)
+        {
+            if (p.Owner == Owner.Player || p.Knowledge == Knowledge.Explored) return p.Reserve;
+            if (p.Knowledge == Knowledge.Scanned) return p.EstimatedReserve;
+            return null;
+        }
+
+        /// <summary>Стоимость планеты по тому, что знает игрок; null у силуэтов.</summary>
+        public double? KnownValue(Planet p)
+        {
+            var reserve = KnownReserve(p);
+            return reserve.HasValue ? p.ValueWithReserve(Balance, reserve.Value) : (double?)null;
+        }
+
+        // ------------------------------------------------------------------
+        // Расстояния и доставка
+        // ------------------------------------------------------------------
+
+        public double DistanceToExchange(Planet p) => Geometry.Distance(p.MapX, p.MapY, Balance.ExchangeX, Balance.ExchangeY);
+
+        /// <summary>Сколько ходов груз идёт с планеты на биржу: ближние доставляют в тот же ход.</summary>
+        public int ShipTurns(Planet p) => (int)Math.Floor(DistanceToExchange(p) / Balance.ShipSpeed);
+
+        public double ShippingCost(Resource r, double amount, double distance) =>
+            amount * Balance.BasePrice(r) * Balance.ShippingCostPerDistance * distance;
+
+        /// <summary>Доставка добычи за ход, если все шахты работают.</summary>
+        public double ShippingPerTurn => PlayerPlanets
+            .Where(p => p.Mine == MineState.Working && !p.IsDepleted)
+            .Sum(p => ShippingCost(p.Resource, Math.Min(p.Type.OutputPerTurn, p.Reserve), DistanceToExchange(p)));
+
+        public int DeliveryTurns(Order o) => Math.Max(1, (int)Math.Ceiling(o.Distance(Balance) / Balance.ShipSpeed));
+        public double DeliveryCost(Order o) => ShippingCost(o.Resource, o.Amount, o.Distance(Balance));
+        public double OrderNetPayout(Order o) => o.GrossPayout(Market, Balance) - DeliveryCost(o);
+        /// <summary>Успеет ли груз, если отправить его сейчас.</summary>
+        public bool OrderReachable(Order o) => Turn + DeliveryTurns(o) <= o.DeadlineTurn;
 
         public double CreditLimit => Balance.CreditLimitShare * PlanetsValue;
         public double AvailableCredit => Math.Max(0, CreditLimit - Debt);
@@ -200,7 +278,7 @@ namespace PlanetTrader.Core
         public double InsurancePerTurn => Insured ? Balance.InsuranceRate * PlanetsValue : 0;
 
         public double CostsPerTurn =>
-            UpkeepPerTurn + Managers * Balance.ManagerSalary + Debt * Balance.InterestPerTurn + InsurancePerTurn;
+            UpkeepPerTurn + Managers * Balance.ManagerSalary + Debt * Balance.InterestPerTurn + InsurancePerTurn + ShippingPerTurn;
 
         // ------------------------------------------------------------------
         // Действия, которые тратят очки действий
@@ -228,6 +306,13 @@ namespace PlanetTrader.Core
             p.Owner = Owner.Player;
             p.BoughtOnTurn = Turn;
             p.Invested += price;
+            // С покупкой приходят все документы: планета становится разведанной.
+            if (p.Knowledge != Knowledge.Explored)
+            {
+                p.Knowledge = Knowledge.Explored;
+                Notices.Add(DescribeExploration(p));
+            }
+            LootRuins(p, Notices);
             return ActionResult.Success;
         }
 
@@ -271,22 +356,141 @@ namespace PlanetTrader.Core
             p.FoundByProbe = false;
         }
 
-        /// <summary>Зонд: с шансом находит новую планету, которую видит только игрок.</summary>
-        public ActionResult LaunchProbe(out Planet found)
+        // ------------------------------------------------------------------
+        // Зонды
+        // ------------------------------------------------------------------
+
+        /// <summary>Откуда полетит зонд к точке: ближайшая ваша планета или биржа.</summary>
+        public (double x, double y, double distance) LaunchOrigin(double x, double y)
         {
-            found = null;
-            if (Money < Balance.ProbeCost) return ActionResult.Fail("Не хватает денег");
+            double bx = Balance.ExchangeX, by = Balance.ExchangeY;
+            double best = Geometry.Distance(bx, by, x, y);
+            foreach (var p in PlayerPlanets)
+            {
+                double d = Geometry.Distance(p.MapX, p.MapY, x, y);
+                if (d < best)
+                {
+                    best = d;
+                    bx = p.MapX;
+                    by = p.MapY;
+                }
+            }
+            return (bx, by, best);
+        }
+
+        public bool InRange(ProbeType t, double x, double y) => LaunchOrigin(x, y).distance <= t.Range + 1e-9;
+
+        /// <summary>Через сколько ходов будет результат: 1 — уже к следующему ходу.</summary>
+        public int ProbeTurns(ProbeType t, double x, double y, ProbeMission mission)
+        {
+            int flight = Math.Max(1, (int)Math.Ceiling(LaunchOrigin(x, y).distance / t.Speed));
+            return flight + (mission == ProbeMission.Explore ? Balance.ExploreTurnsOnSite : 0);
+        }
+
+        /// <summary>Летит ли уже зонд разведывать эту планету.</summary>
+        public bool ProbeHeadingTo(int planetId) => _probes.Any(x => x.TargetPlanetId == planetId);
+
+        /// <summary>Скан области: все планеты в радиусе станут просканированными, и, может быть, найдётся скрытая.</summary>
+        public ActionResult LaunchScan(ProbeType t, double x, double y)
+        {
+            if (!InRange(t, x, y)) return ActionResult.Fail($"«{t.Name}» не долетит: слишком далеко от ваших планет и биржи");
+            return Launch(t, ProbeMission.ScanArea, x, y, -1);
+        }
+
+        /// <summary>Полная разведка планеты: точный запас и сюрпризы.</summary>
+        public ActionResult LaunchExplore(ProbeType t, int planetId)
+        {
+            var p = GetPlanet(planetId);
+            if (p == null) return ActionResult.Fail("Нет такой планеты");
+            if (p.Knowledge == Knowledge.Explored || p.Owner == Owner.Player) return ActionResult.Fail("Планета уже разведана");
+            if (ProbeHeadingTo(planetId)) return ActionResult.Fail("К планете уже летит зонд");
+            if (!InRange(t, p.MapX, p.MapY)) return ActionResult.Fail($"«{t.Name}» не долетит: слишком далеко от ваших планет и биржи");
+            return Launch(t, ProbeMission.Explore, p.MapX, p.MapY, planetId);
+        }
+
+        ActionResult Launch(ProbeType t, ProbeMission mission, double x, double y, int planetId)
+        {
+            if (Money < t.Cost) return ActionResult.Fail("Не хватает денег");
             var a = SpendAction();
             if (!a.Ok) return a;
 
-            Money -= Balance.ProbeCost;
-            if (_rng.Chance(Balance.ProbeFindChance))
+            Money -= t.Cost;
+            var origin = LaunchOrigin(x, y);
+            _probes.Add(new Probe
             {
-                found = GeneratePlanet(RandomType());
-                found.FoundByProbe = true;
-                _planets.Add(found);
-            }
+                Id = _nextProbeId++,
+                Type = t,
+                Mission = mission,
+                FromX = origin.x,
+                FromY = origin.y,
+                TargetX = x,
+                TargetY = y,
+                TargetPlanetId = planetId,
+                LaunchTurn = Turn,
+                ResolveTurn = Turn + ProbeTurns(t, x, y, mission) - 1,
+            });
             return ActionResult.Success;
+        }
+
+        void ResolveProbes(TurnReport report)
+        {
+            foreach (var probe in _probes.Where(x => x.ResolveTurn <= Turn).ToList())
+            {
+                _probes.Remove(probe);
+                if (probe.Mission == ProbeMission.ScanArea) ResolveScan(probe, report);
+                else ResolveExplore(probe, report);
+            }
+        }
+
+        void ResolveScan(Probe probe, TurnReport report)
+        {
+            int scanned = 0;
+            foreach (var p in _planets)
+            {
+                if (p.Knowledge != Knowledge.Silhouette) continue;
+                if (Geometry.Distance(p.MapX, p.MapY, probe.TargetX, probe.TargetY) > probe.Type.ScanRadius) continue;
+                p.Knowledge = Knowledge.Scanned;
+                scanned++;
+            }
+            string line = $"Зонд «{probe.Type.Name}» просканировал область: новых планет в скане — {scanned}";
+            if (_rng.Chance(probe.Type.FindChance))
+            {
+                var found = GeneratePlanet(RandomType());
+                PlaceOnMap(found, probe.TargetX, probe.TargetY, probe.Type.ScanRadius);
+                found.FoundByProbe = true;
+                found.Knowledge = Knowledge.Scanned;
+                _planets.Add(found);
+                line += $". Найдена скрытая планета {found.Type.Name} #{found.Id}: её видите только вы";
+            }
+            report.Events.Add(line + ".");
+        }
+
+        void ResolveExplore(Probe probe, TurnReport report)
+        {
+            var p = GetPlanet(probe.TargetPlanetId);
+            if (p == null) return;
+            p.Knowledge = Knowledge.Explored;
+            report.Events.Add(DescribeExploration(p));
+            if (p.Owner == Owner.Player) LootRuins(p, report.Events);
+        }
+
+        string DescribeExploration(Planet p)
+        {
+            string line = $"Разведка {p.Type.Name} #{p.Id}: запас {Math.Round(p.Reserve)}, реестр оценивал в {Math.Round(p.EstimatedReserve)}";
+            if (p.Reserve < 0.6 * p.EstimatedReserve) line += " — подвох, реестр сильно завысил запас";
+            if (p.HasUnlootedRuins) line += $"; руины с артефактами на {Math.Round(p.RuinsValue)}";
+            if (p.Inhabited) line += "; планета обитаема";
+            return line + ".";
+        }
+
+        /// <summary>Руины достаются владельцу разведанной планеты один раз.</summary>
+        void LootRuins(Planet p, List<string> events)
+        {
+            if (p.Owner != Owner.Player || p.Knowledge != Knowledge.Explored || !p.HasUnlootedRuins) return;
+            p.RuinsLooted = true;
+            Money += p.RuinsValue;
+            p.Earned += p.RuinsValue;
+            events.Add($"Артефакты из руин на {p.Type.Name} #{p.Id} проданы за {Math.Round(p.RuinsValue)}.");
         }
 
         /// <summary>Нанять менеджера. Даёт действие со следующего хода.</summary>
@@ -319,13 +523,15 @@ namespace PlanetTrader.Core
             return ActionResult.Success;
         }
 
+        /// <summary>Отправить заказ со склада биржи. Платят сразу, доставку оплачивает игрок.</summary>
         public ActionResult FulfillOrder(int orderId)
         {
             var o = _orders.FirstOrDefault(x => x.Id == orderId);
             if (o == null) return ActionResult.Fail("Заказа нет");
-            if (_stock[(int)o.Resource] + 1e-9 < o.Amount) return ActionResult.Fail("Не хватает ресурса");
+            if (_stock[(int)o.Resource] + 1e-9 < o.Amount) return ActionResult.Fail("Не хватает ресурса на складе биржи");
+            if (!OrderReachable(o)) return ActionResult.Fail("Груз не успеет к сроку");
             _stock[(int)o.Resource] -= o.Amount;
-            Money += o.Payout(Market, Balance);
+            Money += OrderNetPayout(o);
             _orders.Remove(o);
             return ActionResult.Success;
         }
@@ -361,8 +567,9 @@ namespace PlanetTrader.Core
 
             ProducePlayer(report);
             ProduceAi();
+            DeliverShipments();
 
-            // Расходы считаются по состоянию на конец хода.
+            // Расходы считаются по состоянию на конец хода. Доставка уже посчитана при добыче.
             report.Upkeep = UpkeepPerTurn;
             report.Salaries = Managers * Balance.ManagerSalary;
             report.Interest = Debt * Balance.InterestPerTurn;
@@ -374,6 +581,7 @@ namespace PlanetTrader.Core
 
             if (Money < 0) CallCollectors(report);
 
+            ResolveProbes(report);
             UpdateOrders(report);
             Discover(report);
             AiTurn(report);
@@ -416,8 +624,28 @@ namespace PlanetTrader.Core
                 }
 
                 p.Reserve -= amount;
-                _stock[(int)p.Resource] += amount;
                 p.Earned += amount * Market.Price(p.Resource);
+                Ship(p, amount, report);
+            }
+        }
+
+        /// <summary>Добытое летит на биржу: стоит денег и, с дальних планет, времени.</summary>
+        void Ship(Planet p, double amount, TurnReport report)
+        {
+            double cost = ShippingCost(p.Resource, amount, DistanceToExchange(p));
+            report.Shipping += cost;
+            p.Earned -= cost;
+            int turns = ShipTurns(p);
+            if (turns == 0) _stock[(int)p.Resource] += amount;
+            else _shipments.Add(new Shipment { Resource = p.Resource, Amount = amount, ResolveTurn = Turn + turns });
+        }
+
+        void DeliverShipments()
+        {
+            foreach (var x in _shipments.Where(x => x.ResolveTurn <= Turn).ToList())
+            {
+                _stock[(int)x.Resource] += x.Amount;
+                _shipments.Remove(x);
             }
         }
 
@@ -459,16 +687,22 @@ namespace PlanetTrader.Core
 
         void UpdateOrders(TurnReport report)
         {
-            _orders.RemoveAll(o => o.DeadlineTurn <= Turn);
+            // Заказ снимается, когда груз уже не успеет даже при отправке в следующем ходу.
+            _orders.RemoveAll(o => Turn + 1 + DeliveryTurns(o) > o.DeadlineTurn);
             if (!_rng.Chance(Balance.OrderChancePerTurn)) return;
 
             var r = ResourceTypes.All[_rng.Range(0, ResourceTypes.Count)];
             var type = Balance.TypeOf(r);
             double amount = type.OutputPerTurn * _rng.Range(Balance.OrderMinTurnsOfOutput, Balance.OrderMaxTurnsOfOutput + 1);
             amount = Math.Max(1, Math.Round(amount / 5) * 5);
-            var o = new Order(_nextOrderId++, Customers[_rng.Range(0, Customers.Length)], r, amount, Turn + Balance.OrderDeadlineTurns);
+            // Заказчик — на краю сектора.
+            double along = _mapRng.NextDouble();
+            int side = _mapRng.Range(0, 4);
+            double x = side == 0 ? 0 : side == 1 ? 1 : along;
+            double y = side == 2 ? 0 : side == 3 ? 1 : along;
+            var o = new Order(_nextOrderId++, Customers[_rng.Range(0, Customers.Length)], r, amount, Turn + Balance.OrderDeadlineTurns, x, y);
             _orders.Add(o);
-            report.Events.Add($"{o.Customer}: нужно {o.Amount} ({r.RuName()}) за {Balance.OrderDeadlineTurns} ходов");
+            report.Events.Add($"{o.Customer}: нужно {o.Amount} ({r.RuName()}) за {Balance.OrderDeadlineTurns} ходов, с доставкой");
         }
 
         /// <summary>Случайное открытие: новая планета попадает в реестр, её видят все, в том числе ИИ.</summary>
@@ -487,9 +721,10 @@ namespace PlanetTrader.Core
             {
                 var best = PlanetsForSale
                     .Where(p => !p.FoundByProbe)
-                    .OrderByDescending(p => p.MarketValue(Balance) / Math.Max(1, p.ListPrice(Balance)))
+                    // ИИ знает о планетах то же, что реестр.
+                    .OrderByDescending(p => p.EstimatedValue(Balance) / Math.Max(1, p.ListPrice(Balance)))
                     .FirstOrDefault();
-                if (best != null && best.MarketValue(Balance) > 0)
+                if (best != null && best.EstimatedValue(Balance) > 0)
                 {
                     best.Owner = Owner.Ai;
                     if (best.Mine == MineState.None) best.Mine = MineState.Working;

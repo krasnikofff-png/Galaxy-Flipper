@@ -7,7 +7,7 @@ using UnityEngine;
 namespace PlanetTrader.Client
 {
     /// <summary>
-    /// Прототип интерфейса на IMGUI: карта сектора, окно планеты, биржа, заказы, финансы и журнал.
+    /// Прототип интерфейса на IMGUI: карта сектора с разведкой, окно планеты, биржа, заказы, финансы и журнал.
     /// Вся экономика — в PlanetTrader.Core, здесь только показ и кнопки.
     /// </summary>
     public sealed class PlanetTraderApp : MonoBehaviour
@@ -25,7 +25,14 @@ namespace PlanetTrader.Client
         Tab _tab = Tab.Planet;
         readonly List<string> _log = new List<string>();
         Vector2 _logScroll, _panelScroll;
-        Texture2D _circle;
+        Texture2D _circle, _ring;
+
+        // Режим зонда: игрок выбирает тип и задание, потом кликает по карте.
+        bool _probeMode;
+        int _probeTypeIndex = 1;
+        ProbeMission _probeMission = ProbeMission.ScanArea;
+        /// <summary>Квадрат карты на экране: координаты 0..1 планет растягиваются на него.</summary>
+        Rect _mapArea;
 
         GUIStyle _text, _small, _title, _button, _mapLabel, _logText, _header;
         bool _stylesReady;
@@ -46,15 +53,24 @@ namespace PlanetTrader.Client
 
         void Update()
         {
-            if (_pending.Count == 0) return;
-            var actions = _pending.ToArray();
-            _pending.Clear();
-            foreach (var a in actions) a();
+            if (_pending.Count > 0)
+            {
+                var actions = _pending.ToArray();
+                _pending.Clear();
+                foreach (var a in actions) a();
+            }
+            // Сообщения ядра о том, что случилось во время действий (руины при покупке и т. п.).
+            if (_game.Notices.Count > 0)
+            {
+                foreach (var n in _game.Notices) Log(n);
+                _game.Notices.Clear();
+            }
         }
 
         void Awake()
         {
             _circle = MakeCircle(64);
+            _ring = MakeRing(256, 3);
             NewGame();
         }
 
@@ -69,6 +85,7 @@ namespace PlanetTrader.Client
             Log($"Новая партия. У вас ледяной карлик с шахтой, {Fmt.Money(b.StartMoney)} денег и долг {Fmt.Money(b.StartDebt)}.");
             Log($"За ход можно сделать {_game.ActionsPerTurn} действия: купить, построить шахту, продать планету, запустить зонд, нанять менеджера.");
             Log("Продажа ресурсов, заказы и кредит действий не тратят. Пробел или Enter — конец хода.");
+            Log("Серые планеты — силуэты: тип и запас неизвестны. Кнопка «Зонды» — скан области или полная разведка планеты.");
         }
 
         void Log(string message)
@@ -119,6 +136,11 @@ namespace PlanetTrader.Client
                 Later(EndTurn);
                 e.Use();
             }
+            else if (e.keyCode == KeyCode.Escape && _probeMode)
+            {
+                Later(() => _probeMode = false);
+                e.Use();
+            }
         }
 
         void EndTurn()
@@ -149,10 +171,9 @@ namespace PlanetTrader.Client
             Stat("Действия", $"{g.ActionsLeft}/{g.ActionsPerTurn}");
             GUILayout.FlexibleSpace();
 
-            GUI.enabled = g.ActionsLeft > 0 && g.Money >= g.Balance.ProbeCost;
-            if (GUILayout.Button($"Запустить зонд ({Fmt.Money(g.Balance.ProbeCost)})", _button, GUILayout.Height(34)))
-                Later(LaunchProbe);
-            GUI.enabled = true;
+            string probesLabel = g.Probes.Count > 0 ? $"Зонды ({g.Probes.Count} в полёте)" : "Зонды";
+            bool mode = GUILayout.Toggle(_probeMode, probesLabel, _button, GUILayout.Height(34));
+            if (mode != _probeMode) Later(() => _probeMode = mode);
             if (GUILayout.Button("Конец хода ▶", _button, GUILayout.Width(150), GUILayout.Height(34)))
                 Later(EndTurn);
             if (GUILayout.Button("Новая игра", _button, GUILayout.Width(120), GUILayout.Height(34)))
@@ -167,58 +188,169 @@ namespace PlanetTrader.Client
             GUILayout.Space(22);
         }
 
-        void LaunchProbe()
-        {
-            if (!Do(_game.LaunchProbe(out var found))) return;
-            if (found == null)
-            {
-                Log("Зонд ничего не нашёл.");
-                return;
-            }
-            Log($"Зонд нашёл планету {found.Type.Name} #{found.Id}. Её видите только вы, и покупка без надбавки аукциона.");
-            _selectedId = found.Id;
-            _tab = Tab.Planet;
-        }
-
         // ------------------------------------------------------------------
         // Карта
         // ------------------------------------------------------------------
 
+        Vector2 ToScreen(double x, double y) => new Vector2(_mapArea.x + (float)x * _mapArea.width, _mapArea.y + (float)y * _mapArea.height);
+
+        Vector2 ToMap(Vector2 screen) => new Vector2((screen.x - _mapArea.x) / _mapArea.width, (screen.y - _mapArea.y) / _mapArea.height);
+
+        ProbeType SelectedProbe => _game.Balance.ProbeTypes[Mathf.Clamp(_probeTypeIndex, 0, _game.Balance.ProbeTypes.Length - 1)];
+
         void DrawMap(Rect r)
         {
             GUI.Box(r, GUIContent.none);
-            const float pad = 40;
-            var area = new Rect(r.x + pad, r.y + pad, r.width - 2 * pad, r.height - 2 * pad - 30);
+            var g = _game;
+            var b = g.Balance;
+            // Карта квадратная, чтобы расстояния и радиусы на экране не искажались.
+            float top = _probeMode ? 48 : 16;
+            float side = Mathf.Min(r.width - 60, r.height - top - 46);
+            _mapArea = new Rect(r.x + (r.width - side) / 2, r.y + top + 6, side, side);
 
-            foreach (var p in _game.AllPlanets)
+            if (_probeMode)
             {
-                var center = new Vector2(area.x + (float)p.MapX * area.width, area.y + (float)p.MapY * area.height);
+                DrawProbeToolbar(new Rect(r.x + 12, r.y + 8, r.width - 24, 34));
+                // Дальность выбранного зонда от каждой точки запуска.
+                var probe = SelectedProbe;
+                DrawRing(new Vector2((float)b.ExchangeX, (float)b.ExchangeY), probe.Range, new Color(0.4f, 0.7f, 1f, 0.25f));
+                foreach (var own in g.PlayerPlanets)
+                    DrawRing(new Vector2((float)own.MapX, (float)own.MapY), probe.Range, new Color(0.4f, 0.7f, 1f, 0.25f));
+            }
+
+            // Биржа.
+            var ex = ToScreen(b.ExchangeX, b.ExchangeY);
+            var old = GUI.color;
+            GUI.color = new Color(0.95f, 0.85f, 0.4f);
+            GUI.DrawTexture(new Rect(ex.x - 9, ex.y - 9, 18, 18), Texture2D.whiteTexture);
+            GUI.color = old;
+            GUI.Label(new Rect(ex.x - 60, ex.y + 11, 120, 20), "Биржа", _mapLabel);
+
+            // Зонды в полёте: пунктир до цели и точка там, где зонд сейчас.
+            foreach (var pr in g.Probes)
+            {
+                var from = ToScreen(pr.FromX, pr.FromY);
+                var to = ToScreen(pr.TargetX, pr.TargetY);
+                for (float t = 0; t <= 1; t += 0.05f) DrawCircle(Vector2.Lerp(from, to, t), 1.5f, new Color(0.6f, 0.8f, 1f, 0.5f));
+                DrawCircle(Vector2.Lerp(from, to, (float)pr.Progress(g.Turn)), 5, new Color(0.6f, 0.9f, 1f));
+                if (pr.Mission == ProbeMission.ScanArea)
+                    DrawRing(new Vector2((float)pr.TargetX, (float)pr.TargetY), pr.Type.ScanRadius, new Color(0.6f, 0.9f, 1f, 0.6f));
+                int left = pr.ResolveTurn - g.Turn + 1;
+                GUI.Label(new Rect(to.x - 60, to.y - 26, 120, 20), $"зонд: {left} х.", _mapLabel);
+            }
+
+            foreach (var p in g.AllPlanets)
+            {
+                var center = ToScreen(p.MapX, p.MapY);
                 float radius = PlanetRadius(p);
 
                 if (p.Id == _selectedId) DrawCircle(center, radius + 9, Color.white);
                 DrawCircle(center, radius + 4, Fmt.OwnerColor(p.Owner, p.FoundByProbe));
-                var body = Fmt.ResourceColor(p.Resource);
+                var body = p.Knowledge == Knowledge.Silhouette ? new Color(0.35f, 0.37f, 0.42f) : Fmt.ResourceColor(p.Resource);
                 if (p.IsDepleted) body = Color.Lerp(body, new Color(0.15f, 0.15f, 0.18f), 0.75f);
                 DrawCircle(center, radius, body);
+                if (p.Knowledge == Knowledge.Explored && p.Owner != Owner.Player)
+                    DrawCircle(center, 3, Color.white);
 
                 string label = MapLabel(p);
                 if (label != null)
-                    GUI.Label(new Rect(center.x - 60, center.y + radius + 5, 120, 20), label, _mapLabel);
+                    GUI.Label(new Rect(center.x - 70, center.y + radius + 5, 140, 20), label, _mapLabel);
 
                 var hit = new Rect(center.x - radius - 6, center.y - radius - 6, 2 * radius + 12, 2 * radius + 12);
-                string tip = $"{p.Type.Name} #{p.Id}\n{p.Resource.RuName()}, {Fmt.OwnerName(p.Owner, p.FoundByProbe)}";
-                if (GUI.Button(hit, new GUIContent("", tip), GUIStyle.none))
+                if (GUI.Button(hit, new GUIContent("", PlanetTooltip(p)), GUIStyle.none))
                 {
                     int id = p.Id;
-                    Later(() =>
-                    {
-                        _selectedId = id;
-                        _tab = Tab.Planet;
-                    });
+                    if (_probeMode && _probeMission == ProbeMission.Explore)
+                        LaunchExplore(id);
+                    else if (_probeMode)
+                        LaunchScan(p.MapX, p.MapY);
+                    else
+                        Later(() =>
+                        {
+                            _selectedId = id;
+                            _tab = Tab.Planet;
+                        });
                 }
             }
 
+            if (_probeMode) HandleProbeCursor();
             DrawLegend(new Rect(r.x + 14, r.yMax - 32, r.width - 28, 24));
+        }
+
+        string PlanetTooltip(Planet p)
+        {
+            string name = p.Knowledge == Knowledge.Silhouette ? $"Силуэт #{p.Id}" : $"{p.Type.Name} #{p.Id}, {p.Resource.RuName()}";
+            string tip = $"{name}\n{Fmt.OwnerName(p.Owner, p.FoundByProbe)}";
+            if (_probeMode && _probeMission == ProbeMission.Explore && p.Knowledge != Knowledge.Explored && p.Owner != Owner.Player)
+                tip += "\n" + ProbeHint(p.MapX, p.MapY, ProbeMission.Explore);
+            return tip;
+        }
+
+        /// <summary>Строка о зонде к точке: долетит ли, за сколько ходов и за сколько денег.</summary>
+        string ProbeHint(double x, double y, ProbeMission mission)
+        {
+            var probe = SelectedProbe;
+            if (!_game.InRange(probe, x, y)) return $"«{probe.Name}» не долетит";
+            int turns = _game.ProbeTurns(probe, x, y, mission);
+            return $"«{probe.Name}»: {Fmt.Money(probe.Cost)}, результат через {turns} х.";
+        }
+
+        void DrawProbeToolbar(Rect r)
+        {
+            GUILayout.BeginArea(r);
+            GUILayout.BeginHorizontal();
+            var types = _game.Balance.ProbeTypes;
+            var names = types.Select(t => $"{t.Name} · {Fmt.Money(t.Cost)}").ToArray();
+            int index = GUILayout.Toolbar(_probeTypeIndex, names, _button, GUILayout.Height(30), GUILayout.Width(420));
+            if (index != _probeTypeIndex) Later(() => _probeTypeIndex = index);
+            GUILayout.Space(12);
+            int mission = GUILayout.Toolbar((int)_probeMission, new[] { "Скан области", "Разведка планеты" }, _button, GUILayout.Height(30), GUILayout.Width(300));
+            if (mission != (int)_probeMission) Later(() => _probeMission = (ProbeMission)mission);
+            GUILayout.FlexibleSpace();
+            if (GUILayout.Button("Готово", _button, GUILayout.Height(30), GUILayout.Width(90))) Later(() => _probeMode = false);
+            GUILayout.EndHorizontal();
+            GUILayout.EndArea();
+        }
+
+        /// <summary>В режиме скана под курсором — круг скана; клик по пустому месту запускает зонд.</summary>
+        void HandleProbeCursor()
+        {
+            var e = Event.current;
+            var mouse = e.mousePosition;
+            if (!_mapArea.Contains(mouse) || _probeMission != ProbeMission.ScanArea) return;
+            var point = ToMap(mouse);
+            var probe = SelectedProbe;
+            bool reach = _game.InRange(probe, point.x, point.y);
+            DrawRing(point, probe.ScanRadius, reach ? new Color(0.5f, 1f, 0.6f, 0.8f) : new Color(1f, 0.4f, 0.4f, 0.8f));
+            GUI.Label(new Rect(mouse.x + 14, mouse.y - 22, 320, 20), ProbeHint(point.x, point.y, ProbeMission.ScanArea), _small);
+            if (e.type == EventType.MouseDown && e.button == 0)
+            {
+                LaunchScan(point.x, point.y);
+                e.Use();
+            }
+        }
+
+        void LaunchScan(double x, double y)
+        {
+            var probe = SelectedProbe;
+            Act(() => _game.LaunchScan(probe, x, y), $"Зонд «{probe.Name}» отправлен сканировать область.");
+        }
+
+        void LaunchExplore(int planetId)
+        {
+            var probe = SelectedProbe;
+            Act(() => _game.LaunchExplore(probe, planetId), $"Зонд «{probe.Name}» отправлен на разведку планеты #{planetId}.");
+        }
+
+        /// <summary>Кольцо радиусом radius в координатах карты.</summary>
+        void DrawRing(Vector2 mapCenter, double radius, Color color)
+        {
+            var c = ToScreen(mapCenter.x, mapCenter.y);
+            float w = (float)radius * _mapArea.width, h = (float)radius * _mapArea.height;
+            var old = GUI.color;
+            GUI.color = color;
+            GUI.DrawTexture(new Rect(c.x - w, c.y - h, 2 * w, 2 * h), _ring);
+            GUI.color = old;
         }
 
         static float PlanetRadius(Planet p)
@@ -229,11 +361,14 @@ namespace PlanetTrader.Client
 
         string MapLabel(Planet p)
         {
+            string marks = "";
+            if (p.Knowledge == Knowledge.Explored && p.HasUnlootedRuins) marks += " · руины";
+            if (p.Knowledge == Knowledge.Explored && p.Inhabited) marks += " · жители";
             switch (p.Owner)
             {
-                case Owner.Player: return p.IsDepleted ? "ВЫ · пусто" : "ВЫ";
+                case Owner.Player: return (p.IsDepleted ? "ВЫ · пусто" : "ВЫ") + marks;
                 case Owner.Ai: return "ИИ";
-                default: return p.IsDepleted ? null : Fmt.Money(p.ListPrice(_game.Balance));
+                default: return p.IsDepleted ? null : Fmt.Money(p.ListPrice(_game.Balance)) + marks;
             }
         }
 
@@ -244,6 +379,7 @@ namespace PlanetTrader.Client
             x = LegendItem(x, r.y, Fmt.OwnerColor(Owner.Ai, false), "ИИ");
             x = LegendItem(x, r.y, Fmt.OwnerColor(Owner.Registry, false), "аукцион (цена)");
             x = LegendItem(x, r.y, Fmt.OwnerColor(Owner.Registry, true), "нашёл ваш зонд");
+            x = LegendItem(x, r.y, new Color(0.35f, 0.37f, 0.42f), "силуэт");
             x += 20;
             foreach (var res in ResourceTypes.All)
                 x = LegendItem(x, r.y, Fmt.ResourceColor(res), res.RuName());
@@ -315,18 +451,42 @@ namespace PlanetTrader.Client
 
             var g = _game;
             var b = g.Balance;
-            GUILayout.Label($"{p.Type.Name} #{p.Id}", _title);
+            bool silhouette = p.Knowledge == Knowledge.Silhouette;
+            bool exact = p.Owner == Owner.Player || p.Knowledge == Knowledge.Explored;
+
+            GUILayout.Label(silhouette ? $"Силуэт #{p.Id}" : $"{p.Type.Name} #{p.Id}", _title);
             Line("Владелец", Fmt.OwnerName(p.Owner, p.FoundByProbe));
-            Line("Ресурс", $"{p.Resource.RuName()}, на бирже сейчас {Fmt.Money(g.Market.Price(p.Resource))} за ед.");
-            Line("Запас", $"{Fmt.Amount(p.Reserve)} из {Fmt.Amount(p.InitialReserve)}");
-            DrawBar(p.InitialReserve > 0 ? (float)(p.Reserve / p.InitialReserve) : 0);
-            Line("Добыча", $"{Fmt.Amount(p.Type.OutputPerTurn)} за ход, хватит на {Fmt.Amount(p.RemainingTurns)} х.");
-            Line("Шахта", Fmt.MineName(p));
-            if (p.Owner == Owner.Player)
-                Line("Содержание", $"{Fmt.Money(g.PlanetUpkeep(p))} за ход ({Fmt.Multiplier(g.UpkeepMultiplierNow)} за число планет)");
-            else
-                Line("Содержание", $"{Fmt.Money(p.Type.Upkeep)} за ход, без множителя");
-            Line("Рыночная стоимость", Fmt.Money(p.MarketValue(b)));
+            Line("Знание", silhouette ? "силуэт: тип и запас неизвестны" : exact ? "полная разведка" : "скан: тип и оценка реестра");
+            Line("До биржи", $"{Fmt.Amount(g.DistanceToExchange(p) * 10)} св. лет, груз идёт {g.ShipTurns(p)} х.");
+
+            if (!silhouette)
+            {
+                Line("Ресурс", $"{p.Resource.RuName()}, на бирже сейчас {Fmt.Money(g.Market.Price(p.Resource))} за ед.");
+                if (exact)
+                {
+                    Line("Запас", $"{Fmt.Amount(p.Reserve)} из {Fmt.Amount(p.InitialReserve)}");
+                    DrawBar(p.InitialReserve > 0 ? (float)(p.Reserve / p.InitialReserve) : 0);
+                }
+                else
+                    Line("Запас", $"≈ {Fmt.Amount(p.EstimatedReserve)} по оценке реестра (может врать)");
+                double known = g.KnownReserve(p) ?? 0;
+                Line("Добыча", $"{Fmt.Amount(p.Type.OutputPerTurn)} за ход, хватит на {(exact ? "" : "≈ ")}{Fmt.Amount(known / p.Type.OutputPerTurn)} х.");
+                Line("Шахта", Fmt.MineName(p));
+                if (p.Owner == Owner.Player)
+                    Line("Содержание", $"{Fmt.Money(g.PlanetUpkeep(p))} за ход ({Fmt.Multiplier(g.UpkeepMultiplierNow)} за число планет)");
+                else
+                    Line("Содержание", $"{Fmt.Money(p.Type.Upkeep)} за ход, без множителя");
+                Line(exact ? "Рыночная стоимость" : "Стоимость по оценке", Fmt.Money(g.KnownValue(p) ?? 0));
+                if (p.Knowledge == Knowledge.Explored || p.Owner == Owner.Player)
+                {
+                    var surprises = new List<string>();
+                    if (p.HasUnlootedRuins) surprises.Add($"руины с артефактами на {Fmt.Money(p.RuinsValue)}");
+                    if (p.RuinsLooted) surprises.Add("руины разграблены");
+                    if (p.Inhabited) surprises.Add("жители (появятся на этапе 4)");
+                    if (p.Reserve < 0.6 * p.EstimatedReserve) surprises.Add("подвох: реестр завысил запас");
+                    Line("Сюрпризы", surprises.Count == 0 ? "нет" : string.Join(", ", surprises));
+                }
+            }
             GUILayout.Space(12);
 
             switch (p.Owner)
@@ -340,11 +500,13 @@ namespace PlanetTrader.Client
                     double price = p.ListPrice(b);
                     string note = p.FoundByProbe ? "без надбавки: её нашёл ваш зонд" : $"с надбавкой аукциона {Fmt.Percent(b.AuctionMarkup)}";
                     if (p.Mine == MineState.Working) note += ", шахта уже стоит";
-                    GUILayout.Label($"Цена {Fmt.Money(price)} ({note}).", _text);
+                    GUILayout.Label($"Цена {Fmt.Money(price)} ({note}). Реестр считает цену по своей оценке запаса.", _text);
                     if (p.Mine == MineState.None)
                         GUILayout.Label($"Потом шахта: {Fmt.Money(p.Type.MineCost)} и {b.MineBuildTurns} хода постройки.", _small);
-                    if (ActionButton($"Купить за {Fmt.Money(price)} · 1 действие", g.ActionsLeft > 0 && g.Money >= price))
+                    string blind = silhouette ? " вслепую" : exact ? "" : " по оценке";
+                    if (ActionButton($"Купить{blind} за {Fmt.Money(price)} · 1 действие", g.ActionsLeft > 0 && g.Money >= price))
                         Act(() => g.BuyPlanet(p.Id), $"Куплена планета {p.Type.Name} #{p.Id} за {Fmt.Money(price)}.");
+                    DrawExploreButtons(p);
                     break;
 
                 case Owner.Player:
@@ -363,7 +525,33 @@ namespace PlanetTrader.Client
 
                 case Owner.Ai:
                     GUILayout.Label("Планета ИИ-магната. Купить её можно, когда он выставит её на аукцион.", _text);
+                    DrawExploreButtons(p);
                     break;
+            }
+        }
+
+        /// <summary>Кнопки полной разведки — по одной на тип зонда, с ценой и сроком.</summary>
+        void DrawExploreButtons(Planet p)
+        {
+            if (p.Knowledge == Knowledge.Explored) return;
+            var g = _game;
+            GUILayout.Space(8);
+            if (g.ProbeHeadingTo(p.Id))
+            {
+                GUILayout.Label("К планете уже летит зонд.", _small);
+                return;
+            }
+            GUILayout.Label("Полная разведка покажет точный запас, подвохи и руины:", _small);
+            foreach (var t in g.Balance.ProbeTypes)
+            {
+                bool reach = g.InRange(t, p.MapX, p.MapY);
+                string text = reach
+                    ? $"Разведать зондом «{t.Name}» за {Fmt.Money(t.Cost)} · {g.ProbeTurns(t, p.MapX, p.MapY, ProbeMission.Explore)} х., 1 действие"
+                    : $"«{t.Name}» не долетит";
+                var probe = t;
+                int id = p.Id;
+                if (ActionButton(text, reach && g.ActionsLeft > 0 && g.Money >= t.Cost))
+                    Act(() => g.LaunchExplore(probe, id), $"Зонд «{probe.Name}» отправлен на разведку планеты #{id}.");
             }
         }
 
@@ -386,7 +574,7 @@ namespace PlanetTrader.Client
             var g = _game;
             GUILayout.BeginHorizontal();
             GUILayout.Label("Ресурс", _header, GUILayout.Width(110));
-            GUILayout.Label("Склад", _header, GUILayout.Width(70));
+            GUILayout.Label("Склад", _header, GUILayout.Width(90));
             GUILayout.Label("Цена", _header, GUILayout.Width(110));
             GUILayout.Label("Продать", _header);
             GUILayout.EndHorizontal();
@@ -400,7 +588,8 @@ namespace PlanetTrader.Client
 
                 GUILayout.BeginHorizontal();
                 GUILayout.Label(r.RuName(), _text, GUILayout.Width(110));
-                GUILayout.Label(Fmt.Amount(stock), _text, GUILayout.Width(70));
+                double transit = g.InTransit(r);
+                GUILayout.Label(transit > 0 ? $"{Fmt.Amount(stock)} <color=#8a93a6>+{Fmt.Amount(transit)}</color>" : Fmt.Amount(stock), _text, GUILayout.Width(90));
                 GUILayout.Label($"{Fmt.Money(price)} {trend}", _text, GUILayout.Width(110));
 
                 double half = Math.Floor(stock / 2);
@@ -420,7 +609,8 @@ namespace PlanetTrader.Client
             GUILayout.Label(
                 $"Каждая продажа роняет цену: на {Fmt.Percent(b.SalesImpact)}, если продать столько, сколько составляет глубина рынка. " +
                 $"За ход цена возвращается к базовой на {Fmt.Percent(b.PriceRecovery)} разрыва. " +
-                "Глубина: " + string.Join(", ", ResourceTypes.All.Select(r => $"{r.RuName()} {Fmt.Amount(b.Depth(r))}")) + ".",
+                "Глубина: " + string.Join(", ", ResourceTypes.All.Select(r => $"{r.RuName()} {Fmt.Amount(b.Depth(r))}")) + ". " +
+                "Серым после склада — груз в пути с дальних планет.",
                 _small);
         }
 
@@ -436,19 +626,21 @@ namespace PlanetTrader.Client
             foreach (var o in g.Orders.ToList())
             {
                 double have = g.Stock(o.Resource);
-                int turnsLeft = o.DeadlineTurn - g.Turn + 1;
+                int turnsLeft = o.DeadlineTurn - g.Turn;
+                bool reachable = g.OrderReachable(o);
                 GUILayout.BeginVertical(GUI.skin.box);
                 GUILayout.Label($"<b>{o.Customer}</b>: {Fmt.Amount(o.Amount)} ({o.Resource.RuName()})", _text);
-                GUILayout.Label($"Осталось ходов: {turnsLeft}. Заплатят ≈ {Fmt.Money(o.Payout(g.Market, g.Balance))} " +
-                                $"(×{g.Balance.OrderMarkup} к бирже). На складе {Fmt.Amount(have)}.", _small);
-                if (ActionButton("Выполнить", have >= o.Amount))
+                GUILayout.Label($"Срок через {turnsLeft} х., доставка {g.DeliveryTurns(o)} х. за {Fmt.Money(g.DeliveryCost(o))}. " +
+                                $"Заплатят ≈ {Fmt.Money(o.GrossPayout(g.Market, g.Balance))} (×{g.Balance.OrderMarkup} к бирже), " +
+                                $"на руки ≈ {Fmt.Money(g.OrderNetPayout(o))}. На складе {Fmt.Amount(have)}.", _small);
+                if (ActionButton(reachable ? "Отправить" : "Не успеть к сроку", reachable && have >= o.Amount))
                 {
                     var order = o;
                     Later(() =>
                     {
-                        double payout = order.Payout(g.Market, g.Balance);
+                        double payout = g.OrderNetPayout(order);
                         if (Do(g.FulfillOrder(order.Id)))
-                            Log($"Заказ выполнен: {order.Customer} заплатил {Fmt.Money(payout)}.");
+                            Log($"Заказ отправлен: {order.Customer} заплатил {Fmt.Money(payout)} за вычетом доставки.");
                     });
                 }
                 GUILayout.EndVertical();
@@ -507,6 +699,7 @@ namespace PlanetTrader.Client
             Line("Зарплаты", Fmt.Money(g.Managers * b.ManagerSalary));
             Line("Проценты", Fmt.Money(g.Debt * b.InterestPerTurn));
             Line("Страховка", Fmt.Money(g.InsurancePerTurn));
+            Line("Доставка на биржу", Fmt.Money(g.ShippingPerTurn));
             Line("<b>Итого</b>", $"<b>{Fmt.Money(g.CostsPerTurn)}</b>");
         }
 
@@ -553,6 +746,24 @@ namespace PlanetTrader.Client
             _mapLabel = new GUIStyle(_small) { alignment = TextAnchor.UpperCenter, fontSize = 12 };
             _logText = new GUIStyle(_text) { fontSize = 14 };
             _stylesReady = true;
+        }
+
+        /// <summary>Белое кольцо толщиной thickness пикселей со сглаженными краями.</summary>
+        static Texture2D MakeRing(int size, float thickness)
+        {
+            var tex = new Texture2D(size, size, TextureFormat.RGBA32, false) { filterMode = FilterMode.Bilinear, wrapMode = TextureWrapMode.Clamp };
+            float r = size / 2f - 1;
+            var pixels = new Color32[size * size];
+            for (int y = 0; y < size; y++)
+            for (int x = 0; x < size; x++)
+            {
+                float d = Vector2.Distance(new Vector2(x + 0.5f, y + 0.5f), new Vector2(size / 2f, size / 2f));
+                float a = Mathf.Clamp01(thickness / 2 - Mathf.Abs(d - (r - thickness / 2)) + 0.5f);
+                pixels[y * size + x] = new Color32(255, 255, 255, (byte)(a * 255));
+            }
+            tex.SetPixels32(pixels);
+            tex.Apply();
+            return tex;
         }
 
         /// <summary>Белый круг со сглаженным краем; цвет задаётся через GUI.color.</summary>
