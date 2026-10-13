@@ -24,7 +24,10 @@ namespace PlanetTrader.Core
         public readonly PlanetType Type;
         public double Reserve;
         public readonly double InitialReserve;
-        public Owner Owner;
+        /// <summary>Корпорация-владелец; null — планета в реестре.</summary>
+        public Corporation OwnerCorp;
+        /// <summary>Кто владеет: реестр, игрок (любой, если игроков несколько) или ИИ-магнат.</summary>
+        public Owner Owner => OwnerCorp == null ? Owner.Registry : OwnerCorp.IsAi ? Owner.Ai : Owner.Player;
         public MineState Mine;
         public int BuildTurnsLeft;
         public int AccidentTurnsLeft;
@@ -57,7 +60,7 @@ namespace PlanetTrader.Core
         /// <summary>До какого хода жители не хотят разговаривать после отказа.</summary>
         public int NoTalksUntilTurn;
         /// <summary>Какой магнат владеет планетой; −1 — не магнат.</summary>
-        public int MagnateId = -1;
+        public int MagnateId => OwnerCorp?.Magnate?.Id ?? -1;
         /// <summary>Охрана против подкупа жителей.</summary>
         public bool Guarded;
         /// <summary>Сколько ещё ходов идёт эпидемия: добыча вполовину.</summary>

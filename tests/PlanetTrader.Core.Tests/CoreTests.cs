@@ -850,6 +850,38 @@ public class MagnateTests
     }
 
     [Fact]
+    public void CoopPlayersHaveSeparateCorporations()
+    {
+        var b = NoTricks();
+        var g = Game.New(b, 6, players: 2);
+        var players = g.Players.ToList();
+        Assert.Equal(2, players.Count);
+        Assert.Single(g.PlayerPlanets);
+        var mine = g.PlayerPlanets.Single();
+
+        g.SetCurrent(players[1].Id);
+        Assert.Single(g.PlayerPlanets);
+        var theirs = g.PlayerPlanets.Single();
+        Assert.NotEqual(mine.Id, theirs.Id);
+        Assert.False(g.BuildMine(mine.Id).Ok); // чужая планета
+        Assert.True(g.HireManager().Ok);
+        Assert.Equal(1, g.Managers);
+
+        g.SetCurrent(players[0].Id);
+        Assert.Equal(0, g.Managers);
+        double money0 = g.Money;
+        g.EndTurn();
+        // Ход посчитан обоим: у второго добыча легла на его склад и зарплата менеджеру списана.
+        Assert.Equal(2, g.Turn);
+        Assert.True(g.LastReports.ContainsKey(players[1].Id));
+        Assert.True(g.LastReports[players[1].Id].Salaries > 0);
+        Assert.Equal(0, g.LastReports[players[0].Id].Salaries);
+        g.SetCurrent(players[1].Id);
+        Assert.True(g.Stock(Resource.Ice) + g.InTransit(Resource.Ice) > 0);
+        Assert.Equal(g.ActionsPerTurn, g.ActionsLeft);
+    }
+
+    [Fact]
     public void BigSectorGetsGeneratedMagnates()
     {
         var b = NoTricks();

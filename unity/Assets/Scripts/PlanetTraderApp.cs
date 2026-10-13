@@ -387,8 +387,10 @@ namespace PlanetTrader.Client
         }
 
         /// <summary>Цвет кольца: владелец, у магнатов — свой цвет у каждого.</summary>
-        static Color RingColor(Planet p) =>
-            p.Owner == Owner.Ai && p.MagnateId == 1 ? new Color(1f, 0.6f, 0.15f) : Fmt.OwnerColor(p.Owner, p.FoundByProbe);
+        static Color RingColor(Planet p) => RingColor(p.Owner, p.MagnateId, p.FoundByProbe);
+
+        static Color RingColor(Owner owner, int magnateId, bool foundByProbe) =>
+            owner == Owner.Ai && magnateId == 1 ? new Color(1f, 0.6f, 0.15f) : Fmt.OwnerColor(owner, foundByProbe);
 
         string PlanetTooltip(Planet p)
         {
@@ -494,7 +496,7 @@ namespace PlanetTrader.Client
             float x = r.x;
             x = LegendItem(x, r.y, Fmt.OwnerColor(Owner.Player, false), "ваши");
             foreach (var m in _game.Magnates)
-                x = LegendItem(x, r.y, RingColor(new Planet(-1, _game.Balance.PlanetTypes[0], 0) { Owner = Owner.Ai, MagnateId = m.Id }), m.Name.Split(' ')[0]);
+                x = LegendItem(x, r.y, RingColor(Owner.Ai, m.Id, false), m.Name.Split(' ')[0]);
             x = LegendItem(x, r.y, Fmt.OwnerColor(Owner.Registry, false), "свободна (цена)");
             x = LegendItem(x, r.y, Fmt.OwnerColor(Owner.Registry, true), "нашёл ваш зонд");
             x = LegendItem(x, r.y, new Color(0.35f, 0.37f, 0.42f), "силуэт");
@@ -1110,10 +1112,10 @@ namespace PlanetTrader.Client
 
                 double half = Math.Floor(stock / 2);
                 GUI.enabled = half >= 1;
-                if (GUILayout.Button($"½ ≈ {Fmt.Money(g.Market.Quote(r, half))}", _button, GUILayout.Width(120), GUILayout.Height(30)))
+                if (GUILayout.Button($"½ ≈ {Fmt.Money(g.Quote(r, half))}", _button, GUILayout.Width(120), GUILayout.Height(30)))
                     Act(() => g.SellResource(r, half), $"Продано {Fmt.Amount(half)} ({r.RuName()}).");
                 GUI.enabled = stock > 0;
-                double revenue = g.Market.Quote(r, stock);
+                double revenue = g.Quote(r, stock);
                 if (GUILayout.Button($"всё ≈ {Fmt.Money(revenue)}", _button, GUILayout.Width(130), GUILayout.Height(30)))
                     Act(() => g.SellResource(r, stock), $"Продано {Fmt.Amount(stock)} ({r.RuName()}) за {Fmt.Money(revenue)}.");
                 GUI.enabled = true;

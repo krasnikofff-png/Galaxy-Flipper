@@ -38,8 +38,19 @@ namespace PlanetTrader.Core
         public double[] TrickWeights;
         /// <summary>До этого хода магнат отбивается от слухов: не покупает и не пакостит.</summary>
         public int QuietUntilTurn;
+        /// <summary>Корпорация магната: казна, планеты, статистика — как у игрока.</summary>
+        public Corporation Corp;
+        double _money;
         /// <summary>Казна: магнат покупает планеты, подкупает и учит жителей на свои деньги.</summary>
-        public double Money;
+        public double Money
+        {
+            get => Corp?.Money ?? _money;
+            set
+            {
+                if (Corp != null) Corp.Money = value;
+                else _money = value;
+            }
+        }
         /// <summary>Чистый доход за прошлый ход: добыча и умственный труд минус содержание.</summary>
         public double LastIncome;
         /// <summary>Поступки игрока, о которых магнат уже высказался.</summary>
@@ -62,7 +73,7 @@ namespace PlanetTrader.Core
             Personality == Personality.Greedy ? "жадный" : Personality == Personality.Chaotic ? "хаотичная" : "осторожная";
 
         /// <summary>Своя копия на партию: у магната есть состояние, а баланс общий.</summary>
-        public Magnate Clone() => new Magnate(Id, Name, Personality, TrickChance, AuctionInterest, BidMin, BidMax, (double[])TrickWeights.Clone()) { Money = Money };
+        public Magnate Clone() => new Magnate(Id, Name, Personality, TrickChance, AuctionInterest, BidMin, BidMax, (double[])TrickWeights.Clone());
 
         static readonly string[] FirstNames = { "Борис", "Ада", "Ксенон", "Луиза", "Орфей", "Глория", "Тимур", "Нова", "Платон", "Вега", "Феликс", "Ирма" };
         static readonly string[] LastNames = { "Кометов", "Пылесосова", "Червоточкин", "Астероидова", "Гравицкий", "Туманова", "Орбитов", "Квазарова", "Метеоров", "Спутникова" };

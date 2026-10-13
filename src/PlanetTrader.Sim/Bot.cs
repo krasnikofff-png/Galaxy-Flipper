@@ -143,12 +143,12 @@ namespace PlanetTrader.Sim
                 if (stock <= 0) continue;
 
                 // Сколько можно продать, не уронив цену ниже порога.
-                double share = stock > 2 * g.Market.Depth(r) ? DumpPriceShare : MinSellPriceShare;
+                double share = stock > 2 * g.MarketDepth(r) ? DumpPriceShare : MinSellPriceShare;
                 double floor = share * g.Balance.BasePrice(r);
                 double price = g.Market.Price(r);
                 if (price <= floor) continue;
                 double maxDrop = 1 - floor / price;
-                double maxAmount = maxDrop / g.Balance.SalesImpact * g.Market.Depth(r);
+                double maxAmount = maxDrop / g.Balance.SalesImpact * g.MarketDepth(r);
                 double amount = Math.Min(stock, maxAmount);
                 if (amount > 0.5) g.SellResource(r, amount);
             }

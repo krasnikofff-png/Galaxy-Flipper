@@ -41,7 +41,13 @@ namespace PlanetTrader.Core
         public int Accidents;
         /// <summary>Сколько планет забрали коллекторы.</summary>
         public int Seizures;
-        public readonly List<string> Events = new List<string>();
+        /// <summary>События хода. У игроков кооператива список общий.</summary>
+        public readonly List<string> Events;
+
+        public TurnReport(List<string> events = null)
+        {
+            Events = events ?? new List<string>();
+        }
 
         public double TotalCosts => Upkeep + Salaries + Interest + Insurance + Shipping + Wages + Guards;
     }
@@ -73,11 +79,14 @@ namespace PlanetTrader.Core
         readonly List<Planet> _planets = new List<Planet>();
         readonly List<Order> _orders = new List<Order>();
         readonly List<Probe> _probes = new List<Probe>();
-        readonly List<Shipment> _shipments = new List<Shipment>();
+        List<Shipment> _shipments => _current.Shipments;
         readonly List<ResidentRequest> _requests = new List<ResidentRequest>();
         readonly List<Magnate> _magnates;
         readonly List<BribeAttempt> _bribes = new List<BribeAttempt>();
-        readonly double[] _stock = new double[ResourceTypes.Count];
+        double[] _stock => _current.Stock;
+        readonly List<Corporation> _corps = new List<Corporation>();
+        /// <summary>Корпорация, от имени которой сейчас выполняются действия и считается её часть хода.</summary>
+        Corporation _current;
         int _nextPlanetId;
         int _nextOrderId;
         int _nextProbeId;
@@ -91,25 +100,44 @@ namespace PlanetTrader.Core
         public readonly List<string> Notices = new List<string>();
 
         public int Turn { get; private set; } = 1;
-        public double Money { get; private set; }
-        public double Debt { get; private set; }
-        public int Managers { get; private set; }
-        public int ActionsLeft { get; private set; }
-        public bool Insured { get; private set; }
+
+        /// <summary>Все корпорации партии: игроков (сначала) и магнатов.</summary>
+        public IReadOnlyList<Corporation> Corporations => _corps;
+        /// <summary>Корпорации игроков. В одиночной игре — одна.</summary>
+        public IEnumerable<Corporation> Players => _corps.Where(c => !c.IsAi);
+        /// <summary>Корпорация, от имени которой выполняются действия. Деньги, планеты, склад и т. п. ниже — её.</summary>
+        public Corporation Current => _current;
+
+        /// <summary>Действовать от имени другого игрока (кооператив): его деньги, планеты, действия.</summary>
+        public void SetCurrent(int corporationId)
+        {
+            var c = _corps.FirstOrDefault(x => x.Id == corporationId && !x.IsAi);
+            if (c == null) throw new ArgumentException("Нет такого игрока: " + corporationId);
+            _current = c;
+        }
+
+        /// <summary>Своя планета — принадлежит текущей корпорации.</summary>
+        public bool IsMine(Planet p) => p != null && p.OwnerCorp == _current;
+
+        public double Money { get => _current.Money; private set => _current.Money = value; }
+        public double Debt { get => _current.Debt; private set => _current.Debt = value; }
+        public int Managers { get => _current.Managers; private set => _current.Managers = value; }
+        public int ActionsLeft { get => _current.ActionsLeft; private set => _current.ActionsLeft = value; }
+        public bool Insured { get => _current.Insured; private set => _current.Insured = value; }
         /// <summary>Репутация 0–100: грязные дела её портят, выполненные заказы чинят.</summary>
-        public double Reputation { get; private set; }
+        public double Reputation { get => _current.Reputation; private set => _current.Reputation = value; }
         /// <summary>Сезонное событие, которое идёт сейчас; null — затишье.</summary>
         public ActiveEvent CurrentEvent { get; private set; }
         /// <summary>С какого хода может начаться следующее событие.</summary>
         public int NextEventTurn => _nextEventTurn;
 
         // Статистика для симулятора и плейтестов.
-        public int TotalSeizures { get; private set; }
-        public int TurnsActionsExhausted { get; private set; }
-        public int PlanetsLostToBribes { get; private set; }
-        public int AuctionsWon { get; private set; }
-        public int AuctionsLost { get; private set; }
-        public double FinesPaid { get; private set; }
+        public int TotalSeizures { get => _current.TotalSeizures; private set => _current.TotalSeizures = value; }
+        public int TurnsActionsExhausted { get => _current.TurnsActionsExhausted; private set => _current.TurnsActionsExhausted = value; }
+        public int PlanetsLostToBribes { get => _current.PlanetsLostToBribes; private set => _current.PlanetsLostToBribes = value; }
+        public int AuctionsWon { get => _current.AuctionsWon; private set => _current.AuctionsWon = value; }
+        public int AuctionsLost { get => _current.AuctionsLost; private set => _current.AuctionsLost = value; }
+        public double FinesPaid { get => _current.FinesPaid; private set => _current.FinesPaid = value; }
         public readonly List<Planet> SoldPlanets = new List<Planet>();
 
         public IReadOnlyList<Planet> AllPlanets => _planets;
@@ -124,8 +152,8 @@ namespace PlanetTrader.Core
 
         /// <summary>Магнаты, которые не отбиваются от слухов.</summary>
         IEnumerable<Magnate> ActiveMagnates => _magnates.Where(m => Turn >= m.QuietUntilTurn);
-        public IEnumerable<Planet> PlayerPlanets => _planets.Where(p => p.Owner == Owner.Player);
-        public int PlayerPlanetCount => _planets.Count(p => p.Owner == Owner.Player);
+        public IEnumerable<Planet> PlayerPlanets => _planets.Where(p => p.OwnerCorp == _current);
+        public int PlayerPlanetCount => _planets.Count(p => p.OwnerCorp == _current);
 
         /// <summary>Планеты, которые игрок может купить прямо сейчас.</summary>
         public IEnumerable<Planet> PlanetsForSale => _planets.Where(p => p.Owner == Owner.Registry && !p.IsDepleted);
@@ -154,15 +182,25 @@ namespace PlanetTrader.Core
                 while (_magnates.Count < wanted)
                     _magnates.Add(Magnate.Generate(_magnates.Count, balance.Magnates[_magnates.Count % balance.Magnates.Length], nameRng));
             }
-            foreach (var m in _magnates) m.Money = balance.MagnateStartMoney;
-            Reputation = balance.StartReputation;
         }
 
-        public static Game New(Balance balance, ulong seed)
+        /// <summary>Новая партия. players — сколько игроков (больше одного — кооператив): у каждого своя корпорация и стартовая планета.</summary>
+        public static Game New(Balance balance, ulong seed, int players = 1)
         {
             var g = new Game(balance, seed);
-            g.Money = balance.StartMoney;
-            g.Debt = balance.StartDebt;
+            for (int i = 0; i < Math.Max(1, players); i++)
+                g._corps.Add(new Corporation(i, i == 0 ? "Вы" : $"Игрок {i + 1}")
+                {
+                    Money = balance.StartMoney,
+                    Debt = balance.StartDebt,
+                    Reputation = balance.StartReputation,
+                });
+            foreach (var m in g._magnates)
+            {
+                m.Corp = new Corporation(g._corps.Count, m.Name) { Magnate = m, Money = balance.MagnateStartMoney, Reputation = balance.StartReputation };
+                g._corps.Add(m.Corp);
+            }
+            g._current = g._corps[0];
 
             for (int i = 0; i < balance.SectorPlanets; i++)
                 g._planets.Add(g.GeneratePlanet(g.RandomType()));
@@ -171,28 +209,33 @@ namespace PlanetTrader.Core
             int k = 0;
             foreach (var p in g._planets.OrderBy(_ => g._rng.NextULong()).Take(aiCount))
             {
-                p.Owner = Owner.Ai;
+                if (g._magnates.Count == 0) break;
+                p.OwnerCorp = g._magnates[k++ % g._magnates.Count].Corp;
                 p.Mine = MineState.Working;
-                p.MagnateId = g._magnates.Count == 0 ? -1 : g._magnates[k++ % g._magnates.Count].Id;
             }
 
-            // Стартовая планета: скромный ледяной карлик со средним запасом и работающей шахтой.
-            var start = new Planet(g._nextPlanetId++, balance.TypeOf(Resource.Ice), balance.TypeOf(Resource.Ice).AverageReserve)
+            // Стартовая планета каждого игрока: скромный ледяной карлик со средним запасом и работающей шахтой.
+            // Игроки кооператива видят сектор вместе.
+            foreach (var corp in g.Players.ToList())
             {
-                Owner = Owner.Player,
-                Mine = balance.StartPlanetHasMine ? MineState.Working : MineState.None,
-                BoughtOnTurn = 0,
-            };
-            g.PlaceOnMap(start);
-            start.Knowledge = Knowledge.Explored;
-            g._planets.Add(start);
+                var start = new Planet(g._nextPlanetId++, balance.TypeOf(Resource.Ice), balance.TypeOf(Resource.Ice).AverageReserve)
+                {
+                    OwnerCorp = corp,
+                    Mine = balance.StartPlanetHasMine ? MineState.Working : MineState.None,
+                    BoughtOnTurn = 0,
+                };
+                g.PlaceOnMap(start);
+                start.Knowledge = Knowledge.Explored;
+                g._planets.Add(start);
 
-            // Окрестности своей планеты игрок знает по скану, остальное — силуэты.
-            foreach (var p in g._planets)
-                if (p != start && Geometry.Distance(p.MapX, p.MapY, start.MapX, start.MapY) <= balance.StartScanRadius)
-                    p.Knowledge = Knowledge.Scanned;
-
-            g.ActionsLeft = g.ActionsPerTurn;
+                // Окрестности своей планеты игрок знает по скану, остальное — силуэты.
+                foreach (var p in g._planets)
+                    if (p != start && p.Knowledge == Knowledge.Silhouette && Geometry.Distance(p.MapX, p.MapY, start.MapX, start.MapY) <= balance.StartScanRadius)
+                        p.Knowledge = Knowledge.Scanned;
+                g._current = corp;
+                g.ActionsLeft = g.ActionsPerTurn;
+            }
+            g._current = g._corps[0];
             return g;
         }
 
@@ -277,7 +320,13 @@ namespace PlanetTrader.Core
 
         public double PlanetsValue => PlayerPlanets.Sum(p => p.MarketValue(Balance));
         /// <summary>Склад и грузы в пути по выручке, если продать всё разом, — с учётом падения цены.</summary>
-        public double StockValue => ResourceTypes.All.Sum(r => Market.Quote(r, _stock[(int)r] + InTransit(r)));
+        public double StockValue => ResourceTypes.All.Sum(r => Quote(r, _stock[(int)r] + InTransit(r)));
+
+        /// <summary>Экономисты текущего игрока делают рынок для него глубже.</summary>
+        public double MarketDepthFactor => 1 + SpecialtyBonus(Specialty.Economists);
+        public double MarketDepth(Resource r) => Market.Depth(r, MarketDepthFactor);
+        /// <summary>Сколько текущий игрок выручит за amount с учётом падения цены.</summary>
+        public double Quote(Resource r, double amount) => Market.Quote(r, amount, MarketDepthFactor);
 
         /// <summary>Капитал = деньги − долг + стоимость планет + стоимость склада.</summary>
         public double Capital => Money - Debt + PlanetsValue + StockValue;
@@ -285,7 +334,7 @@ namespace PlanetTrader.Core
         /// <summary>Запас, который знает игрок: точный у своих и разведанных, оценка у просканированных, null у силуэтов.</summary>
         public double? KnownReserve(Planet p)
         {
-            if (p.Owner == Owner.Player || p.Knowledge == Knowledge.Explored) return p.Reserve;
+            if (IsMine(p) || p.Knowledge == Knowledge.Explored) return p.Reserve;
             if (p.Knowledge == Knowledge.Scanned) return p.EstimatedReserve;
             return null;
         }
@@ -293,7 +342,7 @@ namespace PlanetTrader.Core
         /// <summary>Ёмкость основного месторождения по тому, что знает игрок; null у силуэтов.</summary>
         public double? KnownCapacity(Planet p)
         {
-            if (p.Owner == Owner.Player || p.Knowledge == Knowledge.Explored) return p.Capacity;
+            if (IsMine(p) || p.Knowledge == Knowledge.Explored) return p.Capacity;
             if (p.Knowledge == Knowledge.Scanned) return p.EstimatedCapacity;
             return null;
         }
@@ -301,7 +350,7 @@ namespace PlanetTrader.Core
         /// <summary>Стоимость планеты по тому, что знает игрок; null у силуэтов.</summary>
         public double? KnownValue(Planet p)
         {
-            if (p.Owner == Owner.Player || p.Knowledge == Knowledge.Explored) return p.MarketValue(Balance);
+            if (IsMine(p) || p.Knowledge == Knowledge.Explored) return p.MarketValue(Balance);
             if (p.Knowledge == Knowledge.Scanned) return p.EstimatedValue(Balance);
             return null;
         }
@@ -400,7 +449,7 @@ namespace PlanetTrader.Core
         void Acquire(Planet p, double price)
         {
             Money -= price;
-            p.Owner = Owner.Player;
+            p.OwnerCorp = _current;
             p.BoughtOnTurn = Turn;
             p.Invested += price;
             // С покупкой приходят все документы: планета становится разведанной.
@@ -479,7 +528,7 @@ namespace PlanetTrader.Core
         {
             var p = GetPlanet(planetId);
             error = ActionResult.Success;
-            if (p == null || p.Owner != Owner.Player) error = ActionResult.Fail("Это не ваша планета");
+            if (p == null || !IsMine(p)) error = ActionResult.Fail("Это не ваша планета");
             else if (!p.Inhabited) error = ActionResult.Fail("На планете нет жителей");
             return error.Ok ? p : null;
         }
@@ -545,7 +594,7 @@ namespace PlanetTrader.Core
         {
             var b = Balance;
             reason = null;
-            if (p.Owner != Owner.Player) reason = "Это не ваша планета";
+            if (!IsMine(p)) reason = "Это не ваша планета";
             else if (!p.Inhabited) reason = "На планете нет жителей";
             else if (p.Education >= b.EducationCost.Length - 1) reason = "Жители уже получили высшее образование";
             else if (p.IsStudying) reason = "Жители уже учатся";
@@ -579,7 +628,7 @@ namespace PlanetTrader.Core
         public ActionResult SettleColony(int planetId)
         {
             var p = GetPlanet(planetId);
-            if (p == null || p.Owner != Owner.Player) return ActionResult.Fail("Это не ваша планета");
+            if (!IsMine(p)) return ActionResult.Fail("Это не ваша планета");
             if (p.Inhabited) return ActionResult.Fail("Здесь уже живут");
             if (Money < Balance.ColonyCost) return ActionResult.Fail("Не хватает денег");
             var a = SpendAction();
@@ -708,7 +757,7 @@ namespace PlanetTrader.Core
             {
                 _requests.Remove(r);
                 var p = GetPlanet(r.PlanetId);
-                if (p == null || p.Owner != Owner.Player) continue;
+                if (!IsMine(p)) continue;
                 p.Loyalty = Clamp(p.Loyalty - b.RequestLoyaltyPenalty);
                 RecordDeed(DeedKind.RequestFailed, p);
                 report.Events.Add($"Жители {p.Type.Name} #{p.Id} обижены: просьбу не выполнили, лояльность {Math.Round(p.Loyalty)}.");
@@ -737,7 +786,7 @@ namespace PlanetTrader.Core
         public ActionResult BuildMine(int planetId)
         {
             var p = GetPlanet(planetId);
-            if (p == null || p.Owner != Owner.Player) return ActionResult.Fail("Это не ваша планета");
+            if (!IsMine(p)) return ActionResult.Fail("Это не ваша планета");
             if (p.Mine != MineState.None) return ActionResult.Fail("Шахта уже есть");
             if (Money < p.Type.MineCost) return ActionResult.Fail("Не хватает денег");
             var a = SpendAction();
@@ -754,7 +803,7 @@ namespace PlanetTrader.Core
         public ActionResult SellPlanet(int planetId)
         {
             var p = GetPlanet(planetId);
-            if (p == null || p.Owner != Owner.Player) return ActionResult.Fail("Это не ваша планета");
+            if (!IsMine(p)) return ActionResult.Fail("Это не ваша планета");
             var a = SpendAction();
             if (!a.Ok) return a;
 
@@ -772,14 +821,13 @@ namespace PlanetTrader.Core
 
         void ReleaseToRegistry(Planet p)
         {
-            p.Owner = Owner.Registry;
+            p.OwnerCorp = null;
             p.FoundByProbe = false;
             p.Tax = TaxLevel.None;
             p.PaysWages = false;
             p.OnStrike = false;
             p.Loyalty = 50;
             p.Guarded = false;
-            p.MagnateId = -1;
             _requests.RemoveAll(r => r.PlanetId == p.Id);
             _bribes.RemoveAll(x => x.PlanetId == p.Id);
         }
@@ -855,8 +903,7 @@ namespace PlanetTrader.Core
         {
             _requests.RemoveAll(r => r.PlanetId == p.Id);
             _bribes.RemoveAll(x => x.PlanetId == p.Id);
-            p.Owner = Owner.Ai;
-            p.MagnateId = m?.Id ?? -1;
+            p.OwnerCorp = m?.Corp;
             p.Guarded = false;
             p.Tax = TaxLevel.None;
             p.PaysWages = false;
@@ -882,7 +929,7 @@ namespace PlanetTrader.Core
         public ActionResult SetGuards(int planetId, bool on)
         {
             var p = GetPlanet(planetId);
-            if (p == null || p.Owner != Owner.Player) return ActionResult.Fail("Это не ваша планета");
+            if (!IsMine(p)) return ActionResult.Fail("Это не ваша планета");
             p.Guarded = on;
             return ActionResult.Success;
         }
@@ -924,8 +971,7 @@ namespace PlanetTrader.Core
             {
                 success = true;
                 var m = GetMagnate(p.MagnateId);
-                p.Owner = Owner.Player;
-                p.MagnateId = -1;
+                p.OwnerCorp = _current;
                 p.BoughtOnTurn = Turn;
                 p.Invested += cost;
                 p.Loyalty = Balance.PlayerBribeLoyalty;
@@ -1000,7 +1046,7 @@ namespace PlanetTrader.Core
         {
             var p = GetPlanet(planetId);
             if (p == null) return ActionResult.Fail("Нет такой планеты");
-            if (p.Knowledge == Knowledge.Explored || p.Owner == Owner.Player) return ActionResult.Fail("Планета уже разведана");
+            if (p.Knowledge == Knowledge.Explored || IsMine(p)) return ActionResult.Fail("Планета уже разведана");
             if (ProbeHeadingTo(planetId)) return ActionResult.Fail("К планете уже летит зонд");
             if (!InRange(t, p.MapX, p.MapY)) return ActionResult.Fail($"«{t.Name}» не долетит: слишком далеко от ваших планет и биржи");
             return Launch(t, ProbeMission.Explore, p.MapX, p.MapY, planetId);
@@ -1016,6 +1062,7 @@ namespace PlanetTrader.Core
             var origin = LaunchOrigin(x, y);
             _probes.Add(new Probe
             {
+                CorporationId = _current.Id,
                 Id = _nextProbeId++,
                 Type = t,
                 Mission = mission,
@@ -1032,7 +1079,7 @@ namespace PlanetTrader.Core
 
         void ResolveProbes(TurnReport report)
         {
-            foreach (var probe in _probes.Where(x => x.ResolveTurn <= Turn).ToList())
+            foreach (var probe in _probes.Where(x => x.ResolveTurn <= Turn && x.CorporationId == _current.Id).ToList())
             {
                 _probes.Remove(probe);
                 if (probe.Mission == ProbeMission.ScanArea) ResolveScan(probe, report);
@@ -1070,7 +1117,7 @@ namespace PlanetTrader.Core
             if (p == null) return;
             p.Knowledge = Knowledge.Explored;
             report.Events.Add(DescribeExploration(p));
-            if (p.Owner == Owner.Player) LootRuins(p, report.Events);
+            if (IsMine(p)) LootRuins(p, report.Events);
         }
 
         string DescribeExploration(Planet p)
@@ -1085,7 +1132,7 @@ namespace PlanetTrader.Core
         /// <summary>Руины достаются владельцу разведанной планеты один раз.</summary>
         void LootRuins(Planet p, List<string> events)
         {
-            if (p.Owner != Owner.Player || p.Knowledge != Knowledge.Explored || !p.HasUnlootedRuins) return;
+            if (!IsMine(p) || p.Knowledge != Knowledge.Explored || !p.HasUnlootedRuins) return;
             p.RuinsLooted = true;
             Money += p.RuinsValue;
             p.Earned += p.RuinsValue;
@@ -1118,7 +1165,7 @@ namespace PlanetTrader.Core
             if (amount <= 0) return ActionResult.Fail("Нечего продавать");
             if (_stock[(int)r] + 1e-9 < amount) return ActionResult.Fail("Столько ресурса нет на складе");
             _stock[(int)r] -= amount;
-            Money += Market.Sell(r, amount);
+            Money += Market.Sell(r, amount, MarketDepthFactor);
             return ActionResult.Success;
         }
 
@@ -1161,53 +1208,87 @@ namespace PlanetTrader.Core
         // Конец хода
         // ------------------------------------------------------------------
 
+        /// <summary>Отчёты всех игроков за последний ход. События у них общие.</summary>
+        public IReadOnlyDictionary<int, TurnReport> LastReports => _lastReports;
+        Dictionary<int, TurnReport> _lastReports = new Dictionary<int, TurnReport>();
+
+        /// <summary>
+        /// Конец хода для всех. Сначала каждый игрок: добыча; затем общее: магнаты добывают, месторождения восстанавливаются;
+        /// снова каждый игрок: исследования, грузы, жители, расходы, коллекторы, зонды, подкупы; затем общее: заказы, открытия,
+        /// магнаты покупают; каждый игрок: пакости магнатов; общее: магнаты развиваются; каждый игрок: реплики, репутация;
+        /// общее: биржа, события. Возвращает отчёт текущего игрока.
+        /// </summary>
         public TurnReport EndTurn()
         {
-            var report = new TurnReport { Turn = Turn };
-            if (Bankrupt)
+            var caller = _current;
+            var events = new List<string>();
+            var players = Players.ToList();
+            var reports = players.ToDictionary(c => c.Id, c => new TurnReport(events) { Turn = Turn });
+            var shared = reports[caller.Id];
+            if (players.All(c => c.Bankrupt))
             {
-                report.Events.Add("Корпорация обанкротилась, партия окончена.");
-                return report;
+                events.Add("Корпорация обанкротилась, партия окончена.");
+                return shared;
+            }
+            var active = players.Where(c => !c.Bankrupt).ToList();
+
+            void Each(Action<TurnReport> phase)
+            {
+                foreach (var c in active)
+                {
+                    _current = c;
+                    phase(reports[c.Id]);
+                }
+                _current = caller;
             }
 
-            ProducePlayer(report);
+            Each(ProducePlayer);
             ProduceAi();
-            Regenerate(report);
-            AdvanceResearch(report);
-            DeliverShipments();
-            UpdatePeople(report);
-            Market.DepthFactor = 1 + SpecialtyBonus(Specialty.Economists);
+            Regenerate(shared);
+            Each(r =>
+            {
+                AdvanceResearch(r);
+                DeliverShipments();
+                UpdatePeople(r);
+                PayCosts(r);
+                ResolveProbes(r);
+                ResolveBribes(r);
+            });
+            UpdateOrders(shared);
+            Discover(shared);
+            AiTurn(shared);
+            Each(MagnatesPester);
+            MagnatesDevelop(shared);
+            Each(r =>
+            {
+                MagnatesRemark(r);
+                // Репутация понемногу возвращается к 50.
+                if (Reputation < 50) ChangeReputation(Math.Min(Balance.ReputationRecovery, 50 - Reputation));
+                else if (Reputation > 50) ChangeReputation(-Math.Min(Balance.ReputationRecovery, Reputation - 50));
+            });
+            Market.Tick(_rng);
+            UpdateEvent(shared);
 
-            // Расходы считаются по состоянию на конец хода. Доставка уже посчитана при добыче.
+            Turn++;
+            Each(_ => ActionsLeft = ActionsPerTurn);
+            _lastReports = reports;
+            return shared;
+        }
+
+        /// <summary>Расходы текущего игрока по состоянию на конец хода. Доставка уже посчитана при добыче, зарплаты жителям — в UpdatePeople.</summary>
+        void PayCosts(TurnReport report)
+        {
             report.Upkeep = UpkeepPerTurn;
             report.Salaries = Managers * Balance.ManagerSalary;
             report.Interest = Debt * Balance.InterestPerTurn;
             report.Insurance = InsurancePerTurn;
             report.Guards = GuardsPerTurn;
-            // Зарплаты жителям уже посчитаны в UpdatePeople.
             double multiplier = Balance.UpkeepMultiplier(UpkeepCurvePlanets);
             foreach (var p in PlayerPlanets)
                 p.Earned -= p.BaseUpkeep(Balance) * multiplier;
             Money -= report.TotalCosts;
 
             if (Money < 0) CallCollectors(report);
-
-            ResolveProbes(report);
-            ResolveBribes(report);
-            UpdateOrders(report);
-            Discover(report);
-            AiTurn(report);
-            MagnatesDevelop(report);
-            MagnatesRemark(report);
-            // Репутация понемногу возвращается к 50.
-            if (Reputation < 50) ChangeReputation(Math.Min(Balance.ReputationRecovery, 50 - Reputation));
-            else if (Reputation > 50) ChangeReputation(-Math.Min(Balance.ReputationRecovery, Reputation - 50));
-            Market.Tick(_rng);
-            UpdateEvent(report);
-
-            Turn++;
-            ActionsLeft = ActionsPerTurn;
-            return report;
         }
 
         void ProducePlayer(TurnReport report)
@@ -1339,7 +1420,7 @@ namespace PlanetTrader.Core
         {
             p.Reserve = 0;
             p.Capacity = Math.Max(p.Capacity * Balance.RegenCapacityShare, p.InitialReserve * Balance.RegenCapacityFloor);
-            p.RegenTotal = RegenTurnsFor(p.Resource, p.Owner == Owner.Player);
+            p.RegenTotal = RegenTurnsFor(p.Resource, IsMine(p));
             p.RegenTurnsLeft = p.RegenTotal;
         }
 
@@ -1380,10 +1461,10 @@ namespace PlanetTrader.Core
 
         public bool CanMine(Deposit d) => d.HasExtractor && !d.IsRegenerating && IsUnlocked(d.Resource);
 
-        readonly HashSet<string> _researched = new HashSet<string>();
+        HashSet<string> _researched => _current.Researched;
 
         /// <summary>Исследование, которое идёт сейчас; null — никакого.</summary>
-        public Research CurrentResearch { get; private set; }
+        public Research CurrentResearch { get => _current.CurrentResearch; private set => _current.CurrentResearch = value; }
 
         public bool IsResearched(string techId) => _researched.Contains(techId);
 
@@ -1433,7 +1514,7 @@ namespace PlanetTrader.Core
         public ActionResult BuildExtractor(int planetId, int depositIndex)
         {
             var p = GetPlanet(planetId);
-            if (p == null || p.Owner != Owner.Player) return ActionResult.Fail("Это не ваша планета");
+            if (!IsMine(p)) return ActionResult.Fail("Это не ваша планета");
             if (depositIndex < 0 || depositIndex >= p.ExtraDeposits.Count) return ActionResult.Fail("Нет такого месторождения");
             var d = p.ExtraDeposits[depositIndex];
             if (d.HasExtractor) return ActionResult.Fail("Экстрактор уже стоит");
@@ -1452,7 +1533,7 @@ namespace PlanetTrader.Core
         // Память магнатов: поступки игрока с жителями и реплики
         // ------------------------------------------------------------------
 
-        readonly List<Deed> _deeds = new List<Deed>();
+        List<Deed> _deeds => _current.Deeds;
         readonly List<Remark> _remarks = new List<Remark>();
         int _nextDeedId;
 
@@ -1532,7 +1613,7 @@ namespace PlanetTrader.Core
             }
         }
 
-        IEnumerable<Planet> MagnatePlanets(Magnate m) => _planets.Where(p => p.Owner == Owner.Ai && p.MagnateId == m.Id);
+        IEnumerable<Planet> MagnatePlanets(Magnate m) => _planets.Where(p => p.OwnerCorp != null && p.OwnerCorp == m.Corp);
 
         double MagnateUpkeep(Magnate m, int workingPlanets) =>
             MagnatePlanets(m).Sum(p => p.BaseUpkeep(Balance)) * Balance.UpkeepMultiplier(workingPlanets);
@@ -1612,7 +1693,7 @@ namespace PlanetTrader.Core
         }
 
         /// <summary>Банкротство: коллекторы забрали все планеты, а долг остался. Ходы больше не идут.</summary>
-        public bool Bankrupt { get; private set; }
+        public bool Bankrupt { get => _current.Bankrupt; private set => _current.Bankrupt = value; }
 
         void UpdateOrders(TurnReport report)
         {
@@ -1650,12 +1731,11 @@ namespace PlanetTrader.Core
         /// <summary>Подкуп, о котором предупредили: если лояльность так и не поднялась, планета уходит к магнату.</summary>
         void ResolveBribes(TurnReport report)
         {
-            foreach (var x in _bribes.Where(b => b.ResolveTurn <= Turn).ToList())
+            foreach (var x in _bribes.Where(b => b.ResolveTurn <= Turn && IsMine(GetPlanet(b.PlanetId))).ToList())
             {
                 _bribes.Remove(x);
                 var p = GetPlanet(x.PlanetId);
                 var m = GetMagnate(x.MagnateId);
-                if (p == null || p.Owner != Owner.Player) continue;
                 if (p.Loyalty < Balance.BribeSuccessLoyalty)
                 {
                     GiveToMagnate(p, m);
@@ -1716,13 +1796,17 @@ namespace PlanetTrader.Core
                     var p = aiPlanets[_rng.Range(0, aiPlanets.Count)];
                     var seller = GetMagnate(p.MagnateId);
                     if (seller != null) seller.Money += p.MarketValue(Balance) * (1 - Balance.ResaleCommission);
-                    p.Owner = Owner.Registry;
-                    p.MagnateId = -1;
+                    p.OwnerCorp = null;
                     report.Events.Add($"{seller?.Name ?? "ИИ-магнат"} выставил(а) на продажу планету {p.Type.Name} #{p.Id}.");
                 }
             }
 
-            // Чем заметнее игрок, тем больше пакостей: при внимании выше 1 бывает и по нескольку за ход.
+        }
+
+        /// <summary>Пакости магнатов текущему игроку. Чем он заметнее, тем больше пакостей: при внимании выше 1 бывает и по нескольку за ход.</summary>
+        void MagnatesPester(TurnReport report)
+        {
+            var active = ActiveMagnates.ToList();
             double attention = MagnateAttention;
             double crowd = Balance.RivalMagnates > 0 && _magnates.Count > Balance.RivalMagnates ? Balance.RivalMagnates / (double)_magnates.Count : 1;
             foreach (var m in active)

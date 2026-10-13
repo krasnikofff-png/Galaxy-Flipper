@@ -48,6 +48,8 @@ namespace PlanetTrader.Core
     public sealed class Probe
     {
         public int Id;
+        /// <summary>Чей зонд: находки и руины достаются этой корпорации.</summary>
+        public int CorporationId;
         public ProbeType Type;
         public ProbeMission Mission;
         public double FromX, FromY, TargetX, TargetY;

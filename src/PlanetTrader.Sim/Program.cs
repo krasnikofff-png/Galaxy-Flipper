@@ -42,6 +42,8 @@ namespace PlanetTrader.Sim
         static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
         /// <summary>Длина партии в ходах. Партии длинные: 40 ходов — самое начало.</summary>
         static int End = 1000;
+        /// <summary>Сколько игроков в партии (кооператив): каждым играет свой бот того же стиля, отчёт — по первому.</summary>
+        static int Players = 1;
         static int Mid => End / 2;
         static int Q3 => End * 3 / 4;
         /// <summary>Начало игры (30, 60, 120) и дальше по четвертям партии.</summary>
@@ -67,6 +69,7 @@ namespace PlanetTrader.Sim
                     case "--set": overrides.Add(args[++i]); break;
                     case "--brakes": brakes = true; break;
                     case "--trace": trace = args[++i]; break;
+                    case "--players": Players = int.Parse(args[++i]); break;
                     default:
                         Console.Error.WriteLine("Использование: sim [--runs 30] [--turns 1000] [--seed 1] [--out docs/sim] [--set Param=value]... [--brakes]");
                         return 1;
@@ -177,8 +180,10 @@ namespace PlanetTrader.Sim
 
         static RunResult RunOne(Balance b, Strategy s, int turns, ulong seed)
         {
-            var g = Game.New(b, seed);
+            var g = Game.New(b, seed, Players);
             var bot = new Bot(s, seed);
+            var partners = g.Players.Skip(1).Select((c, i) => (id: c.Id, bot: new Bot(s, seed + (ulong)(i + 1) * 104729))).ToList();
+            int me = g.Current.Id;
             var r = new RunResult
             {
                 StartCapital = g.Capital,
@@ -193,6 +198,12 @@ namespace PlanetTrader.Sim
             {
                 int exhaustedBefore = g.TurnsActionsExhausted;
                 bot.PlayTurn(g);
+                foreach (var (id, partner) in partners)
+                {
+                    g.SetCurrent(id);
+                    partner.PlayTurn(g);
+                }
+                g.SetCurrent(me);
                 if (g.Debt > startDebt + 1) r.TookCredit = true;
                 if (g.TurnsActionsExhausted > exhaustedBefore && r.FirstActionsLimitTurn < 0) r.FirstActionsLimitTurn = t;
                 double earnedBefore = g.PlayerPlanets.Sum(p => p.Earned);
@@ -283,6 +294,7 @@ namespace PlanetTrader.Sim
             sb.AppendLine();
             sb.AppendLine($"Медиана по {runs} партиям на каждый стиль игры. Капитал = деньги − долг + рыночная стоимость планет + склад.");
             if (overrides.Count > 0) sb.AppendLine($"Изменённые параметры: `{string.Join("`, `", overrides)}`.");
+            if (Players > 1) sb.AppendLine($"Кооператив: {Players} игрока, каждым играет бот того же стиля; цифры — по первому.");
             sb.AppendLine();
 
             sb.AppendLine("## Капитал");

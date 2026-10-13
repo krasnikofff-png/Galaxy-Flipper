@@ -18,10 +18,8 @@ namespace PlanetTrader.Core
 
         public double Price(Resource r) => _price[(int)r];
 
-        /// <summary>Множитель глубины рынка: экономисты игрока делают рынок глубже.</summary>
-        public double DepthFactor = 1;
-
-        public double Depth(Resource r) => _b.Depth(r) * DepthFactor;
+        /// <summary>Глубина рынка для продавца; depthFactor — его экономисты делают рынок глубже.</summary>
+        public double Depth(Resource r, double depthFactor = 1) => _b.Depth(r) * depthFactor;
 
         /// <summary>К какой цене возвращается рынок: базовая, а во время события — с его множителем.</summary>
         public double TargetPrice(Resource r) => _b.BasePrice(r) * _eventFactor[(int)r];
@@ -39,26 +37,26 @@ namespace PlanetTrader.Core
         }
 
         /// <summary>Во сколько раз упадёт цена, если продать amount.</summary>
-        double DropFactor(Resource r, double amount) =>
+        double DropFactor(Resource r, double amount, double depthFactor) =>
             Math.Max(_b.MinPriceShare * _b.BasePrice(r) / _price[(int)r],
-                1 - _b.SalesImpact * amount / Depth(r));
+                1 - _b.SalesImpact * amount / Depth(r, depthFactor));
 
         /// <summary>Выручка за amount без изменения цены (средняя цена между «до» и «после»).</summary>
-        public double Quote(Resource r, double amount)
+        public double Quote(Resource r, double amount, double depthFactor = 1)
         {
             if (amount <= 0) return 0;
             double p = _price[(int)r];
-            return amount * p * (1 + DropFactor(r, amount)) / 2;
+            return amount * p * (1 + DropFactor(r, amount, depthFactor)) / 2;
         }
 
         /// <summary>Цена, до которой опустится ресурс после продажи amount.</summary>
-        public double PriceAfter(Resource r, double amount) => _price[(int)r] * DropFactor(r, Math.Max(0, amount));
+        public double PriceAfter(Resource r, double amount, double depthFactor = 1) => _price[(int)r] * DropFactor(r, Math.Max(0, amount), depthFactor);
 
-        public double Sell(Resource r, double amount)
+        public double Sell(Resource r, double amount, double depthFactor = 1)
         {
             if (amount <= 0) return 0;
-            double revenue = Quote(r, amount);
-            _price[(int)r] *= DropFactor(r, amount);
+            double revenue = Quote(r, amount, depthFactor);
+            _price[(int)r] *= DropFactor(r, amount, depthFactor);
             return revenue;
         }
 
