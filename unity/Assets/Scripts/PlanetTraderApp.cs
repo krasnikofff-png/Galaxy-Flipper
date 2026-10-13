@@ -47,6 +47,8 @@ namespace PlanetTrader.Client
         float _guiScale = 1;
         /// <summary>Зерно облика планет: в каждой партии планеты выглядят по-новому.</summary>
         int _lookSeed;
+        /// <summary>F3 — показ построек: 0 — как в игре, 1 — все постройки на выбранной планете, 2 — то же со стройкой шахты.</summary>
+        int _buildingsDemo;
 
         // Режим зонда: игрок выбирает тип и задание, потом кликает по карте.
         bool _probeMode;
@@ -79,6 +81,14 @@ namespace PlanetTrader.Client
             {
                 PlanetShowcase.Toggle(this);
                 return;
+            }
+            // Показ построек: только картинка в окне планеты, экономика не меняется.
+            if (Input.GetKeyDown(KeyCode.F3))
+            {
+                _buildingsDemo = (_buildingsDemo + 1) % 3;
+                Log(_buildingsDemo == 0 ? "Показ построек выключен." :
+                    _buildingsDemo == 1 ? "Показ построек (F3): на выбранной планете все постройки — только в окне планеты, в игре их нет. F3 — стройка шахты." :
+                    "Показ построек (F3): шахта строится. F3 — выключить показ.");
             }
             if (RivalsTurn && Time.unscaledTime - _rivalsTurnStarted >= RivalsTurnSeconds) FinishTurn();
             if (_pending.Count > 0)
@@ -136,6 +146,7 @@ namespace PlanetTrader.Client
         /// <summary>Какие постройки видны на планете в 3D-окне. У силуэта не видно ничего.</summary>
         PlanetStructures Structures(Planet p)
         {
+            if (_buildingsDemo != 0) return DemoStructures(p);
             if (p.Knowledge == Knowledge.Silhouette) return default;
             var mine = p.Mine == MineState.Building ? MineLook.Building
                 : p.Mine == MineState.Working ? (p.IsProducing ? MineLook.Working : MineLook.Idle)
@@ -149,6 +160,22 @@ namespace PlanetTrader.Client
                 Guard = p.Guarded,
                 Ruins = p.Knowledge == Knowledge.Explored && p.HasUnlootedRuins,
                 Accent = p.Owner == Owner.Registry ? new Color(0.75f, 0.78f, 0.85f) : RingColor(p),
+            };
+        }
+
+        /// <summary>F3: все постройки разом — посмотреть модели и их движение, не строя их в игре.</summary>
+        PlanetStructures DemoStructures(Planet p)
+        {
+            var others = ResourceTypes.All.Where(r => r != p.Resource).Take(2).Select(Fmt.ResourceColor).ToArray();
+            return new PlanetStructures
+            {
+                Mine = _buildingsDemo == 2 ? MineLook.Building : MineLook.Working,
+                Extractors = others,
+                Settlement = true,
+                School = true,
+                Guard = true,
+                Ruins = true,
+                Accent = p.Owner == Owner.Registry ? Fmt.OwnerColor(Owner.Player, false) : RingColor(p),
             };
         }
 

@@ -71,9 +71,12 @@ namespace PlanetTrader.Visuals
             return dot >= 0 ? part.Substring(0, dot) : part;
         }
 
-        void Update()
+        void Update() => Pose(Time.time);
+
+        /// <summary>Поставить часть так, как она стоит в момент time (секунды). Для записи видео — без Play.</summary>
+        public void Pose(float time)
         {
-            float cycle = (Time.time + _offset * _spec.Period) / _spec.Period + _spec.Phase;
+            float cycle = (time + _offset * _spec.Period) / _spec.Period + _spec.Phase;
             switch (_spec.Kind)
             {
                 case Kind.Spin:

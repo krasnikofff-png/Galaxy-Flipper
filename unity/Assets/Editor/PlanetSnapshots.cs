@@ -54,6 +54,135 @@ namespace PlanetTrader.EditorTools
             EditorApplication.Exit(code);
         }
 
+        /// <summary>
+        /// Кадры видео: четыре планеты со всеми постройками в движении, камера медленно облетает базу.
+        /// unity run … -executeMethod PlanetTrader.EditorTools.PlanetSnapshots.RenderBuildingsAnimationFromCommandLine -frameDir папка -frames 90 -fps 15
+        /// Склейка в GIF: tools/buildings/frames_to_gif.py.
+        /// </summary>
+        public static void RenderBuildingsAnimationFromCommandLine()
+        {
+            var args = System.Environment.GetCommandLineArgs();
+            string dir = "frames";
+            int frames = 90;
+            float fps = 15;
+            for (int i = 0; i < args.Length - 1; i++)
+            {
+                if (args[i] == "-frameDir") dir = args[i + 1];
+                if (args[i] == "-frames") frames = int.Parse(args[i + 1]);
+                if (args[i] == "-fps") fps = float.Parse(args[i + 1], System.Globalization.CultureInfo.InvariantCulture);
+            }
+            int code = 0;
+            try { RenderBuildingsAnimation(dir, frames, fps); }
+            catch (System.Exception e) { Debug.LogException(e); code = 1; }
+            EditorApplication.Exit(code);
+        }
+
+        public static void RenderBuildingsAnimation(string dir, int frames, float fps)
+        {
+            const int w = 1032, h = 420;
+            var looks = new[] { PlanetLook.Jungle, PlanetLook.Rocky, PlanetLook.Gas, PlanetLook.Ice };
+            Directory.CreateDirectory(dir);
+            var root = new GameObject("Видео построек") { hideFlags = HideFlags.DontSave };
+            Texture2D skyTex = null;
+            Material skyMat = null;
+            try
+            {
+                var cam = new GameObject("Камера").AddComponent<Camera>();
+                cam.transform.SetParent(root.transform, false);
+                cam.clearFlags = CameraClearFlags.SolidColor;
+                cam.backgroundColor = Color.black;
+                cam.fieldOfView = 30;
+                cam.nearClipPlane = 0.02f;
+                cam.farClipPlane = 100;
+                cam.enabled = false;
+                var sun = new GameObject("Солнце").AddComponent<Light>();
+                sun.transform.SetParent(root.transform, false);
+                sun.type = LightType.Directional;
+                sun.color = new Color(1f, 0.97f, 0.92f);
+                sun.intensity = 1.1f;
+                sun.transform.rotation = Quaternion.LookRotation(-new Vector3(-0.5f, 0.4f, -0.78f).normalized);
+                // Небо ездит с камерой — звёзды со всех сторон.
+                skyTex = PlanetShowcase.BakeSky(2048, 777);
+                skyMat = new Material(Shader.Find("PlanetTrader/PlanetSky"));
+                skyMat.SetTexture("_MainTex", skyTex);
+                var sky = new GameObject("Небо").transform;
+                sky.SetParent(root.transform, false);
+                sky.localScale = Vector3.one * 40;
+                sky.gameObject.AddComponent<MeshFilter>().sharedMesh = SphereMesh.Build(64, 32);
+                sky.gameObject.AddComponent<MeshRenderer>().sharedMaterial = skyMat;
+
+                var places = new Transform[looks.Length];
+                var views = new PlanetView[looks.Length];
+                var focus = new Vector3[looks.Length];
+                for (int i = 0; i < looks.Length; i++)
+                {
+                    // Каждая планета в своём углу мира, далеко от остальных.
+                    var place = new GameObject(looks[i].ToString()).transform;
+                    place.SetParent(root.transform, false);
+                    place.position = new Vector3(i * 200, 0, 0);
+                    var pivot = new GameObject("Ось").transform;
+                    pivot.SetParent(place, false);
+                    pivot.localRotation = Quaternion.Euler(14, 0, 0);
+                    var view = new GameObject("Планета").AddComponent<PlanetView>();
+                    view.transform.SetParent(pivot, false);
+                    view.transform.localRotation = Quaternion.Euler(0, 0, 18);
+                    view.Look = looks[i];
+                    view.Seed = 11 + i;
+                    view.Resolution = 2048;
+                    view.Rebuild();
+                    var buildings = new PlanetBuildings();
+                    buildings.Sync(view, new PlanetStructures
+                    {
+                        Mine = i == 3 ? MineLook.Building : MineLook.Working,
+                        Extractors = new[] { new Color(0.9f, 0.5f, 0.2f), new Color(0.6f, 0.4f, 1f) },
+                        Settlement = true,
+                        School = true,
+                        Guard = true,
+                        Ruins = true,
+                        Accent = new Color(0.35f, 0.95f, 0.45f),
+                    });
+                    view.TurnToward(buildings.Focus, PlanetPortrait.FacingDir);
+                    places[i] = place;
+                    views[i] = view;
+                    focus[i] = view.Surface.TransformPoint(buildings.Focus);
+                }
+                var motions = root.GetComponentsInChildren<BuildingMotion>();
+
+                var rt = new RenderTexture(w, h, 24, RenderTextureFormat.ARGB32) { antiAliasing = 8 };
+                cam.targetTexture = rt;
+                var sheet = new Texture2D(w * 2, h * 2, TextureFormat.RGB24, false);
+                for (int f = 0; f < frames; f++)
+                {
+                    float t = f / fps;
+                    foreach (var m in motions) m.Pose(t);
+                    float sweep = f / (float)Mathf.Max(1, frames - 1);
+                    for (int i = 0; i < looks.Length; i++)
+                    {
+                        PlanetPortrait.PlaceCamera(cam.transform, places[i], 1, focus[i], views[i].transform.position,
+                            yaw: -35 + 70 * sweep, elevation: 22 + 8 * Mathf.Sin(sweep * Mathf.PI));
+                        sky.position = cam.transform.position;
+                        cam.Render();
+                        RenderTexture.active = rt;
+                        sheet.ReadPixels(new Rect(0, 0, w, h), (i % 2) * w, (1 - i / 2) * h);
+                        RenderTexture.active = null;
+                    }
+                    sheet.Apply();
+                    File.WriteAllBytes(Path.Combine(dir, $"frame_{f:000}.png"), sheet.EncodeToPNG());
+                }
+                Debug.Log($"Кадры видео построек: {frames} в {Path.GetFullPath(dir)}");
+                Object.DestroyImmediate(sheet);
+                cam.targetTexture = null;
+                rt.Release();
+                Object.DestroyImmediate(rt);
+            }
+            finally
+            {
+                Object.DestroyImmediate(root);
+                if (skyTex != null) Object.DestroyImmediate(skyTex);
+                if (skyMat != null) Object.DestroyImmediate(skyMat);
+            }
+        }
+
         public static void RenderBuildings(string path)
         {
             // Как модели пришли из FBX: подвижные части должны стоять в своих точках вращения без поворотов.
