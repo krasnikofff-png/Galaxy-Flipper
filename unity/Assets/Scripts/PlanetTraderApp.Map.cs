@@ -267,8 +267,8 @@ namespace PlanetTrader.Client
                 var center = ToMap(p.MapX, p.MapY);
                 float radius = MapRadius(p);
                 // Сама планета — 3D-сфера под интерфейсом; здесь только кольца вокруг неё.
-                if (p.Id == _selectedId) Ring(paint, center, radius + 9, Color.white, 1.5f);
-                Ring(paint, center, radius + 5, RingColor(p), 1.5f);
+                if (p.Id == _selectedId) Ring(paint, center, radius + 8, Color.white, 1f);
+                Ring(paint, center, radius + 4, RingColor(p), 0.8f);
                 if (p.Knowledge == Knowledge.Explored && p.Owner != Owner.Player)
                     Disc(paint, center + new Vector2(radius + 2, -radius - 2), 3.5f, Color.white);
             }
