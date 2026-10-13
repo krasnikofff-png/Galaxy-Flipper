@@ -85,10 +85,10 @@ namespace PlanetTrader.Sim
         }
 
         /// <summary>Наименьшая ставка, с которой аукцион выигрывается хотя бы в 55% случаев.</summary>
-        static double BidFactor(Game g)
+        static double BidFactor(Game g, Planet p)
         {
             foreach (var f in g.Balance.BidFactors)
-                if (g.AuctionWinChance(f) >= 0.55) return f;
+                if (g.AuctionWinChance(p, f) >= 0.55) return f;
             return g.Balance.BidFactors[g.Balance.BidFactors.Length - 1];
         }
 
@@ -340,7 +340,7 @@ namespace PlanetTrader.Sim
                 }
                 else if (pick.SoldAtAuction)
                 {
-                    g.PlaceBid(pick.Id, BidFactor(g), out bool won);
+                    g.PlaceBid(pick.Id, BidFactor(g, pick), out bool won);
                     if (!won) continue;
                 }
                 else
@@ -433,7 +433,7 @@ namespace PlanetTrader.Sim
 
         double PurchasePrice(Game g, Planet p) =>
             p.Inhabited ? g.OfferCost(p, OfferFor(g, p))
-            : p.SoldAtAuction ? g.BidPrice(p, BidFactor(g))
+            : p.SoldAtAuction ? g.BidPrice(p, BidFactor(g, p))
             : p.ListPrice(g.Balance);
 
         void ManageDebt(Game g)

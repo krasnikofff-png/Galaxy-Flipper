@@ -20,6 +20,7 @@ namespace PlanetTrader.Sim
         public int TurnsActionsExhausted;
         public int Seizures;
         public bool TookCredit;
+        public bool Bankrupt;
         /// <summary>Сколько ходов-планет игрок владел обитаемыми и сколько из них они бастовали.</summary>
         public int InhabitedTurns, StrikeTurns;
         public double InhabitedInvested, InhabitedReturned;
@@ -28,6 +29,11 @@ namespace PlanetTrader.Sim
         /// <summary>Умственный труд и вся выручка (ресурсы по рынку, налоги, умственный труд) за последнюю четверть партии.</summary>
         public double LateIntellect, LateIncome;
         public int Educated, Colonies, DepletedTurns, DepletedEarningTurns;
+        /// <summary>Магнаты в конце: среднее богатство, сколько у них планет всего, во сколько раз игрок богаче среднего.</summary>
+        public double MagnateWealth, Rivalry;
+        public int MagnatePlanets;
+        /// <summary>Богатство среднего магната на контрольных ходах.</summary>
+        public readonly Dictionary<int, double> MagnateWealthAt = new Dictionary<int, double>();
         public readonly Dictionary<string, (double invested, double returned)> ByType = new Dictionary<string, (double, double)>();
     }
 
@@ -203,6 +209,7 @@ namespace PlanetTrader.Sim
                     if (g.IntellectIncome(p) > 0) r.DepletedEarningTurns++;
                 }
                 r.Capital[t] = g.Capital;
+                if (Checkpoints.Contains(t) && g.Magnates.Count > 0) r.MagnateWealthAt[t] = g.Magnates.Average(g.MagnateWealth);
                 r.Planets[t] = g.PlayerPlanetCount;
                 if (r.SecondPlanetTurn < 0 && g.PlayerPlanetCount >= 2) r.SecondPlanetTurn = t;
                 foreach (var p in g.PlayerPlanets.Where(p => p.Inhabited))
@@ -224,7 +231,14 @@ namespace PlanetTrader.Sim
             r.Techs = b.Technologies.Count(t => g.IsResearched(t.Id));
             r.Extractors = g.PlayerPlanets.Sum(p => p.ExtraDeposits.Count(d => d.HasExtractor));
             r.Seizures = g.TotalSeizures;
+            r.Bankrupt = g.Bankrupt;
             r.Educated = g.PlayerPlanets.Count(p => p.Education > 0);
+            if (g.Magnates.Count > 0)
+            {
+                r.MagnateWealth = g.Magnates.Average(g.MagnateWealth);
+                r.MagnatePlanets = g.Magnates.Sum(g.MagnatePlanetCount);
+                r.Rivalry = g.Rivalry;
+            }
             r.Colonies = g.Deeds.Count(d => d.Kind == DeedKind.Colony);
 
             // Доход на вложенное по типам: всё, что планета принесла, + её текущая стоимость.
@@ -282,6 +296,12 @@ namespace PlanetTrader.Sim
                 foreach (var t in Checkpoints) sb.Append($" | {N(Median(rs.Select(r => r.Capital[t])))}");
                 sb.AppendLine($" | {N(Percentile(rs.Select(r => r.Capital[End]), 0.1))} | {F(Median(rs.Select(r => (double)r.Planets[End])), "0")} |");
             }
+            {
+                var act = results[Strategy.Active];
+                sb.Append("| Средний магнат (в партиях «Активного») | ");
+                foreach (var t in Checkpoints) sb.Append($" | {N(Median(act.Where(r => r.MagnateWealthAt.ContainsKey(t)).Select(r => r.MagnateWealthAt[t])))}");
+                sb.AppendLine(" | | |");
+            }
             sb.AppendLine();
 
             // Проверка целей из вкладки «План проверки».
@@ -322,7 +342,7 @@ namespace PlanetTrader.Sim
             sb.AppendLine($"| Умственный труд дополняет ресурсы (этап 7) | доля в выручке «Активного» за последнюю четверть — 10–45%: заметно, но меньше ресурсов | {F(intellectShare * 100, "0")}% | {Check(intellectShare >= 0.1 && intellectShare <= 0.45)} |");
             sb.AppendLine($"| Выработанные планеты живут (этап 7) | для справки: доля планет-ходов с выработанным основным месторождением, когда жители зарабатывают умом | {F(depletedEarning * 100, "0")}% из {F(active.Sum(r => r.DepletedTurns) / (double)Math.Max(1, active.Sum(r => r.PlanetTurns)) * 100, "0")}% выработанных | |");
             sb.AppendLine($"| Образование и колонии (этап 7) | для справки: у «Активного» к {End} | образованных планет {F(Median(active.Select(r => (double)r.Educated)), "0")}, колоний {F(Median(active.Select(r => (double)r.Colonies)), "0")} | |");
-            sb.AppendLine($"| Кредит — осознанный риск («Активный + кредит») | есть и выигрыши, и потери планет | обогнали активного: {F(creditWinShare * 100, "0")}%, коллекторы: {F(seizedShare * 100, "0")}% | {Check(creditWinShare > 0 && seizedShare > 0)} |");
+            sb.AppendLine($"| Кредит — осознанный риск («Активный + кредит») | есть и выигрыши, и потери планет | обогнали активного: {F(creditWinShare * 100, "0")}%, коллекторы: {F(seizedShare * 100, "0")}%, банкротства: {F(borrowers.Count == 0 ? double.NaN : borrowers.Count(r => r.Bankrupt) * 100.0 / borrowers.Count, "0")}% | {Check(creditWinShare > 0 && seizedShare > 0)} |");
             sb.AppendLine($"| Решения важны уже в первой сессии | разброс капитала t30 ≥30% | {F(spread30 * 100, "0")}% (p90/p10) | {Check(spread30 >= 0.3)} |");
             sb.AppendLine($"| Менеджеры нужны | упор в лимит действий к 40-му ходу | первый раз на ходу {F(firstLimit, "0")} | {Check(firstLimit <= 40)} |");
 
@@ -353,6 +373,8 @@ namespace PlanetTrader.Sim
             double winRate = active.Sum(r => r.AuctionsWon) / (double)Math.Max(1, active.Sum(r => r.AuctionsWon + r.AuctionsLost));
             double lostCare = active.Average(r => r.PlanetsLostToBribes), lostIgnore = ignoresPeople.Average(r => r.PlanetsLostToBribes);
             sb.AppendLine($"| ИИ мешает заметно, но не бесит (этап 5) | пакости магнатов снижают капитал к концу на 8–25% | капитал ×{F(trickCost, "0.00")} от партий без пакостей | {Check(trickCost >= 0.75 && trickCost <= 0.92)} |");
+            sb.AppendLine($"| Магнаты растут (этап 7) | для справки: средний магнат к концу, сколько планет у всех магнатов, во сколько раз «Активный» богаче среднего магната | " +
+                          $"{N(Median(active.Select(r => r.MagnateWealth)))}, планет {F(Median(active.Select(r => (double)r.MagnatePlanets)), "0")}, ×{F(Median(active.Select(r => r.Rivalry)), "0.0")} | |");
             sb.AppendLine($"| Аукционы (этап 5) | бот выигрывает 40–80% своих ставок | {F(winRate * 100, "0")}% | {Check(winRate >= 0.4 && winRate <= 0.8)} |");
             sb.AppendLine($"| Подкуп жителей (этап 5) | заботливый теряет ≤1 планеты за партию, тот, кто жителей не замечает, — больше | {F(lostCare, "0.0")} против {F(lostIgnore, "0.0")} | {Check(lostCare <= 1 && lostIgnore > lostCare)} |");
             double regenShare = active.Sum(r => r.RegeneratingTurns) / (double)Math.Max(1, active.Sum(r => r.PlanetTurns));
@@ -398,7 +420,7 @@ namespace PlanetTrader.Sim
                 ("Без стартового долга", b => b.StartDebt = 0),
                 ("Без роста содержания с числом планет", b => b.UpkeepCurveK = 1),
                 ("Без влияния продаж на рынок", b => b.SalesImpact = 0),
-                ("Без ИИ-конкурентов", b => { b.AiBuyChance = 0; b.AiStartShare = 0; b.AuctionMarkup = 0; }),
+                ("Без ИИ-конкурентов", b => { b.AiBuyChance = 0; b.AiStartShare = 0; b.AuctionMarkup = 0; foreach (var m in b.Magnates) { m.TrickChance = 0; m.AuctionInterest = 0; } }),
                 ("Без зарплат", b => b.ManagerSalary = 0),
                 ("Без процентов", b => b.InterestPerTurn = 0),
                 ("Без аварий", b => b.AccidentChance = 0),

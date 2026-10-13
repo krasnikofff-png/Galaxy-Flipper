@@ -107,7 +107,8 @@ namespace PlanetTrader.Core
         /// <summary>Больше планет в секторе не бывает: открытия и находки зондов прекращаются (допущение; новые секторы — этап 8).</summary>
         public int MaxSectorPlanets = 60;
         public double AiStartShare = 0.33;
-        public double AiBuyChance = 0.35;
+        /// <summary>Шанс за ход, что магнат со средним интересом к аукционам купит планету, если хватает денег.</summary>
+        public double AiBuyChance = 0.12;
         /// <summary>Шанс, что ИИ выставит одну из своих планет на продажу (допущение).</summary>
         public double AiResaleChance = 0.10;
 
@@ -170,12 +171,29 @@ namespace PlanetTrader.Core
         public Magnate[] Magnates =
         {
             new Magnate(0, "Гуго Жаднер", Personality.Greedy, trickChance: 0.20, auctionInterest: 0.60, bidMin: 0.90, bidMax: 1.20,
-                trickWeights: new[] { 0.5, 0.2, 0.3, 0.0 }),
+                trickWeights: new[] { 0.5, 0.2, 0.3, 0.0, 0.3 }),
             new Magnate(1, "Зизи Квазар", Personality.Chaotic, trickChance: 0.30, auctionInterest: 0.40, bidMin: 0.80, bidMax: 1.30,
-                trickWeights: new[] { 0.25, 0.35, 0.25, 0.15 }),
+                trickWeights: new[] { 0.25, 0.35, 0.25, 0.15, 0.2 }),
             new Magnate(2, "Матильда Ласкова", Personality.Cautious, trickChance: 0.12, auctionInterest: 0.35, bidMin: 0.90, bidMax: 1.15,
-                trickWeights: new[] { 0.3, 0.2, 0.5, 0.0 }),
+                trickWeights: new[] { 0.3, 0.2, 0.5, 0.0, 0.3 }),
         };
+        /// <summary>Сколько планет сектора приходится на одного магната. Если магнатов из списка меньше, недостающие придумываются.</summary>
+        public int PlanetsPerMagnate = 10;
+        /// <summary>
+        /// Сколько магнатов в полную силу пакостят одному игроку. В большом секторе магнатов больше, но каждый пакостит реже:
+        /// общее давление — как от стольких магнатов.
+        /// </summary>
+        public int RivalMagnates = 3;
+        /// <summary>Казна магната на старте.</summary>
+        public double MagnateStartMoney = 3000;
+        /// <summary>Сколько магнат получает с добычи своих планет: доля базовой цены (он тоже платит доставку и роняет рынок).</summary>
+        public double MagnateIncomeShare = 0.6;
+        /// <summary>Магнат не тратит казну ниже стольких ходов содержания своих планет.</summary>
+        public double MagnateReserveTurns = 5;
+        /// <summary>Шанс за ход, что магнат выучит жителей одной своей обитаемой планеты на следующий уровень, если хватает денег.</summary>
+        public double MagnateEducateChance = 0.05;
+        /// <summary>Когда игрок богаче среднего магната, магнаты пакостят чаще — пропорционально, но не больше, чем во столько раз.</summary>
+        public double MagnateMaxAttention = 3;
         /// <summary>Шанс за ход, что магнат выскажется о ваших поступках с жителями.</summary>
         public double RemarkChance = 0.3;
         /// <summary>О поступках за сколько последних ходов магнаты вспоминают.</summary>
@@ -202,6 +220,8 @@ namespace PlanetTrader.Core
         /// <summary>Охрана: за ход; охраняемую планету подкупают, только если лояльность ниже этой.</summary>
         public double GuardsCost = 40;
         public double GuardedBribeLoyalty = 25;
+        /// <summary>Учёных переманивают с планет, где лояльность ниже этой.</summary>
+        public double PoachScientistsBelowLoyalty = 70;
         /// <summary>Слух магната: на сколько падает цена вашего главного ресурса.</summary>
         public double RumorPriceDrop = 0.25;
         /// <summary>Репутация игрока 0–100. Влияет на согласие жителей и число заказов.</summary>
@@ -283,6 +303,8 @@ namespace PlanetTrader.Core
         public double ExtractorCostShare = 0.4;
         /// <summary>После каждого восстановления месторождение наполняется до этой доли прежней ёмкости: медленно стареет.</summary>
         public double RegenCapacityShare = 0.9;
+        /// <summary>Но не ниже этой доли начальной ёмкости: старое месторождение беднеет, но не исчезает.</summary>
+        public double RegenCapacityFloor = 0.3;
 
         // --- Образование жителей и умственный труд (этап 7, всё — допущения) ---
         /// <summary>Цена и срок обучения до уровня i (0 — без образования). Для первого уровня нужна школа.</summary>

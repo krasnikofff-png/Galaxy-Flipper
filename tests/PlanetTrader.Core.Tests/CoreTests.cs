@@ -712,7 +712,7 @@ public class MagnateTests
         foreach (var m in b.Magnates) m.AuctionInterest = 0;
         var g = Game.New(b, 6);
         var p = AuctionPlanet(g);
-        Assert.Equal(1, g.AuctionWinChance(1.0), 6);
+        Assert.Equal(1, g.AuctionWinChance(p, 1.0), 6);
         double money = g.Money;
         Assert.True(g.PlaceBid(p.Id, 1.1, out bool won).Ok);
         Assert.True(won);
@@ -733,7 +733,7 @@ public class MagnateTests
         }
         var g = Game.New(b, 6);
         var p = AuctionPlanet(g);
-        Assert.Equal(0, g.AuctionWinChance(1.3), 6);
+        Assert.Equal(0, g.AuctionWinChance(p, 1.3), 6);
         double money = g.Money;
         Assert.True(g.PlaceBid(p.Id, 1.3, out bool won).Ok);
         Assert.False(won);
@@ -808,6 +808,79 @@ public class MagnateTests
         g.EndTurn();
         // Цена льда после слуха и одного шага восстановления — заметно ниже базовой.
         Assert.True(g.Market.Price(Resource.Ice) < before * 0.85);
+    }
+
+    [Fact]
+    public void MagnatesEarnAndPayForPlanets()
+    {
+        var b = NoTricks();
+        b.AiResaleChance = 0;
+        var g = Game.New(b, 6);
+        var m = g.Magnates[0];
+        Assert.Equal(b.MagnateStartMoney, m.Money);
+        Assert.True(g.MagnatePlanetCount(m) > 0);
+        g.EndTurn();
+        Assert.True(m.LastIncome > 0);
+
+        // Нищий магнат не покупает, сколько бы ходов ни прошло.
+        var poor = NoTricks();
+        poor.MagnateStartMoney = -1_000_000;
+        poor.AiBuyChance = 1;
+        var g2 = Game.New(poor, 6);
+        int before = g2.Magnates.Sum(g2.MagnatePlanetCount);
+        for (int i = 0; i < 5; i++) g2.EndTurn();
+        Assert.True(g2.Magnates.Sum(g2.MagnatePlanetCount) <= before);
+    }
+
+    [Fact]
+    public void LosingLastPlanetToCollectorsIsBankruptcy()
+    {
+        var b = NoTricks();
+        b.StartMoney = 0;
+        b.StartDebt = 1_000_000;
+        var g = Game.New(b, 6);
+        g.EndTurn();
+        Assert.Equal(0, g.PlayerPlanetCount);
+        Assert.True(g.Bankrupt);
+        double debt = g.Debt;
+        int turn = g.Turn;
+        g.EndTurn();
+        Assert.Equal(debt, g.Debt);
+        Assert.Equal(turn, g.Turn);
+    }
+
+    [Fact]
+    public void BigSectorGetsGeneratedMagnates()
+    {
+        var b = NoTricks();
+        b.SectorPlanets = 120;
+        b.MaxSectorPlanets = 200;
+        var g = Game.New(b, 6);
+        Assert.Equal(12, g.Magnates.Count);
+        Assert.Equal(g.Magnates.Count, g.Magnates.Select(m => m.Id).Distinct().Count());
+        Assert.All(g.Magnates, m => Assert.Equal(b.MagnateStartMoney, m.Money));
+        for (int i = 0; i < 20; i++) g.EndTurn();
+    }
+
+    [Fact]
+    public void ScientistsArePoachedOnlyFromUnhappyPlanets()
+    {
+        var b = NoTricks();
+        b.MagnateAttentionPlanets = 1;
+        b.Magnates[0].TrickChance = 1;
+        b.Magnates[0].TrickWeights = new[] { 0, 0, 0, 0, 1.0 };
+        var g = Game.New(b, 6);
+        var p = g.PlayerPlanets.Single();
+        p.Inhabited = true;
+        p.HasSchool = true;
+        p.Education = 2;
+        p.Specialty = Specialty.Engineers;
+        p.Loyalty = 90;
+        g.EndTurn();
+        Assert.Equal(2, p.Education);
+        p.Loyalty = 40;
+        g.EndTurn();
+        Assert.True(p.Education < 2);
     }
 
     [Fact]

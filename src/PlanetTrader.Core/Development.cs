@@ -11,6 +11,8 @@ namespace PlanetTrader.Core
         public Resource Resource;
         /// <summary>Ёмкость сейчас: после каждого восстановления месторождение немного беднеет.</summary>
         public double Capacity;
+        /// <summary>Ёмкость при открытии: ниже её доли RegenCapacityFloor месторождение не беднеет.</summary>
+        public double InitialCapacity;
         public double Reserve;
         public double OutputPerTurn;
         public bool HasExtractor;

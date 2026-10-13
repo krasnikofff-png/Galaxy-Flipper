@@ -224,6 +224,7 @@ namespace PlanetTrader.Client
             Log(line + ".");
             foreach (var e in report.Events) Log(e);
             if (report.Seizures > 0) Log("Денег не хватило: недостача ушла в долг, а долг превысил кредитный лимит.");
+            if (_game.Bankrupt) Log("<color=#ff8a7a>Банкротство: планет не осталось, а долг есть. Партия окончена — нажмите «Новая игра».</color>");
         }
 
         // ------------------------------------------------------------------
@@ -859,7 +860,7 @@ namespace PlanetTrader.Client
                 double bid = g.BidPrice(p, f);
                 int id = p.Id;
                 double factor = f;
-                if (ActionButton($"Ставка {Fmt.Percent(f)}: {Fmt.Money(bid)} · выиграете с шансом {Fmt.Percent(g.AuctionWinChance(f))}", g.ActionsLeft > 0 && g.Money >= bid))
+                if (ActionButton($"Ставка {Fmt.Percent(f)}: {Fmt.Money(bid)} · выиграете с шансом {Fmt.Percent(g.AuctionWinChance(p, f))}", g.ActionsLeft > 0 && g.Money >= bid))
                     Later(() =>
                     {
                         if (Do(g.PlaceBid(id, factor, out bool won)) && won)
@@ -979,13 +980,18 @@ namespace PlanetTrader.Client
             Line("Как вы обходитесь с жителями", kindness > 0 ? $"<color=#7be38b>добряк ({kindness})</color>" : kindness < 0 ? $"<color=#ff8a7a>живодёр ({kindness})</color>" : "пока никак");
             GUILayout.Label("Магнаты помнят ваши поступки с жителями. Матильда не подкупает жителей у заботливых, Гуго щадит «родственную душу».", _small);
             Line("Внимание магнатов", $"{Fmt.Percent(g.MagnateAttention)}: чем больше у вас планет, тем чаще пакости");
+            if (g.Rivalry > 1)
+                GUILayout.Label($"<color=#ffd27a>Вы богаче среднего магната в {g.Rivalry:0.#} раза — лидера травят все, пакостей больше.</color>", _small);
+            GUILayout.Label($"Жители с лояльностью от {Fmt.Amount(b.PoachScientistsBelowLoyalty)} не дают переманить своих учёных.", _small);
             GUILayout.Space(10);
 
             foreach (var m in g.Magnates)
             {
                 GUILayout.BeginVertical(GUI.skin.box);
-                int planets = g.AllPlanets.Count(p => p.Owner == Owner.Ai && p.MagnateId == m.Id);
+                int planets = g.MagnatePlanetCount(m);
                 GUILayout.Label($"<b>{m.Name}</b>, {m.PersonalityName}. Планет: {planets}.", _text);
+                string income = m.LastIncome >= 0 ? $"+{Fmt.Money(m.LastIncome)}" : Fmt.Money(m.LastIncome);
+                GUILayout.Label($"Казна {Fmt.Money(m.Money)} ({income} за ход), состояние {Fmt.Money(g.MagnateWealth(m))}.", _small);
                 GUILayout.Label(m.Personality == Personality.Greedy
                     ? "Скупает выгодные планеты, щедро ставит на аукционах, подкупает жителей с низкой лояльностью. Хвалит жёсткость с жителями."
                     : m.Personality == Personality.Chaotic
