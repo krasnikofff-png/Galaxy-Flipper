@@ -32,6 +32,24 @@ namespace PlanetTrader.Visuals
         /// <summary>Готова ли поверхность (после асинхронного запекания — не сразу).</summary>
         public bool Ready => _surface != null;
 
+        /// <summary>Вращающаяся поверхность: к ней крепятся постройки. Null, пока планета не собрана.</summary>
+        public Transform Surface => _surface;
+
+        /// <summary>
+        /// Повернуть планету вокруг оси так, чтобы точка поверхности localPoint (в пространстве планеты)
+        /// смотрела в сторону worldDir — например, постройками к камере.
+        /// </summary>
+        public void TurnToward(Vector3 localPoint, Vector3 worldDir)
+        {
+            if (_surface == null) return;
+            var target = transform.InverseTransformDirection(worldDir);
+            var current = _surface.localRotation * localPoint;
+            float angle = Vector3.SignedAngle(Vector3.ProjectOnPlane(current, Vector3.up), Vector3.ProjectOnPlane(target, Vector3.up), Vector3.up);
+            var turn = Quaternion.AngleAxis(angle, Vector3.up);
+            _surface.localRotation = turn * _surface.localRotation;
+            if (_clouds != null) _clouds.localRotation = turn * _clouds.localRotation;
+        }
+
         void Start()
         {
             if (_surface == null && _baking == null) Rebuild();

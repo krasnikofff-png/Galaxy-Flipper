@@ -30,13 +30,42 @@
 - **Окно планеты:** под названием — крупный план выбранной планеты на звёздах. Камера рисует в текстуру, поэтому кадр прокручивается вместе с панелью; когда окно закрыто, камера не работает.
 - В каждой партии планеты выглядят по-новому: зерно облика берётся из зерна партии.
 
+## Постройки
+
+Модели делает Blender из скрипта `tools/buildings/make_buildings.py`: лоу-поли, цвет в вершинах, один материал на все (`Shaders/Building.shader`). Скрипт сохраняет `tools/buildings/buildings.blend`, чтобы модели можно было править руками, и выгружает FBX в `unity/Assets/Resources/Buildings`.
+
+| Что в игре | Модель |
+|---|---|
+| Шахта работает | `mine_rig` — буровая вышка, огонь мигает; на газовом гиганте `mine_gas` — парящая платформа с заборником |
+| Шахта стоит (авария, выработана) | та же, огни еле горят |
+| Шахта строится | `mine_build` — недостроенная вышка, кран |
+| Экстрактор | `extractor` — бак цвета ресурса с качалкой |
+| Жители | `settlement` — купола |
+| Школа | `school` |
+| Охрана | `guard_tower` |
+| Руины (после полной разведки) | `ruins` — колонны, арка, светящийся кристалл |
+
+- Альфа цвета вершины — роль детали: 1 — обычная, 0.5 — акцент (в Unity красится в цвет владельца), 0 — огни (светятся и на ночной стороне).
+- Места выбираются по зерну планеты и рельефу (`PlanetBuildings`): на суше, на средних широтах. Шахта с экстракторами — база, рядом поселение со школой и охраной, руины отдельно. Постройки крепятся к поверхности и вращаются с планетой.
+- В окне планеты планета поворачивается базой к камере, а камера подлетает к горизонту: постройки видны крупно, силуэтом на фоне звёзд. Без построек видна вся планета.
+- `buildings-unity.png` — снимок из редактора: четыре типа планет со всеми постройками в кадре окна планеты.
+
+```bash
+# пересоздать модели и выгрузить в Unity
+/Applications/Blender.app/Contents/MacOS/Blender --background --python tools/buildings/make_buildings.py
+# правили buildings.blend руками — только выгрузить
+/Applications/Blender.app/Contents/MacOS/Blender tools/buildings/buildings.blend --background --python tools/buildings/make_buildings.py -- --export-only
+```
+
 ## Проверка без человека
 
 ```bash
 # снимок шести типов настоящим рендером (из папки репозитория; путь к проекту — полный, иначе Unity CLI может найти другой проект с тем же именем)
 unity run "$PWD/unity" -- -executeMethod PlanetTrader.EditorTools.PlanetSnapshots.RenderFromCommandLine -snapOut "$PWD/docs/art/planets-unity-check.png"
+# снимок построек на четырёх планетах
+unity run "$PWD/unity" -- -executeMethod PlanetTrader.EditorTools.PlanetSnapshots.RenderBuildingsFromCommandLine -snapOut "$PWD/docs/art/buildings-unity.png"
 # сборка игры для macOS в unity/Build
 unity run "$PWD/unity" -- -executeMethod PlanetTrader.EditorTools.BuildTools.BuildMac -buildOut Build/PlanetTrader.app
-# запуск со снимком экрана через 10 секунд; -autoShotReveal открывает все планеты сектора
+# запуск со снимком экрана через 10 секунд; -autoShotReveal разведывает все планеты сектора и выбирает вашу
 unity/Build/PlanetTrader.app/Contents/MacOS/unity -screen-fullscreen 0 -screen-width 1600 -screen-height 900 -autoShot /tmp/map.png -autoShotDelay 10 -autoShotReveal
 ```

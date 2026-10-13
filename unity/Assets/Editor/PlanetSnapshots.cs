@@ -38,6 +38,95 @@ namespace PlanetTrader.EditorTools
             EditorApplication.Exit(code);
         }
 
+        /// <summary>
+        /// Снимок построек: четыре планеты разных типов со всеми постройками, крупно.
+        /// unity run … -executeMethod PlanetTrader.EditorTools.PlanetSnapshots.RenderBuildingsFromCommandLine -snapOut путь.png
+        /// </summary>
+        public static void RenderBuildingsFromCommandLine()
+        {
+            var args = System.Environment.GetCommandLineArgs();
+            string path = "buildings-unity.png";
+            for (int i = 0; i < args.Length - 1; i++)
+                if (args[i] == "-snapOut") path = args[i + 1];
+            int code = 0;
+            try { RenderBuildings(path); }
+            catch (System.Exception e) { Debug.LogException(e); code = 1; }
+            EditorApplication.Exit(code);
+        }
+
+        public static void RenderBuildings(string path)
+        {
+            const int w = 1032, h = 420;   // как окно планеты в игре (516×210) с удвоенной чёткостью
+            var looks = new[] { PlanetLook.Jungle, PlanetLook.Rocky, PlanetLook.Gas, PlanetLook.Ice };
+            var accent = new Color(0.35f, 0.95f, 0.45f);
+            var root = new GameObject("Снимок построек") { hideFlags = HideFlags.DontSave };
+            try
+            {
+                var cam = new GameObject("Камера").AddComponent<Camera>();
+                cam.transform.SetParent(root.transform, false);
+                cam.clearFlags = CameraClearFlags.SolidColor;
+                cam.backgroundColor = new Color(0.01f, 0.01f, 0.03f);
+                cam.fieldOfView = 30;
+                cam.nearClipPlane = 0.05f;
+                cam.farClipPlane = 50;
+                cam.transform.position = new Vector3(0, 0, -4.6f);
+                cam.enabled = false;
+                var sun = new GameObject("Солнце").AddComponent<Light>();
+                sun.transform.SetParent(root.transform, false);
+                sun.type = LightType.Directional;
+                sun.color = new Color(1f, 0.97f, 0.92f);
+                sun.intensity = 1.1f;
+                sun.transform.rotation = Quaternion.LookRotation(-new Vector3(-0.5f, 0.4f, -0.78f).normalized);
+
+                var rt = new RenderTexture(w, h, 24, RenderTextureFormat.ARGB32) { antiAliasing = 8 };
+                cam.targetTexture = rt;
+                var sheet = new Texture2D(w * 2, h * 2, TextureFormat.RGB24, false);
+                for (int i = 0; i < looks.Length; i++)
+                {
+                    var pivot = new GameObject("Ось").transform;
+                    pivot.SetParent(root.transform, false);
+                    pivot.localRotation = Quaternion.Euler(14, 0, 0);
+                    var view = new GameObject(looks[i].ToString()).AddComponent<PlanetView>();
+                    view.transform.SetParent(pivot, false);
+                    view.transform.localRotation = Quaternion.Euler(0, 0, 18);
+                    view.Look = looks[i];
+                    view.Seed = 11 + i;
+                    view.Resolution = 1024;
+                    view.Rebuild();
+                    var buildings = new PlanetBuildings();
+                    buildings.Sync(view, new PlanetStructures
+                    {
+                        Mine = i == 3 ? MineLook.Building : MineLook.Working,
+                        Extractors = new[] { new Color(0.9f, 0.5f, 0.2f), new Color(0.6f, 0.4f, 1f) },
+                        Settlement = true,
+                        School = true,
+                        Guard = true,
+                        Ruins = true,
+                        Accent = accent,
+                    });
+                    view.TurnToward(buildings.Focus, PlanetPortrait.FacingDir);
+                    PlanetPortrait.PlaceCamera(cam.transform, root.transform, 1);
+
+                    cam.Render();
+                    RenderTexture.active = rt;
+                    sheet.ReadPixels(new Rect(0, 0, w, h), (i % 2) * w, (1 - i / 2) * h);
+                    RenderTexture.active = null;
+                    Object.DestroyImmediate(pivot.gameObject);
+                }
+                sheet.Apply();
+                File.WriteAllBytes(Path.GetFullPath(path), sheet.EncodeToPNG());
+                Debug.Log($"Снимок построек: {Path.GetFullPath(path)}");
+                Object.DestroyImmediate(sheet);
+                cam.targetTexture = null;
+                rt.Release();
+                Object.DestroyImmediate(rt);
+            }
+            finally
+            {
+                Object.DestroyImmediate(root);
+            }
+        }
+
         public static void Render(string path, int resolution)
         {
             var root = new GameObject("Снимок планет") { hideFlags = HideFlags.DontSave };

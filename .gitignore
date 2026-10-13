@@ -501,3 +501,6 @@ unity/[Mm]emoryCaptures/
 unity/*.csproj
 unity/*.sln
 !unity/Assets/**/*.meta
+
+# Резервные копии Blender
+*.blend1

@@ -7,7 +7,7 @@ namespace PlanetTrader.Client
     /// Снимок экрана собранной игры для проверки графики без человека:
     /// запуск с ключом -autoShot путь.png делает снимок через несколько секунд и закрывает игру.
     /// -autoShotDelay секунды — сколько ждать (по умолчанию 6: планеты карты запекаются в фоне).
-    /// -autoShotReveal — открыть все планеты сектора (виден облик каждого типа) и выбрать газовый гигант.
+    /// -autoShotReveal — полностью разведать все планеты сектора (виден облик каждого типа, руины) и выбрать свою планету.
     /// Без ключа ничего не делает.
     /// </summary>
     public sealed class AutoScreenshot : MonoBehaviour
@@ -44,9 +44,12 @@ namespace PlanetTrader.Client
             if (_reveal && app != null)
             {
                 foreach (var p in app.CurrentGame.AllPlanets)
-                    if (p.Knowledge == Core.Knowledge.Silhouette) p.Knowledge = Core.Knowledge.Scanned;
-                foreach (var p in app.CurrentGame.AllPlanets)
-                    if (p.Resource == Core.Resource.Gas) { app.Select(p.Id); break; }
+                    p.Knowledge = Core.Knowledge.Explored;
+                foreach (var p in app.CurrentGame.PlayerPlanets)
+                {
+                    app.Select(p.Id);
+                    break;
+                }
             }
             yield return new WaitForSecondsRealtime(_delay);
             yield return new WaitForEndOfFrame();

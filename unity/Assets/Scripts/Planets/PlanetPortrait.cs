@@ -22,6 +22,26 @@ namespace PlanetTrader.Visuals
         Mesh _backdropMesh;
         int _shownFrame = -10;
         int _id = -1;
+        readonly PlanetBuildings _buildings = new PlanetBuildings();
+        /// <summary>Для какой планеты уже повернули постройки к камере.</summary>
+        int _facedId = -1;
+        /// <summary>Куда поворачивать постройки: к камере, в середину кадра (солнце и так светит слева).</summary>
+        public static readonly Vector3 FacingDir = new Vector3(-0.08f, 0.2f, -1f).normalized;
+
+        // Два кадра: вся планета и «горизонт» — верх планеты с постройками крупно на фоне звёзд.
+        static readonly Vector3 WholePos = new Vector3(0, 0, -4.6f), WholeLook = Vector3.zero;
+        static readonly Vector3 CloseUpPos = new Vector3(0, 0.55f, -2.5f), CloseUpLook = new Vector3(0, 0.78f, 0);
+        /// <summary>Сейчас между кадрами: 0 — вся планета, 1 — горизонт.</summary>
+        float _closeUp;
+        bool _wantCloseUp;
+
+        /// <summary>Поставить камеру между кадрами «вся планета» (0) и «горизонт» (1).</summary>
+        public static void PlaceCamera(Transform camera, Transform root, float closeUp)
+        {
+            float t = Mathf.SmoothStep(0, 1, closeUp);
+            camera.localPosition = Vector3.Lerp(WholePos, CloseUpPos, t);
+            camera.LookAt(root.TransformPoint(Vector3.Lerp(WholeLook, CloseUpLook, t)));
+        }
 
         void Awake()
         {
@@ -31,7 +51,7 @@ namespace PlanetTrader.Visuals
 
             _camera = new GameObject("Камера окна планеты").AddComponent<Camera>();
             _camera.transform.SetParent(_root, false);
-            _camera.transform.localPosition = new Vector3(0, 0, -4.6f);
+            PlaceCamera(_camera.transform, _root, 0);
             _camera.fieldOfView = 30;
             _camera.nearClipPlane = 0.1f;
             _camera.farClipPlane = 100;
@@ -72,7 +92,7 @@ namespace PlanetTrader.Visuals
             _view.transform.SetParent(pivot, false);
             _view.transform.localRotation = Quaternion.Euler(0, 0, 18);
             _view.Resolution = Resolution;
-            _view.SpinSpeed = 6;
+            _view.SpinSpeed = 3;
             _view.CloudDrift = 2;
             _view.enabled = false;   // не запекать в Start: облик задаёт Show
         }
@@ -81,7 +101,7 @@ namespace PlanetTrader.Visuals
         /// Кадр с планетой размером pixels (в пикселях экрана). Звать в каждом кадре, пока он виден;
         /// смена планеты или её облика запекает новую поверхность в фоне.
         /// </summary>
-        public Texture Show(MapPlanet p, Vector2 pixels)
+        public Texture Show(MapPlanet p, PlanetStructures structures, Vector2 pixels)
         {
             int w = Mathf.Clamp(Mathf.RoundToInt(pixels.x), 16, 4096), h = Mathf.Clamp(Mathf.RoundToInt(pixels.y), 16, 4096);
             if (_rt == null || _rt.width != w || _rt.height != h)
@@ -104,10 +124,24 @@ namespace PlanetTrader.Visuals
                 _view.Seed = p.Seed;
                 _view.enabled = true;
                 // Другая планета — сразу убрать старую, чтобы не показывать чужой облик.
-                if (!samePlanet) _view.Clear();
+                if (!samePlanet)
+                {
+                    _view.Clear();
+                    // Новая планета показывается сразу целиком, потом камера подлетает к постройкам.
+                    _closeUp = 0;
+                }
                 _view.RebuildAsync();
             }
             _view.SetMood(p.Saturation, p.Brightness);
+
+            // Постройки — на готовую поверхность; новую планету поворачиваем к камере главной постройкой.
+            _buildings.Sync(_view, structures);
+            if (_buildings.JustPlaced && _facedId != p.Id && !structures.IsEmpty)
+            {
+                _view.TurnToward(_buildings.Focus, FacingDir);
+                _facedId = p.Id;
+            }
+            _wantCloseUp = !structures.IsEmpty && _view.Ready;
             _shownFrame = Time.frameCount;
             return _rt;
         }
@@ -116,6 +150,12 @@ namespace PlanetTrader.Visuals
         {
             // Окно планеты закрыто — камера не тратит время.
             _camera.enabled = Time.frameCount - _shownFrame <= 2;
+            float target = _wantCloseUp ? 1 : 0;
+            if (_closeUp != target)
+            {
+                _closeUp = Mathf.MoveTowards(_closeUp, target, Time.unscaledDeltaTime * 1.2f);
+                PlaceCamera(_camera.transform, _root, _closeUp);
+            }
         }
 
         void OnEnable()

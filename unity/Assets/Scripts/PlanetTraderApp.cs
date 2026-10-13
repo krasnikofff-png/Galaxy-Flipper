@@ -133,6 +133,25 @@ namespace PlanetTrader.Client
             };
         }
 
+        /// <summary>Какие постройки видны на планете в 3D-окне. У силуэта не видно ничего.</summary>
+        PlanetStructures Structures(Planet p)
+        {
+            if (p.Knowledge == Knowledge.Silhouette) return default;
+            var mine = p.Mine == MineState.Building ? MineLook.Building
+                : p.Mine == MineState.Working ? (p.IsProducing ? MineLook.Working : MineLook.Idle)
+                : MineLook.None;
+            return new PlanetStructures
+            {
+                Mine = mine,
+                Extractors = p.ExtraDeposits.Where(d => d.HasExtractor).Select(d => Fmt.ResourceColor(d.Resource)).ToArray(),
+                Settlement = p.Inhabited,
+                School = p.HasSchool,
+                Guard = p.Guarded,
+                Ruins = p.Knowledge == Knowledge.Explored && p.HasUnlootedRuins,
+                Accent = p.Owner == Owner.Registry ? new Color(0.75f, 0.78f, 0.85f) : RingColor(p),
+            };
+        }
+
         /// <summary>Расставить 3D-планеты по местам, которые карта получила в последнем OnGUI.</summary>
         void LateUpdate()
         {
@@ -641,7 +660,7 @@ namespace PlanetTrader.Client
         {
             var rect = GUILayoutUtility.GetRect(10, PortraitHeight, GUILayout.ExpandWidth(true));
             if (Event.current.type == EventType.Repaint)
-                GUI.DrawTexture(rect, _portrait.Show(Describe(p), rect.size * _guiScale), ScaleMode.StretchToFill, false);
+                GUI.DrawTexture(rect, _portrait.Show(Describe(p), Structures(p), rect.size * _guiScale), ScaleMode.StretchToFill, false);
             GUILayout.Space(8);
         }
 
