@@ -1299,10 +1299,25 @@ def eye(c, r, pupil=0.55, look=(0, -1, 0), white=EYE_WHITE, slit=False):
     d = Vector(look).normalized()
     sphere(r, tuple(c), white, shine=0.85, u=14, v=10)
     if slit:
-        sphere(r * 0.5, tuple(c + d * r * 0.62), PUPIL, shine=0.95, u=10, v=6, scale=(0.35, 0.6, 1.3))
+        # Щель чуть выступает из белка, иначе её не видно.
+        sphere(r * 0.5, tuple(c + d * r * 0.8), PUPIL, shine=0.95, u=10, v=6, scale=(0.32, 0.5, 1.25))
     else:
         sphere(r * pupil, tuple(c + d * r * 0.6), PUPIL, shine=0.95, u=12, v=8)
     sphere(r * 0.17, tuple(c + d * r * 0.85 + Vector((-r * 0.25, 0, r * 0.3))), WHITE, shine=0.9, u=6, v=4)
+
+
+def eyelid(c, r, look=(0, -1, 0), cover=0.3, color=SKIN_W, role=None):
+    """Верхнее веко: кусок сферы чуть больше глаза, закрывает верх глаза по направлению взгляда.
+    cover — насколько опущено (0 — до середины, больше — ниже); задняя половина срезана, чтобы не торчала из головы."""
+    role = SKIN_ROLE if role is None else role
+    c = Vector(c)
+    d = Vector(look).normalized()
+    n = (Vector((0, 0, 1)) * 0.95 + d * 0.22).normalized()
+    R = r * 1.1
+    bm = bmesh.new()
+    bmesh.ops.create_uvsphere(bm, u_segments=20, v_segments=12, radius=R)
+    bmesh.ops.delete(bm, geom=[v for v in bm.verts if v.co.dot(n) < -cover * R or v.co.dot(d) < -0.15 * R], context="VERTS")
+    return emit(bm, color, role, 0.4, True, Matrix.Translation(c))
 
 
 def face(c, r, eye_r=0.012, eye_dx=0.02, eye_z=0.01, skin=SKIN_W, lids=True, brows=True, nose=True, mouth=True,
@@ -1428,9 +1443,10 @@ def alien_octo():
         sphere(0.008 + rnd.random() * 0.005, (rr * math.cos(a), 0.005 + rr * 0.95 * math.sin(a), h), SKIN_SPOT, SK, shine=0.5, u=8, v=5)
     for sx in (-1, 1):
         e = Vector((sx * 0.036, -0.07, 0.2))
-        eye(tuple(e), 0.022, look=(sx * 0.2, -1, 0), slit=True)
-        dome(0.025, tuple(e), SKIN_W, SK, shine=0.5, u=14, v=6, height=0.75, rot=(0.5, sx * 0.3, 0))
-        box((0.034, 0.005, 0.006), tuple(e + Vector((sx * 0.002, -0.01, 0.03))), BROW, rot=(0, sx * 0.3, 0), bevel=0)
+        look = (sx * 0.2, -1, 0)
+        eye(tuple(e), 0.022, look=look, slit=True)
+        eyelid(tuple(e), 0.022, look=look, cover=-0.32)
+        box((0.03, 0.005, 0.005), tuple(e + Vector((sx * 0.003, -0.016, 0.027))), BROW, rot=(0, sx * 0.3, 0), bevel=0)
     # Монокль перед правым глазом: золотая оправа на цепочке.
     cyl(0.026, 0.004, (0.036, -0.088, 0.2), GOLD, shine=0.9, segs=20, rot=(math.pi / 2, 0, 0), caps=False)
     rod((0.06, -0.075, 0.2), (0.07, -0.06, 0.13), 0.0015, GOLD, segs=3)
