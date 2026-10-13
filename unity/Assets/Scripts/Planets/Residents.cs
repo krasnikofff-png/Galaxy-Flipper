@@ -5,7 +5,8 @@ namespace PlanetTrader.Visuals
 {
     /// <summary>
     /// Жители планет — десять видов инопланетян (модели alien_* из tools/buildings). На каждой планете свой вид,
-    /// цвет кожи и палитра одежды — по зерну планеты; в толпе одежда немного разная.
+    /// цвет кожи и «мода» — палитра из шести цветов по зерну планеты; каждый житель одет в два своих цвета из неё
+    /// (одежда и отделка: шапки, шарфы, пояса, обувь).
     /// </summary>
     public static class Residents
     {
@@ -37,6 +38,9 @@ namespace PlanetTrader.Visuals
 
         public static string SpeciesName(int species) => All[species].Name;
 
+        /// <summary>Модель вида (alien_…).</summary>
+        public static string ModelOf(int species) => All[species % All.Length].Model;
+
         /// <summary>
         /// Поставить жителей на места «…__resident» в модели (пикет, поселение, карантин).
         /// Вид, кожа и палитра одежды — по зерну планеты seed (species ≥ 0 — вид задан явно);
@@ -50,7 +54,7 @@ namespace PlanetTrader.Visuals
             if (prefab == null) return;
             var rnd = new System.Random(seed * 7 + 3 + group * 7919);
             var skin = SkinColor(sp, new System.Random(seed));
-            var clothHue = (float)new System.Random(seed + 11).NextDouble();
+            var fashion = Fashion(seed);
 
             var spots = new List<Transform>();
             foreach (var t in model.GetComponentsInChildren<Transform>(true))
@@ -61,23 +65,58 @@ namespace PlanetTrader.Visuals
                 var r = Object.Instantiate(prefab, spot, false);
                 r.name = sp.Model;
                 foreach (var tr in r.GetComponentsInChildren<Transform>()) tr.gameObject.layer = layer;
-                // Одежда у всех из палитры планеты, но у каждого своего оттенка; кожа у сородичей чуть разная.
-                var cloth = Color.HSVToRGB(Mathf.Repeat(clothHue + (float)(rnd.NextDouble() - 0.5) * 0.18f, 1),
-                    0.35f + (float)rnd.NextDouble() * 0.4f, 0.45f + (float)rnd.NextDouble() * 0.45f);
-                var mySkin = skin * (0.9f + (float)rnd.NextDouble() * 0.2f);
-                foreach (var mr in r.GetComponentsInChildren<MeshRenderer>())
-                {
-                    mr.sharedMaterial = material;
-                    mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-                    mr.receiveShadows = false;
-                    mr.GetPropertyBlock(block);
-                    block.SetColor("_Skin", mySkin);
-                    block.SetColor("_Cloth", cloth);
-                    mr.SetPropertyBlock(block);
-                }
+                Dress(r, skin * (0.9f + (float)rnd.NextDouble() * 0.2f), fashion, rnd, material, block);
                 BuildingMotion.Attach(r, (float)rnd.NextDouble());
             }
         }
+
+        /// <summary>
+        /// Одеть жителя: два разных цвета из моды планеты, каждый чуть по-своему светлее или темнее.
+        /// Кожа у сородичей с одной планеты почти одинаковая.
+        /// </summary>
+        public static void Dress(GameObject resident, Color skin, Color[] fashion, System.Random rnd, Material material, MaterialPropertyBlock block)
+        {
+            int a = rnd.Next(fashion.Length), b = (a + 1 + rnd.Next(fashion.Length - 1)) % fashion.Length;
+            var cloth = fashion[a] * (0.85f + (float)rnd.NextDouble() * 0.3f);
+            var trim = fashion[b] * (0.85f + (float)rnd.NextDouble() * 0.3f);
+            cloth.a = trim.a = 1;
+            foreach (var mr in resident.GetComponentsInChildren<MeshRenderer>())
+            {
+                mr.sharedMaterial = material;
+                mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                mr.receiveShadows = false;
+                mr.GetPropertyBlock(block);
+                block.SetColor("_Skin", skin);
+                block.SetColor("_Cloth", cloth);
+                block.SetColor("_Cloth2", trim);
+                mr.SetPropertyBlock(block);
+            }
+        }
+
+        /// <summary>
+        /// Мода планеты: шесть цветов, разнесённых по цветовому кругу (основной, противоположный, соседние),
+        /// с разной насыщенностью и яркостью; иногда среди них почти белый или почти чёрный.
+        /// </summary>
+        public static Color[] Fashion(int seed)
+        {
+            var rnd = new System.Random(seed * 31 + 17);
+            float h0 = (float)rnd.NextDouble();
+            float[] offsets = { 0, 0.5f, 0.33f, 0.67f, 0.08f, 0.58f };
+            var colors = new Color[offsets.Length];
+            for (int i = 0; i < offsets.Length; i++)
+            {
+                float h = Mathf.Repeat(h0 + offsets[i] + (float)(rnd.NextDouble() - 0.5) * 0.06f, 1);
+                float s = 0.4f + (float)rnd.NextDouble() * 0.5f;
+                float v = 0.4f + (float)rnd.NextDouble() * 0.55f;
+                colors[i] = Color.HSVToRGB(h, s, v);
+            }
+            if (rnd.NextDouble() < 0.5) colors[4] = Color.HSVToRGB(h0, 0.08f, 0.95f);
+            if (rnd.NextDouble() < 0.4) colors[5] = Color.HSVToRGB(h0, 0.2f, 0.18f);
+            return colors;
+        }
+
+        /// <summary>Кожа жителей планеты: в пределах, правдоподобных для вида.</summary>
+        public static Color SkinOf(int species, int seed) => SkinColor(All[species % All.Length], new System.Random(seed));
 
         static Color SkinColor(Species sp, System.Random rnd)
         {

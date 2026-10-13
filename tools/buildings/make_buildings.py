@@ -36,7 +36,7 @@ BLEND = os.path.join(HERE, "buildings.blend")
 
 NORMAL, ACCENT, LIGHT = 1.0, 0.5, 0.0
 # Кожа и одежда жителей: Unity красит их в цвета планеты.
-SKIN_ROLE, CLOTH_ROLE = 0.25, 0.75
+SKIN_ROLE, CLOTH_ROLE, CLOTH2_ROLE = 0.25, 0.75, 0.875
 
 METAL = (0.72, 0.74, 0.78)
 STEEL = (0.52, 0.55, 0.6)
@@ -1236,23 +1236,49 @@ def quarantine():
 # ----------------------------------------------------------------------
 # Жители: десять видов инопланетян
 # ----------------------------------------------------------------------
-# Кожа (роль SKIN) и одежда (роль CLOTH) в модели белые с узором: цвет даёт Unity — у каждой планеты свой.
+# Кожа (роль SKIN), одежда (CLOTH) и отделка — шапки, шарфы, пояса, обувь (CLOTH2) — в модели белые с узором:
+# цвет даёт Unity, у каждой планеты своя «мода», у каждого жителя свои два цвета из неё.
 # Все стоят в начале координат лицом к −Y, рост около 0.34–0.38, как у прежних человечков.
 # Поднятая рука (щупальце, клешня…) — подвижная часть «gesture», парящее тело медузы — «hover».
 
 SK = SKIN_ROLE
 CL = CLOTH_ROLE
+C2 = CLOTH2_ROLE
 SKIN_W = (1.0, 1.0, 1.0)
 SKIN_SPOT = (0.72, 0.72, 0.72)
 SKIN_PALE = (1.0, 1.0, 1.0)
 CLOTH_W = (1.0, 1.0, 1.0)
-CLOTH_DARK = (0.7, 0.7, 0.7)
+CLOTH_DARK = (0.72, 0.72, 0.72)
 EYE_WHITE = (0.96, 0.96, 0.92)
 PUPIL = (0.05, 0.05, 0.07)
+MOUTH = (0.28, 0.05, 0.07)
+TONGUE = (0.95, 0.45, 0.5)
+TEETH = (0.97, 0.96, 0.9)
+BROW = (0.18, 0.13, 0.1)
+BLUSH = (1.0, 0.55, 0.55)
+SOLE = (0.12, 0.11, 0.11)
+
+
+def lathe(profile, loc, color, role=NORMAL, shine=0.3, segs=20, scale=(1, 1), rot=(0, 0, 0), smooth=True):
+    """Тело вращения: profile — [(z, r), …] снизу вверх (z от loc); scale — сплющить сечение по x и y."""
+    bm = bmesh.new()
+    rings = []
+    for z, r in profile:
+        r = max(r, 0.0008)
+        rings.append([bm.verts.new((r * scale[0] * math.cos(2 * math.pi * k / segs), r * scale[1] * math.sin(2 * math.pi * k / segs), z))
+                      for k in range(segs)])
+    for a, b in zip(rings, rings[1:]):
+        for k in range(segs):
+            k2 = (k + 1) % segs
+            bm.faces.new((a[k], a[k2], b[k2], b[k]))
+    bm.faces.new(list(reversed(rings[0])))
+    bm.faces.new(rings[-1])
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    return emit(bm, color, role, shine, smooth, mat(loc, rot))
 
 
 def taper(points, r0, r1, color, role=NORMAL, shine=0.4, segs=8):
-    """Сужающееся щупальце, хвост, стебель по точкам: радиус от r0 к r1, шарики в сгибах."""
+    """Сужающееся щупальце, хвост, рукав по точкам: радиус от r0 к r1, шарики в сгибах."""
     n = len(points) - 1
     for i, (a, b) in enumerate(zip(points, points[1:])):
         ra = r0 + (r1 - r0) * i / n
@@ -1267,305 +1293,556 @@ def bezier(p0, p1, p2, n=6):
     return [tuple((1 - t) ** 2 * p0 + 2 * (1 - t) * t * p1 + t * t * p2) for t in (i / n for i in range(n + 1))]
 
 
-def eye(c, r, pupil=0.55, look=(0, -1, 0), white=EYE_WHITE):
-    """Глаз: белок и зрачок, смещённый в сторону взгляда."""
+def eye(c, r, pupil=0.55, look=(0, -1, 0), white=EYE_WHITE, slit=False):
+    """Глаз: белок, радужка-зрачок в сторону взгляда и блик; slit — зрачок щелью (ящер, осьминог)."""
     c = Vector(c)
     d = Vector(look).normalized()
-    sphere(r, tuple(c), white, shine=0.8, u=12, v=8)
-    sphere(r * pupil, tuple(c + d * r * 0.62), PUPIL, shine=0.9, u=10, v=6)
+    sphere(r, tuple(c), white, shine=0.85, u=14, v=10)
+    if slit:
+        sphere(r * 0.5, tuple(c + d * r * 0.62), PUPIL, shine=0.95, u=10, v=6, scale=(0.35, 0.6, 1.3))
+    else:
+        sphere(r * pupil, tuple(c + d * r * 0.6), PUPIL, shine=0.95, u=12, v=8)
+    sphere(r * 0.17, tuple(c + d * r * 0.85 + Vector((-r * 0.25, 0, r * 0.3))), WHITE, shine=0.9, u=6, v=4)
 
 
-def boots(x, y, color=DARK):
-    box((0.036, 0.06, 0.024), (x, y - 0.01, 0.012), color, shine=0.3, bevel=0.007)
-
-
-def hand3(c, color, role, r=0.012):
-    """Ладонь с тремя пальцами."""
+def face(c, r, eye_r=0.012, eye_dx=0.02, eye_z=0.01, skin=SKIN_W, lids=True, brows=True, nose=True, mouth=True,
+         white=EYE_WHITE, slit=False, blush=False):
+    """Лицо на голове радиуса r с центром c (лицом к −Y): глаза с веками, сердитые брови, нос, кричащий рот с зубами и языком."""
     c = Vector(c)
-    sphere(r * 1.2, tuple(c), color, role, u=8, v=5)
-    for k in (-1, 0, 1):
-        rod(tuple(c), tuple(c + Vector((k * 0.01, -0.006, -0.022))), r * 0.45, color, role, segs=4)
+    for sx in (-1, 1):
+        e = c + Vector((sx * eye_dx, -r * 0.84, eye_z))
+        eye(tuple(e), eye_r, look=(sx * 0.15, -1, 0), white=white, slit=slit)
+        if lids:
+            dome(eye_r * 1.12, tuple(e), skin, SK, shine=0.3, u=12, v=6, height=0.7, rot=(0.45, sx * 0.25, 0))
+        if brows:
+            box((eye_r * 1.9, 0.005, 0.005), tuple(e + Vector((sx * 0.002, -eye_r * 0.4, eye_r * 1.35))), BROW, rot=(0, sx * 0.35, 0), bevel=0)
+        if blush:
+            sphere(eye_r * 0.8, tuple(c + Vector((sx * eye_dx * 1.35, -r * 0.8, eye_z - eye_r * 1.6))), BLUSH, shine=0.1, u=8, v=5, scale=(1, 0.3, 0.7))
+    if nose:
+        sphere(r * 0.13, tuple(c + Vector((0, -r * 0.97, eye_z - r * 0.28))), skin, SK, u=8, v=6)
+    if mouth:
+        m = c + Vector((0, -r * 0.86, eye_z - r * 0.62))
+        sphere(r * 0.2, tuple(m), MOUTH, shine=0.4, u=12, v=8, scale=(1.3, 0.55, 0.85))
+        box((r * 0.32, 0.004, r * 0.06), tuple(m + Vector((0, -r * 0.08, r * 0.1))), TEETH, bevel=0)
+        sphere(r * 0.1, tuple(m + Vector((0, -r * 0.05, -r * 0.08))), TONGUE, u=8, v=5, scale=(1.3, 0.8, 0.6))
+
+
+def hand(c, color, role, size=0.012, fingers=4, raised=False, side=1):
+    """Кисть: ладонь, пальцы из двух фаланг и большой палец; raised — поднятая раскрытая ладонь."""
+    c = Vector(c)
+    dz = 1 if raised else -1
+    sphere(size, tuple(c), color, role, u=10, v=6, scale=(1.1, 0.6, 1.15))
+    for k in range(fingers):
+        x = (k - (fingers - 1) / 2) * size * 0.62
+        base = c + Vector((x, -size * 0.15, dz * size * 0.95))
+        mid = base + Vector((x * 0.25, -size * 0.2, dz * size * 0.7))
+        tip = mid + Vector((x * 0.15, -size * 0.3, dz * size * 0.45))
+        taper([tuple(base), tuple(mid), tuple(tip)], size * 0.24, size * 0.18, color, role, segs=5)
+    tb = c + Vector((-side * size * 0.9, -size * 0.3, dz * size * 0.2))
+    taper([tuple(tb), tuple(tb + Vector((-side * size * 0.35, -size * 0.45, dz * size * 0.35)))], size * 0.27, size * 0.2, color, role, segs=5)
+
+
+def boot(x, y, z=0.0, color=CLOTH_W, role=C2):
+    """Ботинок: подошва, верх, носок, шнурки."""
+    box((0.04, 0.068, 0.011), (x, y - 0.012, z + 0.0055), SOLE, shine=0.2, bevel=0.004)
+    box((0.036, 0.05, 0.028), (x, y - 0.002, z + 0.024), color, role, shine=0.35, bevel=0.01)
+    sphere(0.019, (x, y - 0.03, z + 0.019), color, role, shine=0.35, u=10, v=6, scale=(0.95, 1, 0.55))
+    for k in range(3):
+        box((0.018, 0.004, 0.003), (x, y - 0.026 + k * 0.008, z + 0.035 + k * 0.003), WHITE, rot=(0.4, 0, 0), bevel=0)
+
+
+def belt(z, r, scale=(1, 1), front=None):
+    """Пояс с золотой пряжкой спереди."""
+    cyl(r, 0.012, (0, 0, z), CLOTH_W, C2, shine=0.35, segs=22, scale=(scale[0], scale[1], 1))
+    fy = -(front if front is not None else r * scale[1])
+    box((0.02, 0.006, 0.015), (0, fy - 0.002, z + 0.006), GOLD, shine=0.85, bevel=0.002)
+    box((0.012, 0.007, 0.007), (0, fy - 0.003, z + 0.006), CLOTH_W, C2, bevel=0)
+
+
+def buttons(x, y, z0, z1, n=3, color=GOLD):
+    for k in range(n):
+        sphere(0.0045, (x, y, z0 + (z1 - z0) * k / max(1, n - 1)), color, shine=0.85, u=6, v=4)
 
 
 def alien_grey():
-    """Серый гуманоид: тонкие ноги и руки, огромная голова, огромные чёрные глаза; комбинезон с поясом и эмблемой."""
-    for sx in (-0.022, 0.022):
-        boots(sx, 0)
-        rod((sx, 0, 0.02), (sx, 0, 0.15), 0.016, CLOTH_W, CL, segs=8)
-    cyl(0.048, 0.12, (0, 0, 0.14), CLOTH_W, CL, shine=0.3, segs=14, r2=0.04)
-    cyl(0.05, 0.014, (0, 0, 0.15), DARK, segs=14)
-    sphere(0.012, (0, -0.045, 0.157), GOLD, shine=0.8, u=8, v=5)
-    box((0.03, 0.006, 0.03), (0, -0.043, 0.22), CLOTH_DARK, CL, bevel=0)
-    cyl(0.03, 0.012, (0, 0, 0.26), CLOTH_DARK, CL, segs=12)
-    rod((0, 0, 0.26), (0, 0, 0.29), 0.012, SKIN_W, SK, segs=6)
-    sphere(0.072, (0, 0, 0.335), SKIN_W, SK, shine=0.35, u=18, v=12, scale=(1, 0.95, 1.12))
+    """Серый гуманоид: огромная голова с блестящими чёрными глазами, тонкие руки с длинными пальцами;
+    комбинезон с молнией, поясом, карманом и эмблемой, ботинки, кобура."""
     for sx in (-1, 1):
-        sphere(0.026, (sx * 0.03, -0.055, 0.335), PUPIL, shine=0.95, u=12, v=8, scale=(0.75, 0.4, 1.0), rot=(0, sx * 0.35, 0))
-    box((0.018, 0.006, 0.003), (0, -0.066, 0.29), (0.3, 0.3, 0.3), SK, bevel=0)
-    rod((-0.05, 0, 0.24), (-0.07, -0.02, 0.13), 0.01, CLOTH_W, CL, segs=6)
-    hand3((-0.072, -0.022, 0.12), SKIN_W, SK)
-    with moving("gesture", (0.05, 0, 0.24)):
-        rod((0.05, 0, 0.24), (0.085, -0.02, 0.34), 0.01, CLOTH_W, CL, segs=6)
-        hand3((0.088, -0.022, 0.355), SKIN_W, SK)
+        x = sx * 0.024
+        boot(x, 0)
+        taper([(x, 0, 0.034), (x, 0, 0.1), (x, 0, 0.165)], 0.016, 0.021, CLOTH_W, CL, segs=12)
+        cyl(0.019, 0.01, (x, 0, 0.034), CLOTH_W, C2, segs=12)
+    lathe([(0.15, 0.036), (0.17, 0.046), (0.2, 0.043), (0.23, 0.049), (0.255, 0.053), (0.272, 0.044), (0.283, 0.02)], (0, 0, 0),
+          CLOTH_W, CL, shine=0.3, segs=22, scale=(1, 0.8))
+    belt(0.172, 0.047, scale=(1, 0.8))
+    box((0.004, 0.004, 0.09), (0, -0.041, 0.23), DARK, bevel=0)
+    cyl(0.026, 0.016, (0, 0, 0.276), CLOTH_W, C2, segs=16)
+    cyl(0.012, 0.004, (0.022, -0.04, 0.245), GOLD, shine=0.85, segs=3, rot=(math.pi / 2, 0, 0))
+    box((0.02, 0.004, 0.018), (-0.022, -0.041, 0.237), CLOTH_W, C2, bevel=0.002)
+    box((0.016, 0.022, 0.03), (0.05, -0.005, 0.16), CLOTH_W, C2, shine=0.3, bevel=0.004)
+    rod((0.05, -0.012, 0.155), (0.05, -0.012, 0.135), 0.004, STEEL, shine=0.8, segs=5)
+    rod((0, 0, 0.28), (0, 0, 0.3), 0.012, SKIN_W, SK, segs=8)
+    head = Vector((0, 0, 0.29))
+    lathe([(0.0, 0.004), (0.012, 0.021), (0.03, 0.038), (0.055, 0.058), (0.085, 0.07), (0.11, 0.066), (0.13, 0.048), (0.142, 0.02), (0.146, 0.002)],
+          tuple(head), SKIN_W, SK, shine=0.4, segs=24, scale=(1, 0.92))
+    for sx in (-1, 1):
+        sphere(0.027, (sx * 0.03, -0.052, 0.357), PUPIL, shine=0.97, u=14, v=10, scale=(0.7, 0.38, 1.05), rot=(0, sx * 0.45, 0))
+        sphere(0.005, (sx * 0.03 - 0.007, -0.062, 0.37), WHITE, shine=0.9, u=6, v=4)
+        sphere(0.0025, (sx * 0.005, -0.064, 0.33), PUPIL, u=4, v=3)
+    sphere(0.008, (0, -0.058, 0.312), MOUTH, u=10, v=6, scale=(1.3, 0.5, 0.9))
+    for sx in (-1, 1):
+        if sx > 0:
+            continue
+        taper([(sx * 0.05, 0, 0.268), (sx * 0.066, -0.008, 0.21)], 0.013, 0.011, CLOTH_W, CL, segs=8)
+        cyl(0.012, 0.008, (sx * 0.066, -0.008, 0.205), CLOTH_W, C2, segs=10)
+        taper([(sx * 0.066, -0.008, 0.21), (sx * 0.074, -0.022, 0.15)], 0.008, 0.007, SKIN_W, SK, segs=8)
+        hand((sx * 0.075, -0.024, 0.14), SKIN_W, SK, size=0.01, fingers=3, side=sx)
+    with moving("gesture", (0.05, 0, 0.268)):
+        taper([(0.05, 0, 0.268), (0.075, -0.01, 0.31)], 0.013, 0.011, CLOTH_W, CL, segs=8)
+        cyl(0.012, 0.008, (0.075, -0.01, 0.305), CLOTH_W, C2, segs=10)
+        taper([(0.075, -0.01, 0.31), (0.088, -0.022, 0.365)], 0.008, 0.007, SKIN_W, SK, segs=8)
+        hand((0.09, -0.024, 0.375), SKIN_W, SK, size=0.01, fingers=3, raised=True, side=1)
+
+
+def tentacle(base, mid, tip, r0, r1, suckers=True):
+    pts = bezier(base, mid, tip, 6)
+    taper(pts, r0, r1, SKIN_W, SK, shine=0.5, segs=10)
+    if suckers:
+        for i in range(1, 6):
+            p = Vector(pts[i])
+            r = r0 + (r1 - r0) * i / 6
+            sphere(r * 0.45, tuple(p + Vector((0, 0, -r * 0.8))), SKIN_PALE, SK, shine=0.6, u=6, v=4, scale=(1, 1, 0.5))
 
 
 def alien_octo():
-    """Осьминог: мантия в пятнах, большие глаза, шесть щупалец по земле и два поднятых; жилет-повязка и котелок."""
-    sphere(0.085, (0, 0.005, 0.2), SKIN_W, SK, shine=0.5, u=20, v=12, scale=(1, 1, 1.25))
+    """Осьминог: мантия в пятнах, глаза с веками и зрачками-щелями, сифон, восемь щупалец с присосками;
+    жилет с пуговицами и часами на цепочке, котелок с лентой, монокль."""
+    lathe([(0.09, 0.05), (0.11, 0.075), (0.15, 0.088), (0.2, 0.09), (0.25, 0.083), (0.29, 0.065), (0.315, 0.035), (0.325, 0.004)],
+          (0, 0.005, 0), SKIN_W, SK, shine=0.55, segs=26, scale=(1, 0.95))
     rnd = random.Random(4)
-    for k in range(10):
-        a, h = rnd.random() * 2 * math.pi, rnd.uniform(0.17, 0.3)
-        sphere(0.012, (0.083 * math.cos(a) * 0.95, 0.005 + 0.083 * math.sin(a) * 0.95, h), SKIN_SPOT, SK, u=6, v=4)
+    for k in range(16):
+        a, h = rnd.random() * 2 * math.pi, rnd.uniform(0.18, 0.26)
+        if math.sin(a) < -0.6 and h < 0.24:
+            continue  # не на лице
+        rr = (0.09 if h < 0.22 else 0.084) * 0.96
+        sphere(0.008 + rnd.random() * 0.005, (rr * math.cos(a), 0.005 + rr * 0.95 * math.sin(a), h), SKIN_SPOT, SK, shine=0.5, u=8, v=5)
     for sx in (-1, 1):
-        eye((sx * 0.035, -0.07, 0.2), 0.022, look=(sx * 0.2, -1, 0))
-        sphere(0.024, (sx * 0.035, -0.066, 0.218), SKIN_W, SK, u=10, v=6, scale=(1.1, 1, 0.5))
-    box((0.025, 0.006, 0.006), (0, -0.083, 0.165), (0.3, 0.2, 0.25), SK, bevel=0)
+        e = Vector((sx * 0.036, -0.07, 0.2))
+        eye(tuple(e), 0.022, look=(sx * 0.2, -1, 0), slit=True)
+        dome(0.025, tuple(e), SKIN_W, SK, shine=0.5, u=14, v=6, height=0.75, rot=(0.5, sx * 0.3, 0))
+        box((0.034, 0.005, 0.006), tuple(e + Vector((sx * 0.002, -0.01, 0.03))), BROW, rot=(0, sx * 0.3, 0), bevel=0)
+    # Монокль перед правым глазом: золотая оправа на цепочке.
+    cyl(0.026, 0.004, (0.036, -0.088, 0.2), GOLD, shine=0.9, segs=20, rot=(math.pi / 2, 0, 0), caps=False)
+    rod((0.06, -0.075, 0.2), (0.07, -0.06, 0.13), 0.0015, GOLD, segs=3)
+    sphere(0.012, (0.0, -0.083, 0.172), MOUTH, u=10, v=6, scale=(1.4, 0.6, 0.9))
+    sphere(0.005, (0, -0.089, 0.168), TONGUE, u=6, v=4)
+    taper([(0.08, 0.02, 0.17), (0.1, 0.02, 0.185), (0.105, 0.0, 0.2)], 0.012, 0.009, SKIN_W, SK, segs=8)
     for k in range(6):
-        a = math.radians(-60 + 180 * k / 5 + 90)
+        a = math.radians(-70 + 220 * k / 5 + 70)
         d = Vector((math.cos(a), math.sin(a), 0))
-        base = Vector((0, 0.005, 0.12)) + d * 0.05
-        pts = bezier(base, base + d * 0.08 + Vector((0, 0, -0.1)), base + d * 0.16 + Vector((0, 0, -0.105)), 5)
-        taper(pts, 0.02, 0.006, SKIN_W, SK, segs=8)
-    cyl(0.088, 0.035, (0, 0.005, 0.11), CLOTH_W, CL, shine=0.2, segs=20, r2=0.084)
-    for k in range(4):
-        sphere(0.007, (-0.03 + k * 0.02, -0.083, 0.13), GOLD, shine=0.8, u=6, v=4)
-    cyl(0.045, 0.045, (0, 0.01, 0.3), CLOTH_DARK, CL, shine=0.3, segs=16, r2=0.04)
-    cyl(0.068, 0.008, (0, 0.01, 0.3), CLOTH_DARK, CL, shine=0.3, segs=18)
-    cyl(0.046, 0.01, (0, 0.01, 0.31), DARK, segs=16)
+        base = Vector((0, 0.005, 0.1)) + d * 0.05
+        tentacle(tuple(base), tuple(base + d * 0.08 + Vector((0, 0, -0.1))), tuple(base + d * 0.17 + Vector((0, 0, -0.098))), 0.022, 0.006)
+    lathe([(0.095, 0.074), (0.125, 0.089), (0.152, 0.091)], (0, 0.005, 0), CLOTH_W, CL, shine=0.2, segs=26, scale=(1, 0.95))
+    box((0.006, 0.006, 0.05), (0, -0.091, 0.125), CLOTH_W, C2, bevel=0)
+    buttons(0.012, -0.093, 0.105, 0.145, 3)
+    rod((0.012, -0.094, 0.13), (0.05, -0.088, 0.115), 0.0018, GOLD, segs=3)
+    cyl(0.009, 0.004, (0.052, -0.09, 0.112), GOLD, shine=0.9, segs=12, rot=(math.pi / 2, 0, 0))
+    lathe([(0.0, 0.07), (0.006, 0.07), (0.008, 0.045), (0.03, 0.044), (0.05, 0.04), (0.058, 0.03), (0.062, 0.004)], (0, 0.012, 0.3),
+          CLOTH_W, C2, shine=0.35, segs=22)
+    cyl(0.0455, 0.01, (0, 0.012, 0.31), DARK, segs=22)
     with moving("gesture", (0, 0, 0.17)):
         for sx in (-1, 1):
-            base = Vector((sx * 0.06, -0.02, 0.17))
-            pts = bezier(base, base + Vector((sx * 0.07, -0.02, 0.06)), base + Vector((sx * 0.06, -0.03, 0.17)), 5)
-            taper(pts, 0.016, 0.006, SKIN_W, SK, segs=8)
+            base = Vector((sx * 0.08, 0.01, 0.16))
+            tentacle(tuple(base), tuple(base + Vector((sx * 0.07, 0.0, 0.05))), tuple(base + Vector((sx * 0.065, -0.01, 0.17))), 0.017, 0.006, suckers=False)
 
 
 def alien_centaur():
-    """Кентавр: туловище на четырёх ногах с копытами, хвост, человеческий торс с рожками; туника и попона."""
-    sphere(0.06, (0, 0.06, 0.15), SKIN_W, SK, shine=0.3, u=16, v=10, scale=(0.85, 1.6, 0.8))
-    for (x, y) in ((-0.032, -0.02), (0.032, -0.02), (-0.032, 0.14), (0.032, 0.14)):
-        taper([(x, y, 0.13), (x, y + 0.01, 0.07), (x, y, 0.02)], 0.016, 0.011, SKIN_W, SK, segs=8)
-        cyl(0.013, 0.02, (x, y, 0.0), DARK, shine=0.4, segs=10)
-    taper([(0, 0.15, 0.17), (0, 0.2, 0.15), (0, 0.22, 0.08)], 0.012, 0.004, SKIN_SPOT, SK, segs=6)
-    box((0.1, 0.12, 0.012), (0, 0.07, 0.195), CLOTH_W, CL, shine=0.15, bevel=0.004)
+    """Кентавр: конское тело с грудью, ноги с коленями, бабками и копытами, грива и пышный хвост;
+    торс в тунике с поясом и плащом, лицо, острые уши, закрученные рога, браслеты, попона с бахромой."""
+    lathe([(-0.09, 0.004), (-0.075, 0.04), (-0.04, 0.058), (0.0, 0.062), (0.05, 0.058), (0.08, 0.045), (0.095, 0.004)], (0, 0.06, 0.15),
+          SKIN_W, SK, shine=0.35, segs=22, scale=(0.82, 1), rot=(math.pi / 2, 0, 0))
+    for (x, y, fwd) in ((-0.032, -0.01, 1), (0.032, -0.01, 1), (-0.032, 0.13, -1), (0.032, 0.13, -1)):
+        taper([(x, y, 0.14), (x, y - 0.012 * fwd, 0.09), (x, y + 0.004 * fwd, 0.04), (x, y, 0.016)], 0.017, 0.009, SKIN_W, SK, segs=10)
+        sphere(0.012, (x, y, 0.03), SKIN_SPOT, SK, u=8, v=5, scale=(1, 1, 0.8))
+        cyl(0.013, 0.018, (x, y - 0.002, 0.0), DARK, shine=0.5, segs=12, r2=0.011)
+    for k in range(6):
+        t = k / 5
+        p = Vector((0, 0.14 + 0.02 * t, 0.16 - 0.005 * t))
+        taper(bezier(tuple(p), tuple(p + Vector(((k - 2.5) * 0.004, 0.05, 0.0))), tuple(p + Vector(((k - 2.5) * 0.008, 0.07, -0.12))), 5),
+              0.008, 0.002, SKIN_SPOT, SK, segs=6)
+    box((0.106, 0.11, 0.01), (0, 0.065, 0.205), CLOTH_W, C2, shine=0.15, bevel=0.003)
     for sx in (-1, 1):
-        box((0.006, 0.12, 0.05), (sx * 0.05, 0.07, 0.175), CLOTH_W, CL, shine=0.15, bevel=0)
-        box((0.006, 0.12, 0.01), (sx * 0.051, 0.07, 0.155), GOLD, shine=0.7, bevel=0)
-    cyl(0.04, 0.11, (0, -0.04, 0.17), CLOTH_W, CL, shine=0.15, segs=14, r2=0.035)
-    cyl(0.042, 0.012, (0, -0.04, 0.2), DARK, segs=14)
-    sphere(0.042, (0, -0.045, 0.32), SKIN_W, SK, u=14, v=10)
+        box((0.005, 0.11, 0.05), (sx * 0.053, 0.065, 0.183), CLOTH_W, C2, shine=0.15, bevel=0)
+        for k in range(8):
+            rod((sx * 0.054, 0.015 + k * 0.014, 0.158), (sx * 0.055, 0.015 + k * 0.014, 0.146), 0.0018, GOLD, segs=3)
+    lathe([(0.0, 0.04), (0.03, 0.042), (0.06, 0.045), (0.085, 0.047), (0.1, 0.04), (0.11, 0.018)], (0, -0.045, 0.17), CLOTH_W, CL, shine=0.2, segs=20,
+          scale=(1, 0.85))
+    belt(0.19, 0.043, scale=(1, 0.85), front=0.08)
+    box((0.1, 0.008, 0.11), (0, -0.005, 0.24), CLOTH_W, C2, shine=0.15, rot=(-0.2, 0, 0), bevel=0)
     for sx in (-1, 1):
-        eye((sx * 0.016, -0.08, 0.325), 0.01)
-        rod((sx * 0.02, -0.04, 0.35), (sx * 0.045, -0.03, 0.39), 0.007, (0.9, 0.85, 0.7), segs=5, r2=0.002)
-    box((0.016, 0.006, 0.004), (0, -0.086, 0.305), (0.35, 0.15, 0.15), SK, bevel=0)
-    rod((-0.04, -0.04, 0.26), (-0.06, -0.06, 0.17), 0.011, SKIN_W, SK, segs=6)
-    sphere(0.014, (-0.06, -0.06, 0.165), SKIN_W, SK, u=8, v=5)
-    with moving("gesture", (0.04, -0.04, 0.26)):
-        rod((0.04, -0.04, 0.26), (0.075, -0.06, 0.36), 0.011, SKIN_W, SK, segs=6)
-        sphere(0.016, (0.078, -0.06, 0.37), SKIN_W, SK, u=8, v=5)
+        sphere(0.012, (sx * 0.042, -0.02, 0.28), GOLD, shine=0.85, u=8, v=5)
+    head = Vector((0, -0.047, 0.32))
+    sphere(0.041, tuple(head), SKIN_W, SK, u=16, v=12, scale=(0.95, 1, 1.05))
+    face(tuple(head), 0.041, eye_r=0.009, eye_dx=0.015, eye_z=0.006)
+    for sx in (-1, 1):
+        cyl(0.008, 0.02, tuple(head + Vector((sx * 0.04, 0.0, 0.01))), SKIN_W, SK, segs=6, r2=0.0, rot=(0, sx * 1.1, 0))
+        taper(bezier(tuple(head + Vector((sx * 0.02, 0.0, 0.035))), tuple(head + Vector((sx * 0.05, 0.02, 0.075))), tuple(head + Vector((sx * 0.03, 0.035, 0.09))), 4),
+              0.007, 0.002, (0.92, 0.86, 0.7), shine=0.4, segs=6)
+    for k in range(7):
+        taper([tuple(head + Vector(((k - 3) * 0.008, 0.035, 0.03))), tuple(head + Vector(((k - 3) * 0.009, 0.05, -0.03 - abs(k - 3) * 0.005)))],
+              0.007, 0.002, SKIN_SPOT, SK, segs=5)
+    taper([(-0.042, -0.045, 0.26), (-0.06, -0.06, 0.2), (-0.062, -0.07, 0.15)], 0.011, 0.009, SKIN_W, SK, segs=8)
+    cyl(0.011, 0.008, (-0.061, -0.065, 0.18), GOLD, shine=0.85, segs=10)
+    hand((-0.062, -0.072, 0.14), SKIN_W, SK, size=0.011, side=-1)
+    with moving("gesture", (0.042, -0.045, 0.26)):
+        taper([(0.042, -0.045, 0.26), (0.07, -0.055, 0.31), (0.078, -0.065, 0.36)], 0.011, 0.009, SKIN_W, SK, segs=8)
+        cyl(0.011, 0.008, (0.076, -0.062, 0.34), GOLD, shine=0.85, segs=10)
+        hand((0.08, -0.067, 0.372), SKIN_W, SK, size=0.012, raised=True, side=1)
 
 
 def alien_slug():
-    """Слизняк: длинное тело волной, светлая подошва, глаза на стебельках, пятна, блестящий след;
-    полосатый шарф и шапка с помпоном."""
-    path = bezier((0, 0.16, 0.025), (0, 0.02, 0.02), (0, -0.03, 0.2), 8)
+    """Слизняк: тело волной из гладких колец, мантия-щит, подошва с волнами, глаза на стебельках с веками,
+    щупики у рта, пятна, блестящий след; полосатый шарф двух цветов, шапка с отворотом и помпоном, рюкзачок."""
+    path = bezier((0, 0.17, 0.02), (0, 0.02, 0.015), (0, -0.03, 0.2), 12)
     for i, p in enumerate(path):
-        r = 0.035 + 0.025 * math.sin(math.pi * i / len(path)) + (0.012 if i > 5 else 0)
-        sphere(r, p, SKIN_W, SK, shine=0.7, u=14, v=10)
-    box((0.07, 0.24, 0.006), (0, 0.08, 0.003), SKIN_PALE, SK, shine=0.95, bevel=0)
+        t = i / (len(path) - 1)
+        r = 0.03 + 0.03 * math.sin(math.pi * min(1, t * 1.2)) + (0.01 if t > 0.7 else 0)
+        sphere(r, p, SKIN_W, SK, shine=0.75, u=18, v=12)
+    for k in range(9):
+        p = Vector(path[k])
+        box((0.075, 0.012, 0.004), tuple(p + Vector((0, 0, -0.022 if k < 6 else -0.03))), SKIN_PALE, SK, shine=0.6, bevel=0)
+    box((0.05, 0.2, 0.003), (0, 0.12, 0.0015), SKIN_PALE, SK, shine=0.97, bevel=0)
+    sphere(0.06, path[5], SKIN_SPOT, SK, shine=0.7, u=16, v=10, scale=(1.05, 1.3, 0.6))
+    sphere(0.007, tuple(Vector(path[5]) + Vector((0.055, 0.0, 0.0))), PUPIL, u=6, v=4)
     rnd = random.Random(8)
-    for k in range(8):
-        p = Vector(path[rnd.randint(1, 6)])
-        sphere(0.01, tuple(p + Vector((rnd.choice((-1, 1)) * 0.04, 0, 0.02))), SKIN_SPOT, SK, u=6, v=4)
+    for k in range(12):
+        p = Vector(path[rnd.randint(2, 9)])
+        sphere(0.009, tuple(p + Vector((rnd.choice((-1, 1)) * 0.045, rnd.uniform(-0.01, 0.01), rnd.uniform(0.0, 0.03)))), SKIN_SPOT, SK, u=6, v=4,
+               scale=(1, 1, 0.5))
     head = Vector(path[-1])
-    box((0.025, 0.006, 0.006), tuple(head + Vector((0, -0.05, -0.02))), (0.3, 0.15, 0.2), SK, bevel=0)
+    sphere(0.012, tuple(head + Vector((0, -0.055, -0.02))), MOUTH, u=10, v=6, scale=(1.4, 0.6, 0.8))
+    sphere(0.005, tuple(head + Vector((0, -0.06, -0.026))), TONGUE, u=6, v=4)
+    for sx in (-1, 1):
+        taper(bezier(tuple(head + Vector((sx * 0.02, -0.045, -0.03))), tuple(head + Vector((sx * 0.04, -0.07, -0.04))), tuple(head + Vector((sx * 0.05, -0.08, -0.06))), 3),
+              0.006, 0.003, SKIN_W, SK, segs=6)
     with moving("gesture", tuple(head + Vector((0, 0, 0.03)))):
         for sx in (-1, 1):
-            tip = head + Vector((sx * 0.04, -0.02, 0.13))
-            taper([tuple(head + Vector((sx * 0.015, 0, 0.03))), tuple(head + Vector((sx * 0.03, -0.01, 0.09))), tuple(tip)], 0.009, 0.006, SKIN_W, SK, segs=6)
-            eye(tuple(tip), 0.016)
-    neck = head + Vector((0, 0.01, -0.06))
-    cyl(0.05, 0.03, tuple(neck), CLOTH_W, CL, shine=0.15, segs=16)
-    for k in range(3):
-        cyl(0.051, 0.006, tuple(neck + Vector((0, 0, 0.004 + k * 0.01))), CLOTH_DARK, CL, segs=16)
-    box((0.03, 0.008, 0.08), tuple(neck + Vector((0.025, -0.045, -0.035))), CLOTH_W, CL, rot=(0.15, 0, 0.2), bevel=0)
-    dome(0.04, tuple(head + Vector((0, 0.01, 0.035))), CLOTH_W, CL, shine=0.15, u=14, v=6, height=0.9)
-    cyl(0.041, 0.008, tuple(head + Vector((0, 0.01, 0.033))), CLOTH_DARK, CL, segs=14)
-    sphere(0.014, tuple(head + Vector((0, 0.01, 0.075))), WHITE, u=8, v=6)
+            tip = head + Vector((sx * 0.042, -0.02, 0.14))
+            taper(bezier(tuple(head + Vector((sx * 0.015, 0, 0.03))), tuple(head + Vector((sx * 0.025, -0.02, 0.1))), tuple(tip), 4), 0.009, 0.006, SKIN_W, SK, segs=8)
+            eye(tuple(tip), 0.017, look=(sx * 0.2, -1, 0))
+            dome(0.019, tuple(tip), SKIN_W, SK, u=12, v=6, height=0.7, rot=(0.4, sx * 0.2, 0))
+    neck = head + Vector((0, 0.012, -0.065))
+    for k in range(4):
+        cyl(0.052, 0.009, tuple(neck + Vector((0, 0, k * 0.009))), CLOTH_W, CL if k % 2 == 0 else C2, shine=0.15, segs=20)
+    for k in range(5):
+        box((0.028, 0.007, 0.015), tuple(neck + Vector((0.028, -0.05, -0.006 - k * 0.015))), CLOTH_W, CL if k % 2 == 0 else C2, rot=(0.1, 0, 0.25), bevel=0.002)
+    for k in range(4):
+        rod(tuple(neck + Vector((0.022 + k * 0.004, -0.053, -0.08))), tuple(neck + Vector((0.022 + k * 0.004, -0.054, -0.095))), 0.002, CLOTH_W, C2, segs=3)
+    cap = head + Vector((0, 0.008, 0.03))
+    lathe([(0.0, 0.043), (0.012, 0.044), (0.03, 0.041), (0.045, 0.03), (0.055, 0.012), (0.058, 0.002)], tuple(cap), CLOTH_W, CL, shine=0.15, segs=20)
+    cyl(0.046, 0.014, tuple(cap), CLOTH_W, C2, shine=0.15, segs=20)
+    sphere(0.015, tuple(cap + Vector((0, 0, 0.065))), CLOTH_W, C2, u=10, v=8)
+    box((0.06, 0.035, 0.05), tuple(Vector(path[6]) + Vector((0, 0.035, 0.06))), CLOTH_W, C2, shine=0.2, bevel=0.01)
+    box((0.04, 0.004, 0.02), tuple(Vector(path[6]) + Vector((0, 0.015, 0.06))), CLOTH_W, CL, bevel=0.002)
 
 
 def alien_lizard():
-    """Ящер: ноги «коленом назад», хвост до земли, вытянутая морда, гребень; комбинезон на лямках и сумка на поясе."""
+    """Ящер: ноги коленом назад с чешуёй и когтями, хвост с шипами, морда с ноздрями, глаза-щели, гребень,
+    высунутый раздвоенный язык; рубашка, комбинезон на лямках с пуговицами и карманом, гаечный ключ, сумка на поясе."""
     for sx in (-1, 1):
         x = sx * 0.03
-        taper([(x, 0.01, 0.15), (x, -0.025, 0.09), (x, 0.015, 0.03)], 0.02, 0.012, SKIN_W, SK, segs=8)
-        box((0.03, 0.06, 0.016), (x, -0.01, 0.01), SKIN_SPOT, SK, bevel=0.005)
+        taper([(x, 0.012, 0.16), (x, -0.025, 0.1), (x, 0.016, 0.035)], 0.021, 0.012, SKIN_W, SK, segs=10)
+        box((0.032, 0.06, 0.016), (x, -0.008, 0.012), SKIN_SPOT, SK, bevel=0.006)
         for k in (-1, 0, 1):
-            rod((x + k * 0.01, -0.035, 0.008), (x + k * 0.012, -0.05, 0.004), 0.004, (0.9, 0.88, 0.8), segs=4)
-    taper(bezier((0, 0.04, 0.16), (0, 0.15, 0.13), (0, 0.22, 0.01), 5), 0.03, 0.006, SKIN_W, SK, segs=8)
-    cyl(0.05, 0.13, (0, 0.0, 0.14), CLOTH_W, CL, shine=0.15, segs=14, r2=0.04, rot=(-0.15, 0, 0))
+            rod((x + k * 0.01, -0.036, 0.01), (x + k * 0.013, -0.052, 0.004), 0.004, (0.92, 0.9, 0.8), segs=4, r2=0.001)
+        for k in range(4):
+            sphere(0.006, (x + sx * 0.012, -0.01 + k * 0.01, 0.06 + k * 0.025), SKIN_SPOT, SK, u=6, v=4)
+    tail = bezier((0, 0.04, 0.16), (0, 0.16, 0.13), (0, 0.24, 0.01), 7)
+    taper(tail, 0.032, 0.006, SKIN_W, SK, segs=10)
+    for k in range(1, 6):
+        p = Vector(tail[k])
+        cyl(0.008, 0.02 - k * 0.002, tuple(p + Vector((0, 0, 0.026 - k * 0.003))), SKIN_SPOT, SK, segs=5, r2=0.0, rot=(-0.6, 0, 0), smooth=False)
+    lathe([(0.0, 0.04), (0.04, 0.045), (0.08, 0.05), (0.11, 0.052), (0.13, 0.042), (0.14, 0.02)], (0, 0, 0.14), CLOTH_W, C2, shine=0.2, segs=20,
+          scale=(1, 0.85), rot=(-0.12, 0, 0))
+    lathe([(0.0, 0.043), (0.04, 0.048), (0.07, 0.05)], (0, 0, 0.14), CLOTH_W, CL, shine=0.2, segs=20, scale=(1, 0.86), rot=(-0.12, 0, 0))
+    box((0.06, 0.008, 0.05), (0, -0.05, 0.225), CLOTH_W, CL, rot=(-0.12, 0, 0), bevel=0.003)
+    box((0.03, 0.009, 0.022), (0, -0.054, 0.22), CLOTH_W, CL, rot=(-0.12, 0, 0), bevel=0.002)
     for sx in (-1, 1):
-        box((0.01, 0.006, 0.09), (sx * 0.025, -0.045, 0.245), CLOTH_DARK, CL, rot=(-0.15, 0, 0), bevel=0)
-        sphere(0.007, (sx * 0.025, -0.05, 0.215), GOLD, shine=0.8, u=6, v=4)
-    box((0.06, 0.03, 0.04), (0.04, -0.03, 0.15), (0.45, 0.3, 0.18), shine=0.2, bevel=0.006)
-    rod((0, -0.02, 0.27), (0, -0.03, 0.3), 0.022, SKIN_W, SK, segs=8)
-    sphere(0.04, (0, -0.035, 0.32), SKIN_W, SK, u=14, v=10, scale=(0.9, 1, 0.85))
-    sphere(0.026, (0, -0.08, 0.31), SKIN_W, SK, u=12, v=8, scale=(0.85, 1.4, 0.7))
+        box((0.011, 0.006, 0.09), (sx * 0.026, -0.03, 0.255), CLOTH_W, CL, rot=(-0.12, sx * 0.1, 0), bevel=0)
+        sphere(0.0055, (sx * 0.026, -0.056, 0.246), GOLD, shine=0.85, u=6, v=4)
+    rod((0.012, -0.06, 0.24), (0.016, -0.062, 0.275), 0.003, STEEL, shine=0.8, segs=5)
+    box((0.012, 0.005, 0.008), (0.016, -0.062, 0.278), STEEL, shine=0.8, bevel=0)
+    belt(0.152, 0.046, scale=(1, 0.86))
+    box((0.04, 0.026, 0.035), (0.046, -0.028, 0.14), CLOTH_W, C2, shine=0.25, bevel=0.006)
+    sphere(0.004, (0.046, -0.042, 0.15), GOLD, shine=0.85, u=6, v=4)
+    rod((0, -0.025, 0.275), (0, -0.032, 0.305), 0.022, SKIN_W, SK, segs=10)
+    head = Vector((0, -0.04, 0.325))
+    sphere(0.04, tuple(head), SKIN_W, SK, u=16, v=12, scale=(0.9, 1, 0.85))
+    sphere(0.027, tuple(head + Vector((0, -0.045, -0.012))), SKIN_W, SK, u=14, v=10, scale=(0.85, 1.45, 0.7))
     for sx in (-1, 1):
-        eye((sx * 0.03, -0.055, 0.335), 0.012, look=(sx, -0.6, 0), white=(1.0, 0.85, 0.2))
-        sphere(0.004, (sx * 0.01, -0.115, 0.318), PUPIL, u=4, v=3)
-    box((0.04, 0.006, 0.003), (0, -0.11, 0.297), (0.3, 0.1, 0.1), SK, bevel=0)
-    for k in range(5):
-        cyl(0.012, 0.03 - k * 0.003, (0, -0.02 + k * 0.025, 0.35 - k * 0.02), SKIN_SPOT, SK, segs=5, r2=0.0, rot=(-0.3 - k * 0.15, 0, 0), smooth=False)
-    rod((-0.05, -0.01, 0.25), (-0.065, -0.05, 0.16), 0.011, SKIN_W, SK, segs=6)
-    hand3((-0.066, -0.052, 0.15), SKIN_W, SK)
-    with moving("gesture", (0.05, -0.01, 0.25)):
-        rod((0.05, -0.01, 0.25), (0.08, -0.04, 0.35), 0.011, SKIN_W, SK, segs=6)
-        hand3((0.082, -0.042, 0.362), SKIN_W, SK)
+        e = head + Vector((sx * 0.03, -0.018, 0.016))
+        eye(tuple(e), 0.012, look=(sx, -0.5, 0), white=(1.0, 0.82, 0.2), slit=True)
+        dome(0.0135, tuple(e), SKIN_SPOT, SK, u=10, v=5, height=0.6, rot=(0.3, sx * 0.9, 0))
+        sphere(0.0035, tuple(head + Vector((sx * 0.009, -0.083, -0.006))), PUPIL, u=4, v=3)
+    box((0.042, 0.006, 0.004), tuple(head + Vector((0, -0.08, -0.024))), MOUTH, bevel=0)
+    taper([tuple(head + Vector((0, -0.08, -0.026))), tuple(head + Vector((0, -0.1, -0.034)))], 0.004, 0.003, TONGUE, segs=5)
+    for sx in (-1, 1):
+        rod(tuple(head + Vector((0, -0.1, -0.034))), tuple(head + Vector((sx * 0.006, -0.112, -0.036))), 0.0022, TONGUE, segs=4, r2=0.001)
+    for k in range(6):
+        cyl(0.011, 0.034 - k * 0.003, tuple(head + Vector((0, 0.008 + k * 0.016, 0.03 - k * 0.012))), SKIN_SPOT, SK, segs=5, r2=0.0,
+            rot=(-0.3 - k * 0.18, 0, 0), smooth=False)
+    taper([(-0.05, -0.012, 0.255), (-0.064, -0.035, 0.2), (-0.068, -0.05, 0.16)], 0.012, 0.01, CLOTH_W, C2, segs=8)
+    hand((-0.069, -0.054, 0.15), SKIN_W, SK, size=0.012, fingers=3, side=-1)
+    with moving("gesture", (0.05, -0.012, 0.255)):
+        taper([(0.05, -0.012, 0.255), (0.072, -0.03, 0.3), (0.082, -0.042, 0.35)], 0.012, 0.01, CLOTH_W, C2, segs=8)
+        hand((0.084, -0.045, 0.363), SKIN_W, SK, size=0.012, fingers=3, raised=True, side=1)
 
 
 def alien_shroom():
-    """Грибовик: шляпка в белых пятнах, ножка-тело с лицом, корни вместо ног; плащ с воротником."""
-    for k in range(5):
-        a = 2 * math.pi * k / 5 + 0.3
-        taper([(0.02 * math.cos(a), 0.02 * math.sin(a), 0.05), (0.06 * math.cos(a), 0.06 * math.sin(a), 0.01), (0.08 * math.cos(a), 0.08 * math.sin(a), 0.0)],
-              0.014, 0.004, SKIN_SPOT, SK, segs=6)
-    cyl(0.045, 0.24, (0, 0, 0.03), SKIN_PALE, SK, shine=0.2, segs=16, r2=0.038)
-    cyl(0.07, 0.15, (0, 0, 0.05), CLOTH_W, CL, shine=0.15, segs=18, r2=0.045, caps=False)
-    cyl(0.052, 0.025, (0, 0, 0.19), CLOTH_DARK, CL, segs=16, r2=0.056)
-    sphere(0.009, (0, -0.052, 0.18), GOLD, shine=0.8, u=6, v=4)
-    for sx in (-1, 1):
-        eye((sx * 0.016, -0.036, 0.245), 0.011)
-    box((0.02, 0.006, 0.008), (0, -0.04, 0.222), (0.35, 0.15, 0.15), SK, bevel=0)
-    dome(0.1, (0, 0, 0.27), SKIN_W, SK, shine=0.4, u=24, v=10, height=0.62)
-    cyl(0.1, 0.012, (0, 0, 0.262), SKIN_SPOT, SK, segs=24, r2=0.085)
+    """Грибовик: шляпка с выпуклыми пятнами и пластинками снизу, ножка с юбочкой, лицо с румянцем,
+    корни-ножки; плащ с капюшоном-воротником и золотой застёжкой, сумка на ремне."""
+    for k in range(6):
+        a = 2 * math.pi * k / 6 + 0.3
+        taper(bezier((0.02 * math.cos(a), 0.02 * math.sin(a), 0.05), (0.06 * math.cos(a), 0.06 * math.sin(a), 0.03),
+                     (0.085 * math.cos(a), 0.085 * math.sin(a), 0.0), 3), 0.015, 0.004, SKIN_SPOT, SK, segs=7)
+    lathe([(0.0, 0.048), (0.05, 0.044), (0.12, 0.04), (0.18, 0.041), (0.22, 0.045), (0.25, 0.05), (0.265, 0.03)], (0, 0, 0.03),
+          SKIN_PALE, SK, shine=0.25, segs=22)
+    lathe([(0.0, 0.075), (0.03, 0.06), (0.09, 0.05), (0.13, 0.047)], (0, 0, 0.04), CLOTH_W, CL, shine=0.15, segs=24, smooth=True)
+    lathe([(0.0, 0.05), (0.015, 0.06), (0.03, 0.055), (0.035, 0.045)], (0, 0.004, 0.165), CLOTH_W, C2, shine=0.15, segs=22)
+    cyl(0.01, 0.004, (0, -0.058, 0.18), GOLD, shine=0.9, segs=12, rot=(math.pi / 2, 0, 0))
+    rod((-0.045, -0.02, 0.2), (0.05, 0.0, 0.08), 0.0035, CLOTH_W, C2, segs=4)
+    box((0.04, 0.022, 0.036), (0.056, -0.004, 0.08), CLOTH_W, C2, shine=0.2, bevel=0.006)
+    box((0.04, 0.004, 0.016), (0.056, -0.016, 0.09), CLOTH_W, CL, bevel=0.002)
+    head = Vector((0, 0, 0.255))
+    face(tuple(head), 0.05, eye_r=0.011, eye_dx=0.018, eye_z=0.0, skin=SKIN_PALE, nose=False, blush=True)
+    lathe([(0.0, 0.11), (0.006, 0.112), (0.02, 0.105), (0.045, 0.085), (0.065, 0.055), (0.075, 0.025), (0.078, 0.003)], (0, 0, 0.28),
+          SKIN_W, SK, shine=0.45, segs=28)
+    for k in range(28):
+        a = 2 * math.pi * k / 28
+        box((0.06, 0.0025, 0.008), (0.075 * math.cos(a), 0.075 * math.sin(a), 0.278), SKIN_SPOT, SK, rot=(0, 0, a), bevel=0)
     rnd = random.Random(2)
-    for k in range(9):
-        a, e = rnd.random() * 2 * math.pi, rnd.uniform(0.25, 1.2)
-        r = 0.1
-        sphere(0.013, (r * math.cos(e) * math.cos(a), r * math.cos(e) * math.sin(a), 0.27 + 0.62 * r * math.sin(e)), WHITE, shine=0.3, u=8, v=4,
-               scale=(1, 1, 0.5))
-    rod((-0.04, 0, 0.16), (-0.065, -0.03, 0.1), 0.009, SKIN_PALE, SK, segs=6)
-    sphere(0.012, (-0.066, -0.032, 0.095), SKIN_PALE, SK, u=8, v=5)
-    with moving("gesture", (0.04, 0, 0.16)):
-        rod((0.04, 0, 0.16), (0.075, -0.03, 0.25), 0.009, SKIN_PALE, SK, segs=6)
-        sphere(0.013, (0.078, -0.032, 0.258), SKIN_PALE, SK, u=8, v=5)
+    for k in range(11):
+        a, e = rnd.random() * 2 * math.pi, rnd.uniform(0.15, 1.25)
+        rr = 0.1
+        p = Vector((rr * math.cos(e) * math.cos(a), rr * math.cos(e) * math.sin(a), 0.285 + 0.7 * rr * math.sin(e)))
+        sphere(0.012 + rnd.random() * 0.008, tuple(p), WHITE, shine=0.35, u=10, v=6, scale=(1, 1, 0.55),
+               rot=(0, -e + math.pi / 2, a) if False else (0, 0, 0))
+    taper([(-0.042, 0, 0.185), (-0.06, -0.02, 0.14), (-0.066, -0.03, 0.1)], 0.01, 0.008, SKIN_PALE, SK, segs=8)
+    hand((-0.067, -0.033, 0.09), SKIN_PALE, SK, size=0.011, fingers=3, side=-1)
+    with moving("gesture", (0.042, 0, 0.185)):
+        taper([(0.042, 0, 0.185), (0.068, -0.02, 0.23), (0.076, -0.03, 0.27)], 0.01, 0.008, SKIN_PALE, SK, segs=8)
+        hand((0.078, -0.033, 0.283), SKIN_PALE, SK, size=0.011, fingers=3, raised=True, side=1)
 
 
 def alien_robot():
-    """Робот: корпус на поршневых ногах, голова с экраном-лицом, антенна с огоньком, клешни; фартук и бабочка."""
+    """Робот: корпус с фасками, швами и заклёпками, дисплей с полосками на груди, шарнирные суставы, поршни,
+    клешни, голова с экраном-лицом и ушами-антеннами; фартук с карманом и инструментами, бабочка."""
     for sx in (-1, 1):
         x = sx * 0.028
-        box((0.036, 0.055, 0.02), (x, -0.01, 0.01), DARK, shine=0.5, bevel=0.005)
-        rod((x, 0, 0.02), (x, 0, 0.09), 0.014, STEEL, shine=0.8, segs=8)
-        rod((x, 0, 0.08), (x, 0, 0.14), 0.018, SKIN_W, SK, shine=0.6, segs=8)
-    box((0.11, 0.07, 0.11), (0, 0, 0.2), SKIN_W, SK, shine=0.6, bevel=0.012)
-    for k in range(3):
-        sphere(0.006, (-0.03 + k * 0.03, -0.036, 0.235), (RED, GREEN_LIGHT, WARM)[k], LIGHT, u=6, v=4)
-    box((0.09, 0.006, 0.08), (0, -0.037, 0.18), CLOTH_W, CL, shine=0.15, bevel=0)
-    box((0.03, 0.006, 0.02), (0, -0.041, 0.165), CLOTH_DARK, CL, bevel=0)
-    rod((0, 0, 0.255), (0, 0, 0.27), 0.012, STEEL, segs=8)
-    box((0.09, 0.07, 0.07), (0, 0, 0.305), SKIN_W, SK, shine=0.6, bevel=0.012)
-    box((0.07, 0.006, 0.048), (0, -0.036, 0.305), (0.05, 0.08, 0.1), shine=0.9, bevel=0)
+        box((0.042, 0.06, 0.018), (x, -0.008, 0.009), DARK, shine=0.5, bevel=0.006)
+        rod((x, 0, 0.018), (x, 0, 0.075), 0.012, STEEL, shine=0.85, segs=10)
+        sphere(0.016, (x, 0, 0.08), DARK, shine=0.6, u=10, v=6)
+        rod((x, 0, 0.085), (x, 0, 0.145), 0.017, SKIN_W, SK, shine=0.6, segs=10)
+        rod((x + sx * 0.012, -0.006, 0.03), (x + sx * 0.012, -0.006, 0.075), 0.0035, STEEL, shine=0.9, segs=5)
+    box((0.112, 0.072, 0.112), (0, 0, 0.2), SKIN_W, SK, shine=0.6, bevel=0.014)
+    for z in (0.16, 0.24):
+        box((0.114, 0.074, 0.003), (0, 0, z), SKIN_SPOT, SK, bevel=0)
+    for (x, z) in ((-0.048, 0.152), (0.048, 0.152), (-0.048, 0.248), (0.048, 0.248)):
+        sphere(0.004, (x, -0.037, z), STEEL, shine=0.9, u=6, v=4)
+    box((0.05, 0.004, 0.032), (0, -0.0365, 0.225), (0.05, 0.07, 0.09), shine=0.9, bevel=0)
+    for k in range(4):
+        box((0.008, 0.003, 0.006 + k * 0.005), (-0.015 + k * 0.01, -0.039, 0.215 + k * 0.0025), (GREEN_LIGHT, GREEN_LIGHT, WARM, RED)[k], LIGHT, bevel=0)
+    lathe([(0.0, 0.02), (0.01, 0.05)], (0, 0, 0.13), CLOTH_W, CL, shine=0.1, segs=4, scale=(1.15, 0.8), rot=(0, 0, math.pi / 4))
+    box((0.09, 0.005, 0.085), (0, -0.039, 0.175), CLOTH_W, CL, shine=0.15, bevel=0)
+    box((0.04, 0.006, 0.024), (0, -0.042, 0.158), CLOTH_W, C2, bevel=0.002)
+    rod((0.008, -0.044, 0.165), (0.012, -0.045, 0.185), 0.0025, STEEL, shine=0.9, segs=4)
+    rod((-0.008, -0.044, 0.165), (-0.01, -0.045, 0.19), 0.002, GOLD, shine=0.9, segs=4)
     for sx in (-1, 1):
-        box((0.014, 0.004, 0.014), (sx * 0.017, -0.04, 0.312), CYAN, LIGHT, bevel=0)
-    box((0.03, 0.004, 0.005), (0, -0.04, 0.292), CYAN, LIGHT, bevel=0)
-    box((0.03, 0.01, 0.018), (0, -0.04, 0.262), CLOTH_DARK, CL, rot=(0, 0, 0), bevel=0.003)
+        rod((sx * 0.03, -0.04, 0.215), (sx * 0.05, 0.0, 0.25), 0.0025, CLOTH_W, CL, segs=4)
     for sx in (-1, 1):
-        cyl(0.012, 0.012, (sx * 0.05, 0, 0.3), STEEL, segs=10, rot=(0, math.pi / 2, 0))
-    rod((0.02, 0, 0.34), (0.03, 0, 0.4), 0.004, STEEL, segs=4)
+        sphere(0.011, (sx * 0.011, -0.041, 0.258), CLOTH_W, C2, u=10, v=6, scale=(1.2, 0.5, 0.75))
+    sphere(0.006, (0, -0.042, 0.258), CLOTH_W, C2, u=8, v=5)
+    rod((0, 0, 0.256), (0, 0, 0.272), 0.013, STEEL, shine=0.8, segs=10)
+    box((0.094, 0.072, 0.072), (0, 0, 0.307), SKIN_W, SK, shine=0.6, bevel=0.013)
+    box((0.074, 0.004, 0.05), (0, -0.0365, 0.307), (0.04, 0.06, 0.08), shine=0.92, bevel=0)
+    for sx in (-1, 1):
+        box((0.015, 0.003, 0.015), (sx * 0.018, -0.039, 0.315), CYAN, LIGHT, bevel=0)
+        box((0.006, 0.003, 0.006), (sx * 0.018, -0.0395, 0.327), CYAN, LIGHT, rot=(0, sx * 0.4, 0), bevel=0)
+    for k in range(5):
+        box((0.006, 0.003, 0.004 + (2 - abs(k - 2)) * 0.003), (-0.016 + k * 0.008, -0.039, 0.292), CYAN, LIGHT, bevel=0)
+    for sx in (-1, 1):
+        cyl(0.013, 0.012, (sx * 0.047, 0, 0.307), STEEL, shine=0.8, segs=12, rot=(0, math.pi / 2, 0))
+        rod((sx * 0.055, 0, 0.307), (sx * 0.058, 0, 0.345), 0.0025, STEEL, segs=4)
+        sphere(0.005, (sx * 0.058, 0, 0.347), WARM, LIGHT, u=6, v=4)
+    rod((0.02, 0, 0.343), (0.03, 0, 0.4), 0.0035, STEEL, segs=5)
     sphere(0.01, (0.03, 0, 0.405), RED, LIGHT, u=8, v=5)
-    rod((-0.058, 0, 0.24), (-0.07, -0.02, 0.15), 0.01, STEEL, shine=0.7, segs=6)
-    for k in (-1, 1):
-        rod((-0.07, -0.02, 0.15), (-0.07 + k * 0.01, -0.03, 0.125), 0.005, DARK, segs=4)
-    with moving("gesture", (0.058, 0, 0.24)):
-        rod((0.058, 0, 0.24), (0.085, -0.02, 0.33), 0.01, STEEL, shine=0.7, segs=6)
-        for k in (-1, 1):
-            rod((0.085, -0.02, 0.33), (0.085 + k * 0.012, -0.03, 0.355), 0.005, DARK, segs=4)
+    for sx in (-1, 1):
+        if sx > 0:
+            continue
+        sphere(0.014, (sx * 0.062, 0, 0.24), DARK, shine=0.6, u=10, v=6)
+        rod((sx * 0.062, 0, 0.24), (sx * 0.07, -0.012, 0.19), 0.01, STEEL, shine=0.85, segs=8)
+        sphere(0.011, (sx * 0.07, -0.012, 0.19), DARK, shine=0.6, u=8, v=5)
+        rod((sx * 0.07, -0.012, 0.19), (sx * 0.074, -0.024, 0.145), 0.009, SKIN_W, SK, shine=0.6, segs=8)
+        for k in (-1, 0, 1):
+            rod((sx * 0.074, -0.024, 0.145), (sx * 0.074 + k * 0.01, -0.03, 0.122), 0.003, DARK, segs=4)
+    with moving("gesture", (0.062, 0, 0.24)):
+        sphere(0.014, (0.062, 0, 0.24), DARK, shine=0.6, u=10, v=6)
+        rod((0.062, 0, 0.24), (0.078, -0.012, 0.29), 0.01, STEEL, shine=0.85, segs=8)
+        sphere(0.011, (0.078, -0.012, 0.29), DARK, shine=0.6, u=8, v=5)
+        rod((0.078, -0.012, 0.29), (0.088, -0.024, 0.34), 0.009, SKIN_W, SK, shine=0.6, segs=8)
+        for k in (-1, 0, 1):
+            rod((0.088, -0.024, 0.34), (0.088 + k * 0.011, -0.03, 0.365), 0.003, DARK, segs=4)
 
 
 def alien_mantis():
-    """Богомол: брюшко, грудь, четыре тонкие ноги, поднятые лапы-косы, треугольная голова, фасеточные глаза, усики;
-    жилет и шарф."""
-    sphere(0.04, (0, 0.07, 0.12), SKIN_W, SK, shine=0.5, u=14, v=10, scale=(0.9, 1.7, 0.8))
-    for k in range(3):
-        cyl(0.036 - k * 0.006, 0.004, (0, 0.04 + k * 0.035, 0.12 + 0.03), SKIN_SPOT, SK, segs=12, rot=(math.pi / 2, 0, 0))
-    cyl(0.03, 0.15, (0, 0.0, 0.12), SKIN_W, SK, shine=0.5, segs=12, r2=0.022, rot=(-0.25, 0, 0))
-    for (y, sp) in ((0.03, 0.09), (0.09, 0.11)):
-        for sx in (-1, 1):
-            taper([(sx * 0.02, y, 0.13), (sx * sp, y, 0.12), (sx * (sp + 0.02), y + 0.01, 0.0)], 0.007, 0.004, SKIN_W, SK, segs=5)
-    cyl(0.034, 0.07, (0, -0.005, 0.15), CLOTH_W, CL, shine=0.15, segs=14, r2=0.03, rot=(-0.25, 0, 0))
-    cyl(0.03, 0.02, (0, -0.03, 0.24), CLOTH_DARK, CL, segs=12)
-    box((0.02, 0.008, 0.06), (0.02, -0.055, 0.21), CLOTH_DARK, CL, rot=(0.2, 0, 0.3), bevel=0)
-    cyl(0.04, 0.04, (0, -0.045, 0.3), SKIN_W, SK, shine=0.5, segs=3, r2=0.012, rot=(math.pi / 2 + 0.3, 0, math.pi), smooth=False)
-    sphere(0.03, (0, -0.04, 0.3), SKIN_W, SK, shine=0.5, u=12, v=8, scale=(1.4, 0.8, 0.8))
+    """Богомол: полосатое сегментированное брюшко, длинная грудь, четыре ноги из трёх сегментов, сложенные крылья
+    с прожилками, лапы-косы с шипами, голова с жвалами, фасеточные глаза, усики; жилет с пуговицами и шарф."""
+    lathe([(-0.08, 0.004), (-0.065, 0.028), (-0.03, 0.042), (0.01, 0.044), (0.05, 0.036), (0.07, 0.02), (0.08, 0.004)], (0, 0.07, 0.12),
+          SKIN_W, SK, shine=0.5, segs=18, scale=(0.9, 0.8), rot=(math.pi / 2 - 0.15, 0, 0))
+    for k in range(5):
+        cyl(0.04 - abs(k - 2) * 0.004, 0.004, (0, 0.02 + k * 0.028, 0.128 - k * 0.004), SKIN_SPOT, SK, segs=16, rot=(math.pi / 2 - 0.15, 0, 0))
     for sx in (-1, 1):
-        sphere(0.018, (sx * 0.038, -0.045, 0.31), (0.15, 0.35, 0.15), shine=0.95, u=12, v=8)
-        taper(bezier((sx * 0.01, -0.06, 0.325), (sx * 0.03, -0.08, 0.4), (sx * 0.07, -0.05, 0.43), 4), 0.003, 0.002, SKIN_SPOT, SK, segs=4)
+        box((0.03, 0.12, 0.003), (sx * 0.018, 0.07, 0.16), SKIN_PALE, SK, shine=0.8, rot=(0.15, sx * 0.25, sx * 0.06), bevel=0)
+        for k in range(3):
+            box((0.002, 0.11, 0.004), (sx * (0.01 + k * 0.009), 0.07, 0.162), SKIN_SPOT, SK, rot=(0.15, sx * 0.25, sx * 0.06), bevel=0)
+    lathe([(0.0, 0.026), (0.05, 0.022), (0.1, 0.02), (0.13, 0.024)], (0, 0.0, 0.13), SKIN_W, SK, shine=0.5, segs=14, rot=(-0.25, 0, 0))
+    for (y, spread) in ((0.025, 0.085), (0.085, 0.105)):
+        for sx in (-1, 1):
+            taper([(sx * 0.02, y, 0.135), (sx * spread, y - 0.01, 0.15), (sx * (spread + 0.03), y + 0.01, 0.06), (sx * (spread + 0.035), y + 0.012, 0.0)],
+                  0.007, 0.0035, SKIN_W, SK, segs=6)
+    lathe([(0.0, 0.03), (0.04, 0.032), (0.07, 0.028)], (0, -0.005, 0.15), CLOTH_W, CL, shine=0.15, segs=18, rot=(-0.25, 0, 0))
+    buttons(0, -0.037, 0.165, 0.21, 3)
+    cyl(0.027, 0.018, (0, -0.032, 0.245), CLOTH_W, C2, segs=16)
+    box((0.016, 0.006, 0.05), (0.018, -0.056, 0.22), CLOTH_W, C2, rot=(0.25, 0, 0.35), bevel=0)
+    head = Vector((0, -0.048, 0.295))
+    lathe([(-0.03, 0.006), (-0.015, 0.02), (0.0, 0.03), (0.015, 0.03), (0.025, 0.018), (0.03, 0.004)], tuple(head), SKIN_W, SK, shine=0.5, segs=16,
+          scale=(1.4, 0.8), rot=(0.3, 0, 0))
+    for sx in (-1, 1):
+        e = head + Vector((sx * 0.04, -0.004, 0.012))
+        sphere(0.019, tuple(e), (0.12, 0.32, 0.12), shine=0.95, u=14, v=10)
+        for k in range(8):
+            a = k * 0.8
+            sphere(0.0035, tuple(e + Vector((0.016 * math.cos(a) * 0.6, -0.013, 0.016 * math.sin(a) * 0.6))), (0.05, 0.18, 0.06), shine=0.95, u=4, v=3)
+        sphere(0.004, tuple(e + Vector((-0.006, -0.016, 0.008))), WHITE, shine=0.9, u=5, v=3)
+        rod(tuple(head + Vector((sx * 0.006, -0.03, -0.025))), tuple(head + Vector((sx * 0.002, -0.042, -0.04))), 0.004, SKIN_SPOT, SK, segs=5, r2=0.0015)
+        taper(bezier(tuple(head + Vector((sx * 0.01, -0.02, 0.03))), tuple(head + Vector((sx * 0.03, -0.05, 0.11))), tuple(head + Vector((sx * 0.075, -0.02, 0.14))), 5),
+              0.0025, 0.0015, SKIN_SPOT, SK, segs=4)
     with moving("gesture", (0, -0.04, 0.23)):
         for sx in (-1, 1):
-            taper([(sx * 0.025, -0.04, 0.23), (sx * 0.04, -0.08, 0.28), (sx * 0.035, -0.09, 0.2)], 0.009, 0.005, SKIN_W, SK, segs=6)
-            for k in range(3):
-                cyl(0.003, 0.012, (sx * 0.037, -0.085 + 0.002 * k, 0.21 + 0.022 * k), WHITE, segs=4, r2=0.0, rot=(0, sx * 1.4, 0), smooth=False)
+            taper([(sx * 0.024, -0.04, 0.23), (sx * 0.042, -0.08, 0.285), (sx * 0.036, -0.092, 0.2)], 0.0095, 0.006, SKIN_W, SK, segs=7)
+            for k in range(4):
+                cyl(0.0028, 0.012, (sx * 0.038, -0.088 + 0.001 * k, 0.21 + 0.018 * k), WHITE, segs=4, r2=0.0, rot=(0, sx * 1.4, 0), smooth=False)
 
 
 def alien_jelly():
-    """Медуза: парящий колокол со светящимися пятнами, бахрома и длинные щупальца; цилиндр и воротник с бантом."""
-    # Тень на земле — видно, что медуза висит в воздухе (и у модели есть неподвижный корпус).
-    cyl(0.07, 0.002, (0, 0, 0.001), (0.08, 0.08, 0.1), shine=0.0, segs=20)
+    """Медуза: прозрачно-блестящий колокол с фестонами по краю и светящимися пятнами, светящееся нутро,
+    ротовые лопасти-ленты и длинные щупальца, глаза с ресницами; цилиндр с лентой и пером, жабо с бантом, жемчуга."""
+    cyl(0.07, 0.002, (0, 0, 0.001), (0.08, 0.08, 0.1), shine=0.0, segs=22)
     with moving("hover", (0, 0, 0.2)):
-        dome(0.085, (0, 0, 0.22), SKIN_W, SK, shine=0.85, u=24, v=10, height=0.95)
-        cyl(0.086, 0.025, (0, 0, 0.198), SKIN_W, SK, shine=0.85, segs=24, r2=0.084)
-        for k in range(12):
-            a = 2 * math.pi * k / 12
-            sphere(0.012, (0.083 * math.cos(a), 0.083 * math.sin(a), 0.198), SKIN_SPOT, SK, shine=0.8, u=6, v=4)
+        lathe([(0.0, 0.088), (0.01, 0.09), (0.04, 0.084), (0.07, 0.066), (0.09, 0.04), (0.1, 0.01), (0.102, 0.002)], (0, 0, 0.2),
+              SKIN_W, SK, shine=0.9, segs=28)
+        sphere(0.05, (0, 0, 0.22), CYAN, LIGHT, u=14, v=8, scale=(1, 1, 0.55))
+        for k in range(16):
+            a = 2 * math.pi * k / 16
+            sphere(0.013, (0.087 * math.cos(a), 0.087 * math.sin(a), 0.198), SKIN_W, SK, shine=0.9, u=8, v=5, scale=(1, 1, 0.7))
         rnd = random.Random(6)
-        for k in range(7):
-            a, e = rnd.random() * 2 * math.pi, rnd.uniform(0.3, 1.0)
-            sphere(0.009, (0.085 * math.cos(e) * math.cos(a), 0.085 * math.cos(e) * math.sin(a), 0.22 + 0.085 * 0.95 * math.sin(e)), CYAN, LIGHT, u=6, v=4)
+        for k in range(9):
+            a, e = rnd.random() * 2 * math.pi, rnd.uniform(0.35, 1.1)
+            sphere(0.008, (0.088 * math.cos(e) * math.cos(a), 0.088 * math.cos(e) * math.sin(a), 0.205 + 0.1 * math.sin(e)), CYAN, LIGHT, u=6, v=4)
         for sx in (-1, 1):
-            eye((sx * 0.03, -0.075, 0.25), 0.016)
-        box((0.02, 0.006, 0.005), (0, -0.084, 0.222), (0.3, 0.15, 0.25), SK, bevel=0)
-        for k in range(8):
-            a = 2 * math.pi * k / 8 + 0.2
-            base = Vector((0.05 * math.cos(a), 0.05 * math.sin(a), 0.2))
-            pts = [tuple(base + Vector((0.012 * math.sin(i * 1.7 + k), 0.012 * math.cos(i * 1.3 + k), -0.035 * i))) for i in range(6)]
-            taper(pts, 0.008, 0.003, SKIN_W, SK, shine=0.8, segs=5)
-        cyl(0.088, 0.016, (0, 0, 0.19), CLOTH_W, CL, shine=0.2, segs=24)
+            e = Vector((sx * 0.032, -0.076, 0.25))
+            eye(tuple(e), 0.016, look=(sx * 0.2, -1, 0))
+            for k in range(4):
+                rod(tuple(e + Vector(((k - 1.5) * 0.007, -0.006, 0.014))), tuple(e + Vector(((k - 1.5) * 0.011, -0.012, 0.024))), 0.0012, PUPIL, segs=3)
+        sphere(0.009, (0, -0.088, 0.222), MOUTH, u=10, v=6, scale=(1.3, 0.5, 0.8))
+        for k in range(4):
+            a = 2 * math.pi * k / 4 + 0.4
+            for j in range(5):
+                z = 0.19 - j * 0.022
+                box((0.011, 0.002, 0.02), (0.022 * math.cos(a) + 0.006 * math.sin(j * 1.5), 0.022 * math.sin(a), z), SKIN_PALE, SK, shine=0.85,
+                    rot=(0, 0, a + j * 0.5), bevel=0)
+        for k in range(12):
+            a = 2 * math.pi * k / 12 + 0.13
+            base = Vector((0.07 * math.cos(a), 0.07 * math.sin(a), 0.2))
+            pts = [tuple(base + Vector((0.01 * math.sin(i * 1.7 + k), 0.01 * math.cos(i * 1.3 + k), -0.03 * i))) for i in range(7)]
+            taper(pts, 0.005, 0.0018, SKIN_W, SK, shine=0.85, segs=5)
+        for k in range(10):
+            a = 2 * math.pi * k / 10
+            box((0.03, 0.004, 0.02), (0.088 * math.cos(a), 0.088 * math.sin(a), 0.19), CLOTH_W, C2, rot=(0.6, 0, a + math.pi / 2), bevel=0)
         for sx in (-1, 1):
-            sphere(0.016, (sx * 0.018, -0.088, 0.196), CLOTH_DARK, CL, u=8, v=5, scale=(1.3, 0.6, 0.8))
-        sphere(0.008, (0, -0.09, 0.196), GOLD, shine=0.8, u=6, v=4)
-        cyl(0.04, 0.008, (0, 0, 0.3), CLOTH_DARK, CL, shine=0.3, segs=16)
-        cyl(0.028, 0.06, (0, 0, 0.305), CLOTH_DARK, CL, shine=0.3, segs=16)
-        cyl(0.029, 0.012, (0, 0, 0.315), CLOTH_W, CL, segs=16)
+            sphere(0.016, (sx * 0.018, -0.092, 0.192), CLOTH_W, CL, u=10, v=6, scale=(1.3, 0.55, 0.8))
+        sphere(0.008, (0, -0.094, 0.192), GOLD, shine=0.85, u=6, v=4)
+        for k in range(11):
+            a = math.pi * (0.15 + 0.7 * k / 10) + math.pi
+            sphere(0.0055, (0.08 * math.cos(a), 0.08 * math.sin(a) * 1.0, 0.205 - 0.02 * math.sin(math.pi * k / 10)), (0.97, 0.95, 0.92), shine=0.9, u=6, v=4)
+        lathe([(0.0, 0.045), (0.005, 0.045), (0.007, 0.03), (0.05, 0.029), (0.065, 0.031), (0.068, 0.002)], (0, 0, 0.3), CLOTH_W, CL, shine=0.35, segs=20)
+        cyl(0.0305, 0.012, (0, 0, 0.312), CLOTH_W, C2, segs=20)
+        taper(bezier((0.025, 0.0, 0.32), (0.05, 0.01, 0.37), (0.035, 0.03, 0.4), 4), 0.006, 0.002, CLOTH_W, C2, segs=6)
 
 
 def alien_bird():
-    """Птица: ноги-палочки с когтями, круглое пернатое тело, крылья-руки, клюв, хохолок, хвост; курточка и шарф."""
+    """Птица: ноги с чешуёй и когтями, пернатое тело с хохолками, светлая грудка, крылья из маховых перьев,
+    веер хвоста, голова с открытым клювом, бровями и хохолком; курточка с лацканами и пуговицами,
+    вязаный шарф двух цветов, лётные очки на лбу."""
+    LEG = (1.0, 0.7, 0.2)
     for sx in (-1, 1):
         x = sx * 0.025
-        taper([(x, 0.0, 0.14), (x, 0.02, 0.07), (x, -0.005, 0.015)], 0.008, 0.005, (1.0, 0.7, 0.2), segs=6)
+        taper([(x, 0.0, 0.14), (x, 0.02, 0.075), (x, -0.004, 0.016)], 0.008, 0.005, LEG, segs=6)
+        for k in range(4):
+            box((0.012, 0.003, 0.003), (x, 0.012 - k * 0.006, 0.09 - k * 0.018), (0.85, 0.55, 0.15), bevel=0)
         for k in (-1, 0, 1):
-            rod((x, -0.005, 0.012), (x + k * 0.015, -0.035, 0.004), 0.004, (1.0, 0.7, 0.2), segs=4)
-    sphere(0.065, (0, 0.01, 0.19), SKIN_W, SK, shine=0.25, u=18, v=12, scale=(0.95, 0.95, 1.1))
-    sphere(0.045, (0, -0.03, 0.18), SKIN_PALE, SK, u=14, v=10, scale=(0.9, 0.6, 1.1))
-    cyl(0.066, 0.07, (0, 0.012, 0.13), CLOTH_W, CL, shine=0.15, segs=18, r2=0.062)
-    for k in range(3):
-        sphere(0.006, (0, -0.058, 0.15 + k * 0.02), GOLD, shine=0.8, u=6, v=4)
-    cyl(0.05, 0.022, (0, 0.0, 0.25), CLOTH_DARK, CL, segs=16)
-    box((0.02, 0.008, 0.06), (-0.03, -0.045, 0.22), CLOTH_DARK, CL, rot=(0.1, 0, -0.3), bevel=0)
-    for k in range(3):
-        cyl(0.015, 0.09, (0.0 + (k - 1) * 0.02, 0.07, 0.15), SKIN_SPOT, SK, segs=4, r2=0.002, rot=(-1.9, 0, (k - 1) * 0.3), smooth=False)
-    sphere(0.045, (0, -0.005, 0.3), SKIN_W, SK, u=14, v=10)
+            rod((x, -0.004, 0.012), (x + k * 0.016, -0.036, 0.004), 0.004, LEG, segs=4)
+            rod((x + k * 0.016, -0.036, 0.004), (x + k * 0.018, -0.042, 0.002), 0.0025, DARK, segs=3, r2=0.0008)
+        rod((x, -0.004, 0.012), (x, 0.02, 0.006), 0.0035, LEG, segs=4)
+    lathe([(0.0, 0.02), (0.02, 0.055), (0.06, 0.066), (0.1, 0.064), (0.13, 0.05), (0.15, 0.02)], (0, 0.01, 0.12), SKIN_W, SK, shine=0.25, segs=22,
+          scale=(0.95, 0.95))
+    sphere(0.045, (0, -0.03, 0.19), SKIN_PALE, SK, u=14, v=10, scale=(0.9, 0.6, 1.15))
+    lathe([(0.0, 0.066), (0.03, 0.068), (0.06, 0.066), (0.085, 0.06)], (0, 0.012, 0.13), CLOTH_W, CL, shine=0.15, segs=22, scale=(0.97, 0.97))
     for sx in (-1, 1):
-        eye((sx * 0.022, -0.035, 0.31), 0.012, look=(sx * 0.4, -1, 0))
-    cyl(0.016, 0.05, (0, -0.04, 0.295), (1.0, 0.65, 0.15), shine=0.5, segs=10, r2=0.0, rot=(math.pi / 2, 0, 0), smooth=False)
+        box((0.011, 0.004, 0.045), (sx * 0.019, -0.061, 0.205), CLOTH_W, C2, rot=(0.25, 0, sx * 0.3), bevel=0)
+    buttons(0.0, -0.064, 0.14, 0.19, 3)
+    box((0.03, 0.006, 0.014), (-0.035, -0.055, 0.16), CLOTH_W, C2, bevel=0.002)
+    for k in range(3):
+        cyl(0.05 - k * 0.002, 0.01, (0, 0.0, 0.245 + k * 0.009), CLOTH_W, CL if k % 2 == 0 else C2, shine=0.1, segs=20)
     for k in range(4):
-        cyl(0.008, 0.06 - k * 0.008, (0, 0.0 + k * 0.012, 0.34), SKIN_SPOT, SK, segs=5, r2=0.0, rot=(0.3 + k * 0.3, 0, 0), smooth=False)
-    box((0.012, 0.05, 0.09), (-0.068, 0.0, 0.17), SKIN_W, SK, rot=(0.2, 0.25, 0), bevel=0.004)
-    with moving("gesture", (0.06, 0, 0.22)):
-        box((0.012, 0.05, 0.1), (0.085, -0.01, 0.27), SKIN_W, SK, rot=(0.1, -0.6, 0), bevel=0.004)
-        for k in range(3):
-            box((0.008, 0.012, 0.04), (0.11 + k * 0.004, -0.025 + k * 0.012, 0.32), SKIN_SPOT, SK, rot=(0.1, -0.6, 0), bevel=0)
+        box((0.02, 0.006, 0.014), (-0.03, -0.05, 0.235 - k * 0.014), CLOTH_W, C2 if k % 2 == 0 else CL, rot=(0.15, 0, -0.3), bevel=0.002)
+    for k in range(5):
+        cyl(0.016, 0.1 - abs(k - 2) * 0.01, (0.0 + (k - 2) * 0.016, 0.065, 0.15), SKIN_W if k % 2 else SKIN_SPOT, SK, segs=4, r2=0.003,
+            rot=(-1.9, 0, (k - 2) * 0.28), smooth=False)
+    head = Vector((0, -0.005, 0.3))
+    sphere(0.046, tuple(head), SKIN_W, SK, u=16, v=12)
+    for sx in (-1, 1):
+        e = head + Vector((sx * 0.022, -0.033, 0.01))
+        eye(tuple(e), 0.0125, look=(sx * 0.4, -1, 0))
+        box((0.022, 0.005, 0.005), tuple(e + Vector((0, -0.006, 0.017))), BROW, rot=(0, sx * 0.35, 0), bevel=0)
+    cyl(0.017, 0.045, tuple(head + Vector((0, -0.035, -0.002))), (1.0, 0.65, 0.15), shine=0.5, segs=10, r2=0.0, rot=(math.pi / 2 - 0.2, 0, 0), smooth=False)
+    cyl(0.013, 0.032, tuple(head + Vector((0, -0.035, -0.014))), (0.95, 0.55, 0.12), shine=0.5, segs=10, r2=0.0, rot=(math.pi / 2 + 0.35, 0, 0), smooth=False)
+    sphere(0.006, tuple(head + Vector((0, -0.048, -0.012))), TONGUE, u=6, v=4)
+    for k in range(5):
+        cyl(0.007, 0.06 - k * 0.008, tuple(head + Vector(((k - 2) * 0.006, 0.0 + k * 0.006, 0.04))), SKIN_SPOT, SK, segs=5, r2=0.0,
+            rot=(0.35 + k * 0.22, 0, (k - 2) * 0.15), smooth=False)
+    cyl(0.047, 0.008, tuple(head + Vector((0, 0.0, 0.022))), (0.35, 0.25, 0.15), shine=0.3, segs=20, rot=(0.25, 0, 0))
+    for sx in (-1, 1):
+        g = head + Vector((sx * 0.018, -0.04, 0.04))
+        cyl(0.012, 0.008, tuple(g), GOLD, shine=0.85, segs=14, rot=(math.pi / 2 - 0.4, 0, 0))
+        cyl(0.0095, 0.009, tuple(g), (0.35, 0.65, 0.75), shine=0.95, segs=14, rot=(math.pi / 2 - 0.4, 0, 0))
+
+    def wing(root, sweep, raised):
+        root = Vector(root)
+        for k in range(5):
+            ang = sweep + (k - 2) * 0.22
+            length = 0.09 - abs(k - 1) * 0.008
+            d = Vector((math.cos(ang) * 0.4, -0.15, math.sin(ang))).normalized() if raised else Vector((math.copysign(0.2, sweep), -0.1, -1)).normalized()
+            if not raised:
+                d = Vector((math.copysign(0.25, sweep) + (k - 2) * 0.05, -0.12, -1)).normalized()
+            tip = root + d * length
+            cyl(0.013, length, tuple(root), SKIN_W if k % 2 else SKIN_SPOT, SK, segs=4, r2=0.002, rot=tuple(Vector((0, 0, 1)).rotation_difference(d).to_euler()),
+                smooth=False)
+        sphere(0.02, tuple(root), SKIN_W, SK, u=10, v=6, scale=(0.8, 1, 1.2))
+
+    wing((-0.062, 0.0, 0.215), -1, False)
+    with moving("gesture", (0.062, 0.0, 0.225)):
+        wing((0.062, 0.0, 0.225), 1.25, True)
 
 
 ALIENS = ["alien_grey", "alien_octo", "alien_centaur", "alien_slug", "alien_lizard",

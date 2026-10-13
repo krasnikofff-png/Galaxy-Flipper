@@ -79,6 +79,131 @@ namespace PlanetTrader.EditorTools
         }
 
         /// <summary>
+        /// Жители крупно, в студии: по три жителя каждого вида в цветах их планеты.
+        /// unity run … -executeMethod PlanetTrader.EditorTools.PlanetSnapshots.RenderResidentsFromCommandLine -snapOut путь.png
+        /// </summary>
+        public static void RenderResidentsFromCommandLine()
+        {
+            var args = System.Environment.GetCommandLineArgs();
+            string path = "residents-closeup.png";
+            for (int i = 0; i < args.Length - 1; i++)
+                if (args[i] == "-snapOut") path = args[i + 1];
+            int code = 0;
+            try { RenderResidents(path); }
+            catch (System.Exception e) { Debug.LogException(e); code = 1; }
+            EditorApplication.Exit(code);
+        }
+
+        public static void RenderResidents(string path)
+        {
+            const int w = 720, h = 600, cols = 5;
+            int count = Residents.Count;
+            var root = new GameObject("Студия жителей") { hideFlags = HideFlags.DontSave };
+            var skyTex = PlanetShowcase.BakeSky(2048, 777);
+            var skyMat = new Material(Shader.Find("PlanetTrader/PlanetSky"));
+            var material = new Material(Shader.Find("PlanetTrader/Building"));
+            var block = new MaterialPropertyBlock();
+            try
+            {
+                var cam = new GameObject("Камера").AddComponent<Camera>();
+                cam.transform.SetParent(root.transform, false);
+                cam.clearFlags = CameraClearFlags.SolidColor;
+                cam.backgroundColor = Color.black;
+                cam.fieldOfView = 28;
+                cam.nearClipPlane = 0.01f;
+                cam.farClipPlane = 100;
+                cam.enabled = false;
+                cam.transform.position = new Vector3(0.12f, 0.3f, -1.0f);
+                cam.transform.LookAt(new Vector3(0, 0.175f, 0));
+                var sun = new GameObject("Солнце").AddComponent<Light>();
+                sun.transform.SetParent(root.transform, false);
+                sun.type = LightType.Directional;
+                sun.color = new Color(1f, 0.97f, 0.92f);
+                sun.intensity = 1.1f;
+                sun.transform.rotation = Quaternion.LookRotation(-new Vector3(-0.5f, 0.6f, -0.7f).normalized);
+                skyMat.SetTexture("_MainTex", skyTex);
+                var sky = new GameObject("Небо").transform;
+                sky.SetParent(root.transform, false);
+                sky.localScale = Vector3.one * 40;
+                sky.gameObject.AddComponent<MeshFilter>().sharedMesh = SphereMesh.Build(64, 32);
+                sky.gameObject.AddComponent<MeshRenderer>().sharedMaterial = skyMat;
+                // Пол: серый диск с цветом в вершинах — для шейдера построек.
+                var floor = new GameObject("Пол");
+                floor.transform.SetParent(root.transform, false);
+                var fm = new Mesh();
+                const int seg = 48;
+                var fv = new Vector3[seg + 1];
+                var fc = new Color[seg + 1];
+                var fu = new Vector2[seg + 1];
+                var ft = new int[seg * 3];
+                fv[0] = Vector3.zero;
+                for (int k = 0; k <= seg; k++)
+                {
+                    if (k > 0) fv[k] = new Vector3(Mathf.Cos(2 * Mathf.PI * k / seg), 0, Mathf.Sin(2 * Mathf.PI * k / seg)) * 0.6f;
+                    fc[k] = new Color(0.42f, 0.42f, 0.45f, 1);
+                    fu[k] = new Vector2(0.05f, 0.5f);
+                }
+                for (int k = 0; k < seg; k++)
+                {
+                    ft[k * 3] = 0;
+                    ft[k * 3 + 1] = 1 + (k + 1) % seg;
+                    ft[k * 3 + 2] = 1 + k;
+                }
+                fm.vertices = fv;
+                fm.colors = fc;
+                fm.uv = fu;
+                fm.triangles = ft;
+                fm.RecalculateNormals();
+                floor.AddComponent<MeshFilter>().sharedMesh = fm;
+                floor.AddComponent<MeshRenderer>().sharedMaterial = material;
+
+                var rt = new RenderTexture(w, h, 24, RenderTextureFormat.ARGB32) { antiAliasing = 8 };
+                cam.targetTexture = rt;
+                int rows = (count + cols - 1) / cols;
+                var sheet = new Texture2D(w * cols, h * rows, TextureFormat.RGB24, false);
+                for (int i = 0; i < count; i++)
+                {
+                    int seed = 100 + i * 37;
+                    var prefab = PlanetBuildings.LoadModel(Residents.ModelOf(i));
+                    var skin = Residents.SkinOf(i, seed);
+                    var fashion = Residents.Fashion(seed);
+                    var rnd = new System.Random(seed);
+                    var group = new GameObject("Тройка");
+                    group.transform.SetParent(root.transform, false);
+                    for (int k = 0; k < 3; k++)
+                    {
+                        var r = Object.Instantiate(prefab, group.transform, false);
+                        r.transform.localPosition = new Vector3((k - 1) * 0.16f, 0, k == 1 ? -0.05f : 0.03f);
+                        // Модель смотрит в +Z (−Y в Blender) — разворачиваем к камере и чуть друг к другу.
+                        r.transform.localRotation = Quaternion.Euler(0, 180 + (k - 1) * -14, 0);
+                        Residents.Dress(r, skin * (0.92f + 0.08f * k), fashion, rnd, material, block);
+                        BuildingMotion.Attach(r, k * 0.31f);
+                    }
+                    foreach (var m in group.GetComponentsInChildren<BuildingMotion>()) m.Pose(0.4f);
+                    cam.Render();
+                    RenderTexture.active = rt;
+                    sheet.ReadPixels(new Rect(0, 0, w, h), (i % cols) * w, (rows - 1 - i / cols) * h);
+                    RenderTexture.active = null;
+                    Object.DestroyImmediate(group);
+                }
+                sheet.Apply();
+                File.WriteAllBytes(Path.GetFullPath(path), sheet.EncodeToPNG());
+                Object.DestroyImmediate(sheet);
+                cam.targetTexture = null;
+                rt.Release();
+                Object.DestroyImmediate(rt);
+                Object.DestroyImmediate(fm);
+            }
+            finally
+            {
+                Object.DestroyImmediate(root);
+                Object.DestroyImmediate(skyTex);
+                Object.DestroyImmediate(skyMat);
+                Object.DestroyImmediate(material);
+            }
+        }
+
+        /// <summary>
         /// Все виды жителей: десять пикетов на планетах разных типов, у каждого свой вид, кожа и одежда.
         /// unity run … -executeMethod PlanetTrader.EditorTools.PlanetSnapshots.RenderSpeciesFromCommandLine -snapOut путь.png
         /// </summary>
