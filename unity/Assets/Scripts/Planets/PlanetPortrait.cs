@@ -22,7 +22,8 @@ namespace PlanetTrader.Visuals
         Mesh _backdropMesh;
         int _shownFrame = -10;
         int _id = -1;
-        readonly PlanetBuildings _buildings = new PlanetBuildings();
+        // Создаётся в Awake: в конструкторе MonoBehaviour редактор Unity не даёт создавать MaterialPropertyBlock.
+        PlanetBuildings _buildings;
         /// <summary>Для какой планеты уже повернули постройки к камере.</summary>
         int _facedId = -1;
         /// <summary>Куда поворачивать постройки: к камере, в середину кадра (солнце и так светит слева).</summary>
@@ -114,6 +115,7 @@ namespace PlanetTrader.Visuals
 
         void Awake()
         {
+            _buildings = new PlanetBuildings();
             _root = new GameObject("Окно планеты 3D").transform;
             _root.position = Origin;
             Object.DontDestroyOnLoad(_root.gameObject);

@@ -217,14 +217,14 @@ namespace PlanetTrader.Client
             {
                 var m = Describe(p);
                 m.Center = ToPixels(ToMap(p.MapX, p.MapY));
-                m.Radius = PlanetRadius(p) * _pixelScale;
+                m.Radius = MapRadius(p) * _pixelScale;
                 _mapPlanets.Add(m);
             }
             _map3d.Show(MapPixels, _mapPlanets);
 
             var b = _game.Balance;
             var exchange = ToPixels(ToMap(b.ExchangeX, b.ExchangeY));
-            _map3d.ShowExchange(exchange, ExchangeRadius * _pixelScale);
+            _map3d.ShowExchange(exchange, ExchangeRadius * MapScale * _pixelScale);
 
             // Зонды игрока в полёте и грузовики добывающих планет (кроме силуэтов).
             _mapShips.Clear();
@@ -236,7 +236,7 @@ namespace PlanetTrader.Client
                     From = ToPixels(ToMap(pr.FromX, pr.FromY)),
                     To = ToPixels(ToMap(pr.TargetX, pr.TargetY)),
                     Progress = (float)pr.Progress(_game.Turn),
-                    Size = 15 * _pixelScale,
+                    Size = 15 * MapScale * _pixelScale,
                     Accent = Fmt.OwnerColor(Owner.Player, false),
                 });
             foreach (var p in _game.AllPlanets)
@@ -246,7 +246,7 @@ namespace PlanetTrader.Client
                         Key = 1_000_000 + p.Id,
                         From = ToPixels(ToMap(p.MapX, p.MapY)),
                         To = exchange,
-                        Size = 12 * _pixelScale,
+                        Size = 12 * MapScale * _pixelScale,
                         Accent = RingColor(p),
                     });
             _map3d.ShowShips(_mapShips);

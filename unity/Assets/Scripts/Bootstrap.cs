@@ -15,13 +15,16 @@ namespace PlanetTrader.Client
         {
             if (GameObject.Find(AppObjectName) != null) return;
 
-            if (Camera.main == null)
+            // Главная камера только заливает фон: всё остальное рисуют свои камеры и интерфейс.
+            // Камеру сцены тоже перекрашиваем, иначе вокруг панелей просвечивает небо (skybox) сцены.
+            var cam = Camera.main;
+            if (cam == null)
             {
-                var cam = new GameObject("Main Camera") { tag = "MainCamera" }.AddComponent<Camera>();
-                cam.clearFlags = CameraClearFlags.SolidColor;
-                cam.backgroundColor = new Color(0.03f, 0.03f, 0.07f);
+                cam = new GameObject("Main Camera") { tag = "MainCamera" }.AddComponent<Camera>();
                 cam.orthographic = true;
             }
+            cam.clearFlags = CameraClearFlags.SolidColor;
+            cam.backgroundColor = new Color(0.03f, 0.03f, 0.07f);
 
             var app = new GameObject(AppObjectName);
             Object.DontDestroyOnLoad(app);

@@ -96,6 +96,18 @@ namespace PlanetTrader.Client
             return true;
         }
 
+        /// <summary>Сторона квадрата карты на экране 1600×900: при ней планеты, станция и корабли — своего обычного размера.</summary>
+        const float ReferenceMapSide = 536;
+
+        /// <summary>
+        /// Во сколько раз карта больше или меньше обычной. Планеты, станция и корабли растут и уменьшаются вместе с ней,
+        /// иначе на маленьком окне планеты наезжали бы друг на друга.
+        /// </summary>
+        float MapScale => Mathf.Clamp(_mapArea.width / ReferenceMapSide, 0.35f, 2f);
+
+        /// <summary>Радиус планеты на карте в точках интерфейса.</summary>
+        float MapRadius(Planet p) => PlanetRadius(p) * MapScale;
+
         Vector2 ToMap(double x, double y) => new Vector2(_mapArea.x + (float)x * _mapArea.width, _mapArea.y + (float)y * _mapArea.height);
 
         Vector2 FromMap(Vector2 local) => new Vector2((local.x - _mapArea.x) / _mapArea.width, (local.y - _mapArea.y) / _mapArea.height);
@@ -125,13 +137,13 @@ namespace PlanetTrader.Client
             var b = _game.Balance;
             // Биржа — 3D-станция карты; здесь только подпись.
             var ex = ToMap(b.ExchangeX, b.ExchangeY);
-            MapLabel(ref used, "Биржа", ex + new Vector2(0, ExchangeRadius * 0.8f));
+            MapLabel(ref used, "Биржа", ex + new Vector2(0, ExchangeRadius * MapScale * 0.8f));
             foreach (var pr in _game.Probes)
                 MapLabel(ref used, $"зонд: {pr.ResolveTurn - _game.Turn + 1} х.", ToMap(pr.TargetX, pr.TargetY) - new Vector2(0, 26));
             foreach (var p in _game.AllPlanets)
             {
                 string label = MapLabel(p);
-                if (label != null) MapLabel(ref used, label, ToMap(p.MapX, p.MapY) + new Vector2(0, PlanetRadius(p) + 5));
+                if (label != null) MapLabel(ref used, label, ToMap(p.MapX, p.MapY) + new Vector2(0, MapRadius(p) + 5));
             }
             for (int i = used; i < _mapLabelPool.Count; i++) _mapLabelPool[i].AddToClassList("hidden");
         }
@@ -203,10 +215,10 @@ namespace PlanetTrader.Client
             foreach (var p in g.AllPlanets)
             {
                 var center = ToMap(p.MapX, p.MapY);
-                float radius = PlanetRadius(p);
+                float radius = MapRadius(p);
                 // Сама планета — 3D-сфера под интерфейсом; здесь только кольца вокруг неё.
-                if (p.Id == _selectedId) Ring(paint, center, radius + 11, Color.white, 2);
-                Ring(paint, center, radius + 6, RingColor(p), 2.5f);
+                if (p.Id == _selectedId) Ring(paint, center, radius + 9, Color.white, 1.5f);
+                Ring(paint, center, radius + 5, RingColor(p), 1.5f);
                 if (p.Knowledge == Knowledge.Explored && p.Owner != Owner.Player)
                     Disc(paint, center + new Vector2(radius + 2, -radius - 2), 3.5f, Color.white);
             }
@@ -255,7 +267,7 @@ namespace PlanetTrader.Client
             foreach (var p in _game.AllPlanets)
             {
                 float d = Vector2.Distance(local, ToMap(p.MapX, p.MapY));
-                if (d <= PlanetRadius(p) + 6 && d < bestDistance)
+                if (d <= MapRadius(p) + 6 && d < bestDistance)
                 {
                     best = p;
                     bestDistance = d;
