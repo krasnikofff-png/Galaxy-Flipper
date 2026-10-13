@@ -34,12 +34,14 @@ namespace PlanetTrader.Core
         public double Wages;
         /// <summary>Налоги с жителей (доход).</summary>
         public double Taxes;
+        /// <summary>Охрана планет от подкупа.</summary>
+        public double Guards;
         public int Accidents;
         /// <summary>Сколько планет забрали коллекторы.</summary>
         public int Seizures;
         public readonly List<string> Events = new List<string>();
 
-        public double TotalCosts => Upkeep + Salaries + Interest + Insurance + Shipping + Wages;
+        public double TotalCosts => Upkeep + Salaries + Interest + Insurance + Shipping + Wages + Guards;
     }
 
     /// <summary>
@@ -67,11 +69,14 @@ namespace PlanetTrader.Core
         readonly List<Probe> _probes = new List<Probe>();
         readonly List<Shipment> _shipments = new List<Shipment>();
         readonly List<ResidentRequest> _requests = new List<ResidentRequest>();
+        readonly List<Magnate> _magnates;
+        readonly List<BribeAttempt> _bribes = new List<BribeAttempt>();
         readonly double[] _stock = new double[ResourceTypes.Count];
         int _nextPlanetId;
         int _nextOrderId;
         int _nextProbeId;
         int _nextRequestId;
+        int _nextBribeId;
 
         /// <summary>
         /// Сообщения о том, что случилось во время действий игрока (например, нашлись руины при покупке).
@@ -85,10 +90,16 @@ namespace PlanetTrader.Core
         public int Managers { get; private set; }
         public int ActionsLeft { get; private set; }
         public bool Insured { get; private set; }
+        /// <summary>Репутация 0–100: грязные дела её портят, выполненные заказы чинят.</summary>
+        public double Reputation { get; private set; }
 
         // Статистика для симулятора и плейтестов.
         public int TotalSeizures { get; private set; }
         public int TurnsActionsExhausted { get; private set; }
+        public int PlanetsLostToBribes { get; private set; }
+        public int AuctionsWon { get; private set; }
+        public int AuctionsLost { get; private set; }
+        public double FinesPaid { get; private set; }
         public readonly List<Planet> SoldPlanets = new List<Planet>();
 
         public IReadOnlyList<Planet> AllPlanets => _planets;
@@ -96,6 +107,13 @@ namespace PlanetTrader.Core
         public IReadOnlyList<Probe> Probes => _probes;
         public IReadOnlyList<Shipment> Shipments => _shipments;
         public IReadOnlyList<ResidentRequest> Requests => _requests;
+        public IReadOnlyList<Magnate> Magnates => _magnates;
+        public IReadOnlyList<BribeAttempt> Bribes => _bribes;
+
+        public Magnate GetMagnate(int id) => _magnates.FirstOrDefault(m => m.Id == id);
+
+        /// <summary>Магнаты, которые не отбиваются от слухов.</summary>
+        IEnumerable<Magnate> ActiveMagnates => _magnates.Where(m => Turn >= m.QuietUntilTurn);
         public IEnumerable<Planet> PlayerPlanets => _planets.Where(p => p.Owner == Owner.Player);
         public int PlayerPlanetCount => _planets.Count(p => p.Owner == Owner.Player);
 
@@ -115,6 +133,8 @@ namespace PlanetTrader.Core
             _mapRng = new Rng(seed ^ 0x5EC7_0A11UL);
             _surveyRng = new Rng(seed ^ 0x50_17E5UL);
             Market = new Market(balance);
+            _magnates = balance.Magnates.Select(m => m.Clone()).ToList();
+            Reputation = balance.StartReputation;
         }
 
         public static Game New(Balance balance, ulong seed)
@@ -127,10 +147,12 @@ namespace PlanetTrader.Core
                 g._planets.Add(g.GeneratePlanet(g.RandomType()));
 
             int aiCount = (int)Math.Round(balance.SectorPlanets * balance.AiStartShare);
+            int k = 0;
             foreach (var p in g._planets.OrderBy(_ => g._rng.NextULong()).Take(aiCount))
             {
                 p.Owner = Owner.Ai;
                 p.Mine = MineState.Working;
+                p.MagnateId = g._magnates.Count == 0 ? -1 : g._magnates[k++ % g._magnates.Count].Id;
             }
 
             // Стартовая планета: скромный ледяной карлик со средним запасом и работающей шахтой.
@@ -289,8 +311,10 @@ namespace PlanetTrader.Core
         /// <summary>Налоги за ход с небастующих планет.</summary>
         public double TaxesPerTurn => PlayerPlanets.Where(p => p.Inhabited && !p.OnStrike).Sum(p => Balance.TaxIncome[(int)p.Tax]);
 
+        public double GuardsPerTurn => PlayerPlanets.Count(p => p.Guarded) * Balance.GuardsCost;
+
         public double CostsPerTurn =>
-            UpkeepPerTurn + Managers * Balance.ManagerSalary + Debt * Balance.InterestPerTurn + InsurancePerTurn + ShippingPerTurn + WagesPerTurn;
+            UpkeepPerTurn + Managers * Balance.ManagerSalary + Debt * Balance.InterestPerTurn + InsurancePerTurn + ShippingPerTurn + WagesPerTurn + GuardsPerTurn;
 
         // ------------------------------------------------------------------
         // Действия, которые тратят очки действий
@@ -314,6 +338,7 @@ namespace PlanetTrader.Core
                 if (p.Knowledge == Knowledge.Silhouette) p.Knowledge = Knowledge.Scanned;
                 return ActionResult.Fail("Планета обитаема: её продают сами жители, сделайте им предложение");
             }
+            if (p.SoldAtAuction) return ActionResult.Fail("Планета продаётся с аукциона: сделайте ставку");
             double price = p.ListPrice(Balance);
             if (Money < price) return ActionResult.Fail("Не хватает денег");
             var a = SpendAction();
@@ -348,10 +373,13 @@ namespace PlanetTrader.Core
         /// <summary>Сколько денег нужно на сделку: цена и, если обещана школа, её постройка.</summary>
         public double OfferCost(Planet p, Offer o) => OfferPrice(p, o) + (o.WithSchool ? Balance.SchoolCost : 0);
 
+        /// <summary>Шанс согласия жителей. Репутация сдвигает его до ±20%.</summary>
         public double OfferChance(Planet p, Offer o)
         {
-            if (o.WithSchool) return Balance.SchoolDealChance;
-            double chance = Balance.OfferChanceAtFullPrice + (o.PriceShare - 1) * Balance.OfferChancePerShare;
+            double chance = o.WithSchool
+                ? Balance.SchoolDealChance
+                : Balance.OfferChanceAtFullPrice + (o.PriceShare - 1) * Balance.OfferChancePerShare;
+            chance += (Reputation - 50) / 250;
             return Math.Min(0.95, Math.Max(0.05, chance));
         }
 
@@ -587,7 +615,171 @@ namespace PlanetTrader.Core
             p.PaysWages = false;
             p.OnStrike = false;
             p.Loyalty = 50;
+            p.Guarded = false;
+            p.MagnateId = -1;
             _requests.RemoveAll(r => r.PlanetId == p.Id);
+            _bribes.RemoveAll(x => x.PlanetId == p.Id);
+        }
+
+        // ------------------------------------------------------------------
+        // Аукционы и магнаты
+        // ------------------------------------------------------------------
+
+        public double BidPrice(Planet p, double factor) => Math.Round(p.BasePrice() * factor);
+
+        /// <summary>
+        /// Шанс выиграть аукцион ставкой factor от базовой цены: каждый магнат может заинтересоваться
+        /// и поставить случайно в своих пределах; выигрывает тот, кто поставил больше.
+        /// </summary>
+        public double AuctionWinChance(double factor)
+        {
+            double chance = 1;
+            foreach (var m in ActiveMagnates)
+            {
+                double below = Math.Min(1, Math.Max(0, (factor - m.BidMin) / (m.BidMax - m.BidMin)));
+                chance *= 1 - m.AuctionInterest + m.AuctionInterest * below;
+            }
+            return chance;
+        }
+
+        /// <summary>Ставка на аукционе. Тратит действие; если магнат перебьёт, планета уйдёт к нему.</summary>
+        public ActionResult PlaceBid(int planetId, double factor, out bool won)
+        {
+            won = false;
+            var p = GetPlanet(planetId);
+            if (p == null || !p.SoldAtAuction) return ActionResult.Fail("Планета не продаётся с аукциона");
+            if (p.IsDepleted) return ActionResult.Fail("Планета выработана");
+            double bid = BidPrice(p, factor);
+            if (Money < bid) return ActionResult.Fail("Не хватает денег");
+            var a = SpendAction();
+            if (!a.Ok) return a;
+
+            Magnate rival = null;
+            double rivalBid = 0;
+            foreach (var m in ActiveMagnates)
+            {
+                if (!_rng.Chance(m.AuctionInterest)) continue;
+                double x = p.BasePrice() * _rng.Range(m.BidMin, m.BidMax);
+                if (x > rivalBid)
+                {
+                    rivalBid = x;
+                    rival = m;
+                }
+            }
+
+            if (bid > rivalBid)
+            {
+                won = true;
+                AuctionsWon++;
+                Acquire(p, bid);
+                return ActionResult.Success;
+            }
+
+            AuctionsLost++;
+            GiveToMagnate(p, rival);
+            Notices.Add($"{rival.Name} перебил(а) вашу ставку {Math.Round(bid)}: {Math.Round(rivalBid)} за {p.Type.Name} #{p.Id}.");
+            return ActionResult.Success;
+        }
+
+        void GiveToMagnate(Planet p, Magnate m)
+        {
+            _requests.RemoveAll(r => r.PlanetId == p.Id);
+            _bribes.RemoveAll(x => x.PlanetId == p.Id);
+            p.Owner = Owner.Ai;
+            p.MagnateId = m?.Id ?? -1;
+            p.Guarded = false;
+            p.Tax = TaxLevel.None;
+            p.PaysWages = false;
+            p.OnStrike = false;
+            if (p.Mine == MineState.None) p.Mine = MineState.Working;
+        }
+
+        /// <summary>Встречный подкуп: жители остаются с вами и становятся лояльнее. Действия не тратит.</summary>
+        public ActionResult CounterBribe(int attemptId)
+        {
+            var x = _bribes.FirstOrDefault(b => b.Id == attemptId);
+            if (x == null) return ActionResult.Fail("Подкупа нет");
+            if (Money < Balance.CounterBribeCost) return ActionResult.Fail("Не хватает денег");
+            var p = GetPlanet(x.PlanetId);
+            Money -= Balance.CounterBribeCost;
+            p.Earned -= Balance.CounterBribeCost;
+            p.Loyalty = Clamp(p.Loyalty + Balance.CounterBribeLoyalty);
+            _bribes.Remove(x);
+            return ActionResult.Success;
+        }
+
+        public ActionResult SetGuards(int planetId, bool on)
+        {
+            var p = GetPlanet(planetId);
+            if (p == null || p.Owner != Owner.Player) return ActionResult.Fail("Это не ваша планета");
+            p.Guarded = on;
+            return ActionResult.Success;
+        }
+
+        /// <summary>Ваш слух о магнате: несколько ходов он не покупает и не пакостит. Грязно: репутация и риск штрафа.</summary>
+        public ActionResult SpreadRumor(int magnateId)
+        {
+            var m = GetMagnate(magnateId);
+            if (m == null) return ActionResult.Fail("Нет такого магната");
+            if (Money < Balance.PlayerRumorCost) return ActionResult.Fail("Не хватает денег");
+            var a = SpendAction();
+            if (!a.Ok) return a;
+            Money -= Balance.PlayerRumorCost;
+            m.QuietUntilTurn = Math.Max(m.QuietUntilTurn, Turn + 1) + Balance.PlayerRumorQuietTurns - 1;
+            ChangeReputation(Balance.PlayerRumorReputation);
+            Notices.Add($"Слух сработал: {m.Name} до хода {m.QuietUntilTurn} отбивается и не мешает вам.");
+            MaybeFine();
+            return ActionResult.Success;
+        }
+
+        public double MagnateBribeCost(Planet p) => Math.Round(p.BasePrice() * Balance.PlayerBribeShare);
+
+        /// <summary>Подкуп жителей планеты магната. Удастся — планета ваша. Грязно: репутация и риск штрафа.</summary>
+        public ActionResult BribeMagnateResidents(int planetId, out bool success)
+        {
+            success = false;
+            var p = GetPlanet(planetId);
+            if (p == null || p.Owner != Owner.Ai) return ActionResult.Fail("Это не планета магната");
+            if (!p.Inhabited || p.Knowledge == Knowledge.Silhouette) return ActionResult.Fail("На планете нет известных вам жителей");
+            if (p.IsDepleted) return ActionResult.Fail("Планета выработана");
+            double cost = MagnateBribeCost(p);
+            if (Money < cost) return ActionResult.Fail("Не хватает денег");
+            var a = SpendAction();
+            if (!a.Ok) return a;
+            Money -= cost;
+            ChangeReputation(Balance.PlayerBribeReputation);
+            if (_rng.Chance(Balance.PlayerBribeChance))
+            {
+                success = true;
+                var m = GetMagnate(p.MagnateId);
+                p.Owner = Owner.Player;
+                p.MagnateId = -1;
+                p.BoughtOnTurn = Turn;
+                p.Invested += cost;
+                p.Loyalty = Balance.PlayerBribeLoyalty;
+                if (p.Knowledge != Knowledge.Explored)
+                {
+                    p.Knowledge = Knowledge.Explored;
+                    Notices.Add(DescribeExploration(p));
+                }
+                LootRuins(p, Notices);
+                Notices.Add($"Жители {p.Type.Name} #{p.Id} ушли от {m?.Name ?? "магната"} к вам.");
+            }
+            else
+                Notices.Add($"Жители {p.Type.Name} #{p.Id} взяли деньги и остались у магната.");
+            MaybeFine();
+            return ActionResult.Success;
+        }
+
+        void ChangeReputation(double delta) => Reputation = Math.Min(100, Math.Max(0, Reputation + delta));
+
+        void MaybeFine()
+        {
+            if (!_rng.Chance(Balance.FineChance)) return;
+            Money -= Balance.FineAmount;
+            FinesPaid += Balance.FineAmount;
+            ChangeReputation(Balance.FineReputation);
+            Notices.Add($"Галактический реестр раскрыл грязное дело: штраф {Math.Round(Balance.FineAmount)}, репутация {Math.Round(Reputation)}.");
         }
 
         // ------------------------------------------------------------------
@@ -766,6 +958,7 @@ namespace PlanetTrader.Core
             if (!OrderReachable(o)) return ActionResult.Fail("Груз не успеет к сроку");
             _stock[(int)o.Resource] -= o.Amount;
             Money += OrderNetPayout(o);
+            ChangeReputation(Balance.ReputationPerOrder);
             _orders.Remove(o);
             return ActionResult.Success;
         }
@@ -809,6 +1002,7 @@ namespace PlanetTrader.Core
             report.Salaries = Managers * Balance.ManagerSalary;
             report.Interest = Debt * Balance.InterestPerTurn;
             report.Insurance = InsurancePerTurn;
+            report.Guards = GuardsPerTurn;
             // Зарплаты жителям уже посчитаны в UpdatePeople.
             double multiplier = Balance.UpkeepMultiplier(UpkeepCurvePlanets);
             foreach (var p in PlayerPlanets)
@@ -818,9 +1012,13 @@ namespace PlanetTrader.Core
             if (Money < 0) CallCollectors(report);
 
             ResolveProbes(report);
+            ResolveBribes(report);
             UpdateOrders(report);
             Discover(report);
             AiTurn(report);
+            // Репутация понемногу возвращается к 50.
+            if (Reputation < 50) ChangeReputation(Math.Min(Balance.ReputationRecovery, 50 - Reputation));
+            else if (Reputation > 50) ChangeReputation(-Math.Min(Balance.ReputationRecovery, Reputation - 50));
             Market.Tick(_rng);
 
             Turn++;
@@ -925,7 +1123,8 @@ namespace PlanetTrader.Core
         {
             // Заказ снимается, когда груз уже не успеет даже при отправке в следующем ходу.
             _orders.RemoveAll(o => Turn + 1 + DeliveryTurns(o) > o.DeadlineTurn);
-            if (!_rng.Chance(Balance.OrderChancePerTurn)) return;
+            // Репутация: при 0 заказов вдвое меньше, при 100 — в полтора раза больше.
+            if (!_rng.Chance(Balance.OrderChancePerTurn * (0.5 + Reputation / 100))) return;
 
             var r = ResourceTypes.All[_rng.Range(0, ResourceTypes.Count)];
             var type = Balance.TypeOf(r);
@@ -950,11 +1149,33 @@ namespace PlanetTrader.Core
             report.Events.Add($"Открыта новая планета {p.Type.Name} #{p.Id}");
         }
 
-        /// <summary>ИИ выкупает лучшую свободную планету и иногда перепродаёт свою.</summary>
+        /// <summary>Подкуп, о котором предупредили: если лояльность так и не поднялась, планета уходит к магнату.</summary>
+        void ResolveBribes(TurnReport report)
+        {
+            foreach (var x in _bribes.Where(b => b.ResolveTurn <= Turn).ToList())
+            {
+                _bribes.Remove(x);
+                var p = GetPlanet(x.PlanetId);
+                var m = GetMagnate(x.MagnateId);
+                if (p == null || p.Owner != Owner.Player) continue;
+                if (p.Loyalty < Balance.BribeSuccessLoyalty)
+                {
+                    GiveToMagnate(p, m);
+                    PlanetsLostToBribes++;
+                    report.Events.Add($"{m.Name} подкупил(а) жителей {p.Type.Name} #{p.Id}: планета теперь у магната.");
+                }
+                else
+                    report.Events.Add($"Жители {p.Type.Name} #{p.Id} отказали {m.Name}: лояльность {Math.Round(p.Loyalty)}.");
+            }
+        }
+
+        /// <summary>Магнаты покупают планеты, иногда перепродают свои и пакостят игроку.</summary>
         void AiTurn(TurnReport report)
         {
-            if (_rng.Chance(Balance.AiBuyChance))
+            var active = ActiveMagnates.ToList();
+            if (active.Count > 0 && _rng.Chance(Balance.AiBuyChance))
             {
+                var buyer = active[_rng.Range(0, active.Count)];
                 var best = PlanetsForSale
                     .Where(p => !p.FoundByProbe)
                     // ИИ знает о планетах то же, что реестр.
@@ -962,9 +1183,8 @@ namespace PlanetTrader.Core
                     .FirstOrDefault();
                 if (best != null && best.EstimatedValue(Balance) > 0)
                 {
-                    best.Owner = Owner.Ai;
-                    if (best.Mine == MineState.None) best.Mine = MineState.Working;
-                    report.Events.Add($"ИИ-магнат купил планету {best.Type.Name} #{best.Id}");
+                    GiveToMagnate(best, buyer);
+                    report.Events.Add($"{buyer.Name} купил(а) планету {best.Type.Name} #{best.Id}.");
                 }
             }
 
@@ -974,8 +1194,77 @@ namespace PlanetTrader.Core
                 if (aiPlanets.Count > 0)
                 {
                     var p = aiPlanets[_rng.Range(0, aiPlanets.Count)];
+                    var seller = GetMagnate(p.MagnateId);
                     p.Owner = Owner.Registry;
-                    report.Events.Add($"ИИ-магнат выставил на продажу планету {p.Type.Name} #{p.Id}");
+                    p.MagnateId = -1;
+                    report.Events.Add($"{seller?.Name ?? "ИИ-магнат"} выставил(а) на продажу планету {p.Type.Name} #{p.Id}.");
+                }
+            }
+
+            foreach (var m in active)
+                if (_rng.Chance(m.TrickChance * MagnateAttention))
+                    PlayTrick(m, PickTrick(m), report);
+        }
+
+        /// <summary>Насколько магнаты замечают игрока: от 0 до 1 по числу его планет.</summary>
+        public double MagnateAttention =>
+            Balance.MagnateAttentionPlanets <= 0 ? 1 : Math.Min(1, PlayerPlanetCount / (double)Balance.MagnateAttentionPlanets);
+
+
+        TrickKind PickTrick(Magnate m)
+        {
+            double roll = _rng.NextDouble() * m.TrickWeights.Sum();
+            for (int i = 0; i < m.TrickWeights.Length; i++)
+            {
+                roll -= m.TrickWeights[i];
+                if (roll < 0) return (TrickKind)i;
+            }
+            return TrickKind.Rumor;
+        }
+
+        void PlayTrick(Magnate m, TrickKind kind, TurnReport report)
+        {
+            switch (kind)
+            {
+                case TrickKind.Bribe:
+                {
+                    var target = PlayerPlanets
+                        .Where(p => p.Inhabited && !p.IsDepleted && !_bribes.Any(b => b.PlanetId == p.Id)
+                                    && p.Loyalty < (p.Guarded ? Balance.GuardedBribeLoyalty : Balance.BribeTargetLoyalty))
+                        .OrderBy(p => p.Loyalty)
+                        .FirstOrDefault();
+                    if (target == null) return;
+                    _bribes.Add(new BribeAttempt { Id = _nextBribeId++, PlanetId = target.Id, MagnateId = m.Id, ResolveTurn = Turn + Balance.BribeWarningTurns });
+                    report.Events.Add($"{m.Name} подкупает жителей {target.Type.Name} #{target.Id}! Через {Balance.BribeWarningTurns} хода они уйдут, " +
+                                      $"если лояльность не поднимется до {Math.Round(Balance.BribeSuccessLoyalty)}.");
+                    return;
+                }
+                case TrickKind.Rumor:
+                {
+                    // Бьёт по ресурсу, которого у игрока больше всего на складе и в добыче.
+                    var produced = PlayerPlanets.Where(p => p.Mine == MineState.Working && !p.IsDepleted).Select(p => p.Resource).ToList();
+                    if (produced.Count == 0) return;
+                    var r = ResourceTypes.All
+                        .OrderByDescending(x => _stock[(int)x] * Balance.BasePrice(x) + produced.Count(y => y == x) * Balance.TypeOf(x).OutputPerTurn * Balance.BasePrice(x))
+                        .First();
+                    Market.Shock(r, 1 - Balance.RumorPriceDrop);
+                    report.Events.Add($"{m.Name} распускает слух, что {r.RuName()} радиоактивен: цена упала на {Math.Round(Balance.RumorPriceDrop * 100)}%.");
+                    return;
+                }
+                case TrickKind.PoachOrder:
+                {
+                    if (_orders.Count == 0) return;
+                    var o = _orders[_rng.Range(0, _orders.Count)];
+                    _orders.Remove(o);
+                    report.Events.Add($"{m.Name} переманил(а) заказчика: {o.Customer} больше не ждёт {o.Amount} ({o.Resource.RuName()}).");
+                    return;
+                }
+                case TrickKind.PoachManager:
+                {
+                    if (Managers == 0) return;
+                    Managers--;
+                    report.Events.Add($"{m.Name} переманил(а) вашего менеджера. Действий на ход станет меньше.");
+                    return;
                 }
             }
         }

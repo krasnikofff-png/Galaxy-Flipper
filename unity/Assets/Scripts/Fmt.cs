@@ -23,8 +23,8 @@ namespace PlanetTrader.Client
             switch (o)
             {
                 case Owner.Player: return "ваша";
-                case Owner.Ai: return "ИИ-магнат";
-                default: return foundByProbe ? "свободна (нашёл ваш зонд)" : "свободна, аукцион реестра";
+                case Owner.Ai: return "магнат";
+                default: return foundByProbe ? "свободна (нашёл ваш зонд)" : "свободна";
             }
         }
 

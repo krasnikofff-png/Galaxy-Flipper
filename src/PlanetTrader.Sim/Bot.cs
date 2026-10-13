@@ -81,10 +81,25 @@ namespace PlanetTrader.Sim
             return g.OfferCost(p, school) + Buffer(g) <= g.Money ? school : new Offer(0.9);
         }
 
+        /// <summary>Наименьшая ставка, с которой аукцион выигрывается хотя бы в 55% случаев.</summary>
+        static double BidFactor(Game g)
+        {
+            foreach (var f in g.Balance.BidFactors)
+                if (g.AuctionWinChance(f) >= 0.55) return f;
+            return g.Balance.BidFactors[g.Balance.BidFactors.Length - 1];
+        }
+
         /// <summary>Налог по настроению, праздник при низкой лояльности, школа на долгоживущих планетах, просьбы.</summary>
         void ManagePeople(Game g)
         {
             var b = g.Balance;
+            // Подкуп магната: встречный подкуп, а если денег нет — праздник.
+            foreach (var x in g.Bribes.ToList())
+            {
+                var target = g.GetPlanet(x.PlanetId);
+                if (g.Money - b.CounterBribeCost >= Buffer(g) / 2) g.CounterBribe(x.Id);
+                else if (g.ActionsLeft > 0 && g.Money >= b.FestivalCost) g.HoldFestival(target.Id);
+            }
             foreach (var r in g.Requests.ToList())
             {
                 var p = g.GetPlanet(r.PlanetId);
@@ -120,7 +135,8 @@ namespace PlanetTrader.Sim
                 // Придерживаем ресурс под открытый заказ, если сами его добываем.
                 bool producing = g.PlayerPlanets.Any(p => p.Resource == r && p.Mine != MineState.None && !p.IsDepleted);
                 var order = g.Orders.Where(o => o.Resource == r && g.OrderReachable(o)).OrderBy(o => o.Amount).FirstOrDefault();
-                if (order != null && producing) stock = Math.Max(0, stock - order.Amount);
+                // В самом начале деньги на вторую планету важнее заказа.
+                if (order != null && producing && g.PlayerPlanetCount > 1) stock = Math.Max(0, stock - order.Amount);
                 if (stock <= 0) continue;
 
                 // Сколько можно продать, не уронив цену ниже порога.
@@ -226,6 +242,11 @@ namespace PlanetTrader.Sim
                     g.MakeOffer(pick.Id, OfferFor(g, pick), out bool accepted);
                     if (!accepted) continue;
                 }
+                else if (pick.SoldAtAuction)
+                {
+                    g.PlaceBid(pick.Id, BidFactor(g), out bool won);
+                    if (!won) continue;
+                }
                 else
                     g.BuyPlanet(pick.Id);
                 if (g.ActionsLeft == 0) break;
@@ -311,8 +332,12 @@ namespace PlanetTrader.Sim
             return g.LaunchScan(bestType, bestX, bestY).Ok;
         }
 
-        double FullCost(Game g, Planet p) =>
-            (p.Inhabited ? g.OfferCost(p, OfferFor(g, p)) : p.ListPrice(g.Balance)) + (p.Mine == MineState.None ? p.Type.MineCost : 0);
+        double FullCost(Game g, Planet p) => PurchasePrice(g, p) + (p.Mine == MineState.None ? p.Type.MineCost : 0);
+
+        double PurchasePrice(Game g, Planet p) =>
+            p.Inhabited ? g.OfferCost(p, OfferFor(g, p))
+            : p.SoldAtAuction ? g.BidPrice(p, BidFactor(g))
+            : p.ListPrice(g.Balance);
 
         void ManageDebt(Game g)
         {

@@ -40,6 +40,12 @@ namespace PlanetTrader.Core
             return revenue;
         }
 
+        /// <summary>Резкое изменение цены, например из-за слуха.</summary>
+        public void Shock(Resource r, double factor)
+        {
+            _price[(int)r] = Math.Max(_b.MinPriceShare * _b.BasePrice(r), _price[(int)r] * factor);
+        }
+
         /// <summary>Конец хода: цена возвращается к базовой и немного шумит.</summary>
         public void Tick(Rng rng)
         {

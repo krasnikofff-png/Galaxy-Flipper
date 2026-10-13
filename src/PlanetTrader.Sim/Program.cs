@@ -23,6 +23,7 @@ namespace PlanetTrader.Sim
         /// <summary>Сколько ходов-планет игрок владел обитаемыми и сколько из них они бастовали.</summary>
         public int InhabitedTurns, StrikeTurns;
         public double InhabitedInvested, InhabitedReturned;
+        public int AuctionsWon, AuctionsLost, PlanetsLostToBribes;
         public readonly Dictionary<string, (double invested, double returned)> ByType = new Dictionary<string, (double, double)>();
     }
 
@@ -71,8 +72,11 @@ namespace PlanetTrader.Sim
             var results = Strategy.All.ToDictionary(s => s, s => RunMany(balance, s, runs, turns, seed));
             var noScouting = RunMany(balance, Strategy.ActiveNoScouting, runs, turns, seed);
             var ignoresPeople = RunMany(balance, Strategy.ActiveIgnoresPeople, runs, turns, seed);
+            var calm = MakeBalance(overrides);
+            foreach (var m in calm.Magnates) m.TrickChance = 0;
+            var noTricks = RunMany(calm, Strategy.Active, runs, turns, seed);
             var report = new StringBuilder();
-            WriteReport(report, results, noScouting, ignoresPeople, runs, overrides);
+            WriteReport(report, results, noScouting, ignoresPeople, noTricks, runs, overrides);
             WriteCurvesCsv(Path.Combine(outDir, "curves.csv"), results, turns);
 
             if (brakes)
@@ -93,17 +97,32 @@ namespace PlanetTrader.Sim
             return b;
         }
 
-        /// <summary>--set AiBuyChance=0.2 меняет любое числовое поле Balance.</summary>
+        /// <summary>
+        /// --set AiBuyChance=0.2 меняет любое числовое поле Balance.
+        /// Поля элементов массивов тоже: --set Magnates[0].AuctionInterest=0.6, --set ProbeTypes[1].Cost=300.
+        /// </summary>
         static void Apply(Balance b, string assignment)
         {
             var parts = assignment.Split('=');
             if (parts.Length != 2) throw new ArgumentException("Ожидается Param=value: " + assignment);
-            var f = typeof(Balance).GetField(parts[0], BindingFlags.Public | BindingFlags.Instance)
+            object target = b;
+            string name = parts[0];
+            int dot = name.IndexOf("].", StringComparison.Ordinal);
+            if (dot > 0)
+            {
+                int open = name.IndexOf('[');
+                var arrayField = typeof(Balance).GetField(name.Substring(0, open), BindingFlags.Public | BindingFlags.Instance)
+                                 ?? throw new ArgumentException("Нет параметра " + name);
+                int index = int.Parse(name.Substring(open + 1, dot - open - 1), Inv);
+                target = ((Array)arrayField.GetValue(b)).GetValue(index);
+                name = name.Substring(dot + 2);
+            }
+            var f = target.GetType().GetField(name, BindingFlags.Public | BindingFlags.Instance)
                     ?? throw new ArgumentException("Нет параметра " + parts[0]);
             object value = f.FieldType == typeof(int) ? int.Parse(parts[1], Inv)
                 : f.FieldType == typeof(bool) ? bool.Parse(parts[1])
                 : (object)double.Parse(parts[1], Inv);
-            f.SetValue(b, value);
+            f.SetValue(target, value);
         }
 
         static List<RunResult> RunMany(Balance b, Strategy s, int runs, int turns, ulong seed)
@@ -161,6 +180,9 @@ namespace PlanetTrader.Sim
             }
 
             r.TurnsActionsExhausted = g.TurnsActionsExhausted;
+            r.AuctionsWon = g.AuctionsWon;
+            r.AuctionsLost = g.AuctionsLost;
+            r.PlanetsLostToBribes = g.PlanetsLostToBribes;
             r.Seizures = g.TotalSeizures;
 
             // Доход на вложенное по типам: всё, что планета принесла, + её текущая стоимость.
@@ -199,7 +221,7 @@ namespace PlanetTrader.Sim
         static string Check(bool ok) => ok ? "✅" : "❌";
 
         static void WriteReport(StringBuilder sb, Dictionary<Strategy, List<RunResult>> results, List<RunResult> noScouting,
-            List<RunResult> ignoresPeople, int runs, List<string> overrides)
+            List<RunResult> ignoresPeople, List<RunResult> noTricks, int runs, List<string> overrides)
         {
             sb.AppendLine("# Отчёт симулятора экономики");
             sb.AppendLine();
@@ -272,9 +294,17 @@ namespace PlanetTrader.Sim
             double strikeCare = StrikeShare(active), strikeIgnore = StrikeShare(ignoresPeople);
             double roiCare = InhabitedRoi(active), roiIgnore = InhabitedRoi(ignoresPeople);
             double inhabitedShare = active.Sum(r => r.InhabitedTurns) / (double)Math.Max(1, active.Sum(r => r.Planets.Skip(1).Sum()));
-            sb.AppendLine($"| Жители требуют внимания (этап 4) | забастовки: у заботливого ≤10%, у того, кто жителей не замечает, ≥30% | {F(strikeCare * 100, "0")}% против {F(strikeIgnore * 100, "0")}% | {Check(strikeCare <= 0.1 && strikeIgnore >= 0.3)} |");
+            double lostIgnoreAvg = ignoresPeople.Average(r => r.PlanetsLostToBribes);
+            sb.AppendLine($"| Жители требуют внимания (этап 4) | у заботливого забастовок ≤10%; кто жителей не замечает, бастует ≥20% времени или теряет планеты из-за подкупа | " +
+                          $"{F(strikeCare * 100, "0")}% против {F(strikeIgnore * 100, "0")}% и {F(lostIgnoreAvg, "0.0")} планеты | {Check(strikeCare <= 0.1 && (strikeIgnore >= 0.2 || lostIgnoreAvg >= 1))} |");
             sb.AppendLine($"| Забота окупается (этап 4) | доход на вложенное в обитаемые планеты выше на 20%+ | ×{F(roiCare, "0.00")} против ×{F(roiIgnore, "0.00")} | {Check(roiCare >= roiIgnore * 1.2)} |");
             sb.AppendLine($"| Обитаемых среди планет «Активного» | для справки | {F(inhabitedShare * 100, "0")}% | |");
+            double trickCost = Median(active.Select(r => r.Capital[120])) / Median(noTricks.Select(r => r.Capital[120]));
+            double winRate = active.Sum(r => r.AuctionsWon) / (double)Math.Max(1, active.Sum(r => r.AuctionsWon + r.AuctionsLost));
+            double lostCare = active.Average(r => r.PlanetsLostToBribes), lostIgnore = ignoresPeople.Average(r => r.PlanetsLostToBribes);
+            sb.AppendLine($"| ИИ мешает заметно, но не бесит (этап 5) | пакости магнатов снижают капитал к 120 на 8–25% | капитал ×{F(trickCost, "0.00")} от партий без пакостей | {Check(trickCost >= 0.75 && trickCost <= 0.92)} |");
+            sb.AppendLine($"| Аукционы (этап 5) | бот выигрывает 40–80% своих ставок | {F(winRate * 100, "0")}% | {Check(winRate >= 0.4 && winRate <= 0.8)} |");
+            sb.AppendLine($"| Подкуп жителей (этап 5) | заботливый теряет ≤1 планеты за партию, тот, кто жителей не замечает, — больше | {F(lostCare, "0.0")} против {F(lostIgnore, "0.0")} | {Check(lostCare <= 1 && lostIgnore > lostCare)} |");
             sb.AppendLine($"| Квантий не ломает экономику | Аномалия не сильно выгоднее Льда | Аномалия ×{F(anomalyRoi, "0.00")}, Лёд ×{F(iceRoi, "0.00")} | {Check(anomalyRoi <= iceRoi * 1.3)} |");
             sb.AppendLine();
 

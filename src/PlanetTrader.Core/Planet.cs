@@ -55,6 +55,10 @@ namespace PlanetTrader.Core
         public bool OnStrike;
         /// <summary>До какого хода жители не хотят разговаривать после отказа.</summary>
         public int NoTalksUntilTurn;
+        /// <summary>Какой магнат владеет планетой; −1 — не магнат.</summary>
+        public int MagnateId = -1;
+        /// <summary>Охрана против подкупа жителей.</summary>
+        public bool Guarded;
 
         public Planet(int id, PlanetType type, double reserve)
         {
@@ -84,14 +88,19 @@ namespace PlanetTrader.Core
         /// Цена в реестре: пропорциональна запасу по оценке реестра (а не настоящему), с надбавкой аукциона,
         /// если планету видят ИИ. Разведка показывает, переплачиваете вы или нет.
         /// </summary>
-        public double ListPrice(Balance b)
+        public double ListPrice(Balance b) => Math.Round(BasePrice() * (FoundByProbe ? 1 : 1 + b.AuctionMarkup));
+
+        /// <summary>Базовая цена реестра, от которой считаются ставки на аукционе.</summary>
+        public double BasePrice()
         {
             double price = Type.Price * EstimatedReserve / Type.AverageReserve;
             // Готовая шахта продаётся вместе с планетой.
             if (Mine != MineState.None) price += Type.MineCost;
-            if (!FoundByProbe) price *= 1 + b.AuctionMarkup;
             return Math.Round(price);
         }
+
+        /// <summary>Продают ли планету с аукциона, где ставят магнаты.</summary>
+        public bool SoldAtAuction => Owner == Owner.Registry && !FoundByProbe && !Inhabited;
 
         /// <summary>
         /// Рыночная стоимость: дисконтированный чистый доход от оставшейся добычи

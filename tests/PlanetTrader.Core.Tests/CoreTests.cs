@@ -152,6 +152,7 @@ public class GameTests
         b.StartMoney = 100_000;
         var g = Game.New(b, 3);
         var p = g.PlanetsForSale.First();
+        p.FoundByProbe = true; // без аукциона
         p.RuinsValue = 0;
         double price = p.ListPrice(b);
 
@@ -429,6 +430,7 @@ public class ExplorationTests
         var b = Quiet();
         var g = Game.New(b, 2);
         var p = g.PlanetsForSale.First();
+        p.FoundByProbe = true; // без аукциона
         p.RuinsValue = 500;
         double money = g.Money;
         double price = p.ListPrice(b);
@@ -640,5 +642,162 @@ public class PeopleTests
         for (int i = 0; i < b.RequestTurns; i++) g.EndTurn();
         Assert.Empty(g.Requests);
         Assert.True(p.Loyalty < before - b.RequestLoyaltyPenalty + b.RequestTurns * b.SchoolLoyalty + 1e-6);
+    }
+}
+
+public class MagnateTests
+{
+    static Balance Quiet() => new Balance
+    {
+        AccidentChance = 0,
+        AiBuyChance = 0,
+        AiResaleChance = 0,
+        OrderChancePerTurn = 0,
+        DiscoveryChancePerTurn = 0,
+        MarketNoise = 0,
+        StartMoney = 100_000,
+        RequestChancePerPlanet = 0,
+        ShipSpeed = 100,
+        ShippingCostPerDistance = 0,
+    };
+
+    static Balance NoTricks()
+    {
+        var b = Quiet();
+        foreach (var m in b.Magnates) m.TrickChance = 0;
+        return b;
+    }
+
+    static Planet AuctionPlanet(Game g)
+    {
+        var p = g.PlanetsForSale.First(x => x.SoldAtAuction);
+        p.RuinsValue = 0;
+        return p;
+    }
+
+    [Fact]
+    public void AuctionPlanetCannotBeBoughtWithoutBid()
+    {
+        var g = Game.New(NoTricks(), 6);
+        var p = AuctionPlanet(g);
+        Assert.False(g.BuyPlanet(p.Id).Ok);
+    }
+
+    [Fact]
+    public void BidWinsWhenNoMagnateIsInterested()
+    {
+        var b = NoTricks();
+        foreach (var m in b.Magnates) m.AuctionInterest = 0;
+        var g = Game.New(b, 6);
+        var p = AuctionPlanet(g);
+        Assert.Equal(1, g.AuctionWinChance(1.0), 6);
+        double money = g.Money;
+        Assert.True(g.PlaceBid(p.Id, 1.1, out bool won).Ok);
+        Assert.True(won);
+        Assert.Equal(Owner.Player, p.Owner);
+        Assert.Equal(money - g.BidPrice(p, 1.1), g.Money, 6);
+        Assert.Equal(1, g.AuctionsWon);
+    }
+
+    [Fact]
+    public void LostAuctionGivesPlanetToMagnate()
+    {
+        var b = NoTricks();
+        foreach (var m in b.Magnates)
+        {
+            m.AuctionInterest = 1;
+            m.BidMin = 2.0;
+            m.BidMax = 2.1;
+        }
+        var g = Game.New(b, 6);
+        var p = AuctionPlanet(g);
+        Assert.Equal(0, g.AuctionWinChance(1.3), 6);
+        double money = g.Money;
+        Assert.True(g.PlaceBid(p.Id, 1.3, out bool won).Ok);
+        Assert.False(won);
+        Assert.Equal(Owner.Ai, p.Owner);
+        Assert.True(p.MagnateId >= 0);
+        Assert.Equal(money, g.Money, 6);
+        Assert.Equal(2, g.ActionsLeft);
+    }
+
+    [Fact]
+    public void MagnatesAreCopiedPerGame()
+    {
+        var b = NoTricks();
+        var g = Game.New(b, 6);
+        Assert.True(g.SpreadRumor(g.Magnates[0].Id).Ok);
+        Assert.True(g.Magnates[0].QuietUntilTurn > 1);
+        Assert.Equal(0, b.Magnates[0].QuietUntilTurn);
+    }
+
+    /// <summary>Игра, где первый магнат каждый ход подкупает, а второй молчит; замечают сразу.</summary>
+    static Game BriberyGame(out Planet p)
+    {
+        var b = NoTricks();
+        b.MagnateAttentionPlanets = 1;
+        b.Magnates[0].TrickChance = 1;
+        b.Magnates[0].TrickWeights = new[] { 1.0, 0, 0, 0 };
+        b.OfferChanceAtFullPrice = 1;
+        var g = Game.New(b, 6);
+        p = g.PlanetsForSale.First(x => !x.FoundByProbe);
+        p.Inhabited = true;
+        p.Mine = MineState.Working;
+        p.RuinsValue = 0;
+        Assert.True(g.MakeOffer(p.Id, new Offer(1.0), out bool accepted).Ok);
+        Assert.True(accepted);
+        p.Loyalty = 35;
+        return g;
+    }
+
+    [Fact]
+    public void BribeTakesPlanetAfterWarning()
+    {
+        var g = BriberyGame(out var p);
+        g.EndTurn();
+        var attempt = g.Bribes.Single();
+        Assert.Equal(p.Id, attempt.PlanetId);
+        while (g.Turn <= attempt.ResolveTurn) g.EndTurn();
+        Assert.Equal(Owner.Ai, p.Owner);
+        Assert.Equal(1, g.PlanetsLostToBribes);
+    }
+
+    [Fact]
+    public void CounterBribeKeepsPlanet()
+    {
+        var g = BriberyGame(out var p);
+        g.EndTurn();
+        var attempt = g.Bribes.Single();
+        Assert.True(g.CounterBribe(attempt.Id).Ok);
+        Assert.True(p.Loyalty >= g.Balance.BribeSuccessLoyalty);
+        for (int i = 0; i < 3; i++) g.EndTurn();
+        Assert.Equal(Owner.Player, p.Owner);
+    }
+
+    [Fact]
+    public void RumorCrashesPlayersResourcePrice()
+    {
+        var b = NoTricks();
+        b.MagnateAttentionPlanets = 1;
+        b.Magnates[1].TrickChance = 1;
+        b.Magnates[1].TrickWeights = new[] { 0, 1.0, 0, 0 };
+        var g = Game.New(b, 6);
+        double before = g.Market.Price(Resource.Ice);
+        g.EndTurn();
+        // Цена льда после слуха и одного шага восстановления — заметно ниже базовой.
+        Assert.True(g.Market.Price(Resource.Ice) < before * 0.85);
+    }
+
+    [Fact]
+    public void DirtyTricksCostReputationAndReputationMovesOfferChance()
+    {
+        var b = NoTricks();
+        b.FineChance = 0;
+        var g = Game.New(b, 6);
+        var p = g.PlanetsForSale.First();
+        double chance = g.OfferChance(p, new Offer(1.0));
+        Assert.True(g.SpreadRumor(g.Magnates[0].Id).Ok);
+        Assert.Equal(b.StartReputation + b.PlayerRumorReputation, g.Reputation, 6);
+        Assert.True(g.OfferChance(p, new Offer(1.0)) < chance);
     }
 }

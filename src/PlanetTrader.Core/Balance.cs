@@ -38,7 +38,7 @@ namespace PlanetTrader.Core
     public sealed class Balance
     {
         // --- Старт ---
-        public double StartMoney = 1800;
+        public double StartMoney = 2000;
         public double StartDebt = 1000;
         /// <summary>Есть ли на стартовой планете готовая шахта (допущение).</summary>
         public bool StartPlanetHasMine = true;
@@ -163,6 +163,51 @@ namespace PlanetTrader.Core
         public double LoyaltyAfterFairDeal = 60;
         public double LoyaltyAfterSchoolDeal = 70;
         public int RefusalCooldownTurns = 3;
+
+        // --- ИИ-магнаты (этап 5, всё — допущения) ---
+        public Magnate[] Magnates =
+        {
+            new Magnate(0, "Гуго Жаднер", Personality.Greedy, trickChance: 0.20, auctionInterest: 0.60, bidMin: 0.90, bidMax: 1.20,
+                trickWeights: new[] { 0.5, 0.2, 0.3, 0.0 }),
+            new Magnate(1, "Зизи Квазар", Personality.Chaotic, trickChance: 0.30, auctionInterest: 0.40, bidMin: 0.80, bidMax: 1.30,
+                trickWeights: new[] { 0.25, 0.35, 0.25, 0.15 }),
+        };
+        /// <summary>Магнаты замечают игрока по мере роста: шанс пакости полный, когда у него столько планет.</summary>
+        public int MagnateAttentionPlanets = 6;
+        /// <summary>Ставки игрока на аукционе: доля базовой цены реестра.</summary>
+        public double[] BidFactors = { 1.0, 1.1, 1.2, 1.3 };
+        /// <summary>Подкупать магнаты пытаются жителей с лояльностью ниже этой.</summary>
+        public double BribeTargetLoyalty = 50;
+        /// <summary>Через сколько ходов после предупреждения жители перейдут к магнату.</summary>
+        public int BribeWarningTurns = 2;
+        /// <summary>Подкуп удаётся, если к сроку лояльность всё ещё ниже этой.</summary>
+        public double BribeSuccessLoyalty = 50;
+        /// <summary>Встречный подкуп: цена и прибавка лояльности. Действия не тратит.</summary>
+        public double CounterBribeCost = 300;
+        public double CounterBribeLoyalty = 25;
+        /// <summary>Охрана: за ход; охраняемую планету подкупают, только если лояльность ниже этой.</summary>
+        public double GuardsCost = 40;
+        public double GuardedBribeLoyalty = 25;
+        /// <summary>Слух магната: на сколько падает цена вашего главного ресурса.</summary>
+        public double RumorPriceDrop = 0.25;
+        /// <summary>Репутация игрока 0–100. Влияет на согласие жителей и число заказов.</summary>
+        public double StartReputation = 50;
+        /// <summary>За ход репутация возвращается к 50 на столько очков.</summary>
+        public double ReputationRecovery = 0.5;
+        public double ReputationPerOrder = 1;
+        /// <summary>Ваш слух о магнате: цена, сколько ходов он не покупает и не пакостит, штраф за пакость.</summary>
+        public double PlayerRumorCost = 300;
+        public int PlayerRumorQuietTurns = 4;
+        public double PlayerRumorReputation = -10;
+        /// <summary>Подкуп жителей магната: доля базовой цены планеты, шанс успеха, урон репутации.</summary>
+        public double PlayerBribeShare = 0.5;
+        public double PlayerBribeChance = 0.5;
+        public double PlayerBribeReputation = -15;
+        public double PlayerBribeLoyalty = 40;
+        /// <summary>Галактический реестр ловит грязные дела: шанс, штраф и дополнительный урон репутации.</summary>
+        public double FineChance = 0.30;
+        public double FineAmount = 800;
+        public double FineReputation = -10;
 
         // --- Карта и доставка (допущения) ---
         /// <summary>Где на карте галактическая биржа.</summary>

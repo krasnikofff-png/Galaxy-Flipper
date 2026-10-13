@@ -17,8 +17,14 @@ namespace PlanetTrader.Client
         const float SidePanelWidth = 560, Gap = 10, TopBarHeight = 52, LogHeight = 190;
         const int MaxLogLines = 200;
 
-        enum Tab { Planet, Market, Orders, Finance }
-        static readonly string[] TabNames = { "Планета", "Биржа", "Заказы и просьбы", "Финансы" };
+        enum Tab { Planet, Market, Orders, Finance, Magnates }
+        static readonly string[] TabNames = { "Планета", "Биржа", "Заказы", "Финансы", "Магнаты" };
+
+        /// <summary>Сколько секунд длится «ход соперников» после нажатия «Конец хода».</summary>
+        const float RivalsTurnSeconds = 1.2f;
+        /// <summary>Когда начался ход соперников; меньше нуля — сейчас ход игрока.</summary>
+        float _rivalsTurnStarted = -1;
+        bool RivalsTurn => _rivalsTurnStarted >= 0;
 
         Core.Game _game;
         int _selectedId = -1;
@@ -53,6 +59,7 @@ namespace PlanetTrader.Client
 
         void Update()
         {
+            if (RivalsTurn && Time.unscaledTime - _rivalsTurnStarted >= RivalsTurnSeconds) FinishTurn();
             if (_pending.Count > 0)
             {
                 var actions = _pending.ToArray();
@@ -78,6 +85,7 @@ namespace PlanetTrader.Client
         {
             var seed = (ulong)DateTime.Now.Ticks;
             _game = Core.Game.New(new Balance(), seed);
+            _rivalsTurnStarted = -1;
             _selectedId = _game.PlayerPlanets.First().Id;
             _tab = Tab.Planet;
             _log.Clear();
@@ -86,6 +94,7 @@ namespace PlanetTrader.Client
             Log($"За ход можно сделать {_game.ActionsPerTurn} действия: купить, построить шахту, продать планету, запустить зонд, нанять менеджера.");
             Log("Продажа ресурсов, заказы и кредит действий не тратят. Пробел или Enter — конец хода.");
             Log("Серые планеты — силуэты: тип и запас неизвестны. Кнопка «Зонды» — скан области или полная разведка планеты.");
+            Log("Соперники: " + string.Join(" и ", _game.Magnates.Select(m => $"{m.Name} ({m.PersonalityName})")) + ". Чем больше у вас планет, тем больше они пакостят.");
         }
 
         void Log(string message)
@@ -114,7 +123,15 @@ namespace PlanetTrader.Client
             GUI.matrix = Matrix4x4.TRS(Vector3.zero, Quaternion.identity, new Vector3(scale, scale, 1));
             float width = Screen.width / scale, height = Screen.height / scale;
 
-            HandleKeys();
+            // Пока ходят соперники, интерфейс не принимает клики и клавиши; клик или пробел — пропустить паузу.
+            var ev = Event.current;
+            if (RivalsTurn && (ev.isMouse || ev.isKey))
+            {
+                if (ev.type == EventType.MouseDown || ev.type == EventType.KeyDown) Later(FinishTurn);
+                ev.Use();
+            }
+            else
+                HandleKeys();
 
             float bodyTop = TopBarHeight + Gap;
             float bodyHeight = height - bodyTop - LogHeight - 2 * Gap;
@@ -124,7 +141,58 @@ namespace PlanetTrader.Client
             DrawMap(new Rect(Gap, bodyTop, mapWidth, bodyHeight));
             DrawSidePanel(new Rect(2 * Gap + mapWidth, bodyTop, SidePanelWidth, bodyHeight));
             DrawLog(new Rect(Gap, height - LogHeight - Gap, width - 2 * Gap, LogHeight));
-            DrawTooltip();
+            if (RivalsTurn) DrawRivalsTurn(width, height);
+            else DrawTooltip();
+        }
+
+        /// <summary>Плашка «ходят соперники» с именами магнатов и полоской времени.</summary>
+        void DrawRivalsTurn(float width, float height)
+        {
+            var old = GUI.color;
+            GUI.color = new Color(0, 0, 0, 0.45f);
+            GUI.DrawTexture(new Rect(0, 0, width, height), Texture2D.whiteTexture);
+            GUI.color = old;
+
+            var r = new Rect(width / 2 - 230, height / 2 - 95, 460, 190);
+            GUI.Box(r, GUIContent.none);
+            GUI.Box(r, GUIContent.none);
+            float t = Mathf.Clamp01((Time.unscaledTime - _rivalsTurnStarted) / RivalsTurnSeconds);
+            string dots = new string('.', 1 + (int)(Time.unscaledTime * 3) % 3);
+            GUILayout.BeginArea(new Rect(r.x + 20, r.y + 14, r.width - 40, r.height - 28));
+            GUILayout.Label($"Ходят соперники{dots}", _title);
+            var magnates = _game.Magnates;
+            // Магнаты «ходят» по очереди.
+            int current = Mathf.Min(magnates.Count - 1, (int)(t * magnates.Count));
+            for (int i = 0; i < magnates.Count; i++)
+            {
+                var m = magnates[i];
+                string state = _game.Turn < m.QuietUntilTurn ? "отбивается от слухов" : i < current ? "походил(а)" : i == current ? "думает" : "ждёт";
+                GUILayout.Label($"{m.Name}, {m.PersonalityName}: {state}", _text);
+            }
+            GUILayout.FlexibleSpace();
+            var bar = GUILayoutUtility.GetRect(100, 8, GUILayout.ExpandWidth(true));
+            GUI.color = new Color(1, 1, 1, 0.15f);
+            GUI.DrawTexture(bar, Texture2D.whiteTexture);
+            GUI.color = new Color(0.6f, 0.8f, 1f);
+            GUI.DrawTexture(new Rect(bar.x, bar.y, bar.width * t, bar.height), Texture2D.whiteTexture);
+            GUI.color = old;
+            GUILayout.Label("Клик или пробел — пропустить", _small);
+            GUILayout.EndArea();
+        }
+
+        /// <summary>«Конец хода»: сначала пауза на ход соперников, потом сам ход.</summary>
+        void RequestEndTurn()
+        {
+            if (RivalsTurn) return;
+            _probeMode = false;
+            _rivalsTurnStarted = Time.unscaledTime;
+        }
+
+        void FinishTurn()
+        {
+            if (!RivalsTurn) return;
+            _rivalsTurnStarted = -1;
+            EndTurn();
         }
 
         void HandleKeys()
@@ -133,7 +201,7 @@ namespace PlanetTrader.Client
             if (e.type != EventType.KeyDown) return;
             if (e.keyCode == KeyCode.Space || e.keyCode == KeyCode.Return || e.keyCode == KeyCode.KeypadEnter)
             {
-                Later(EndTurn);
+                Later(RequestEndTurn);
                 e.Use();
             }
             else if (e.keyCode == KeyCode.Escape && _probeMode)
@@ -170,13 +238,14 @@ namespace PlanetTrader.Client
             Stat("Капитал", Fmt.Money(g.Capital));
             Stat("Расходы/ход", Fmt.Money(g.CostsPerTurn));
             Stat("Действия", $"{g.ActionsLeft}/{g.ActionsPerTurn}");
+            Stat("Репутация", Mathf.RoundToInt((float)g.Reputation).ToString());
             GUILayout.FlexibleSpace();
 
             string probesLabel = g.Probes.Count > 0 ? $"Зонды ({g.Probes.Count} в полёте)" : "Зонды";
             bool mode = GUILayout.Toggle(_probeMode, probesLabel, _button, GUILayout.Height(34));
             if (mode != _probeMode) Later(() => _probeMode = mode);
             if (GUILayout.Button("Конец хода ▶", _button, GUILayout.Width(150), GUILayout.Height(34)))
-                Later(EndTurn);
+                Later(RequestEndTurn);
             if (GUILayout.Button("Новая игра", _button, GUILayout.Width(120), GUILayout.Height(34)))
                 Later(NewGame);
             GUILayout.EndHorizontal();
@@ -246,7 +315,7 @@ namespace PlanetTrader.Client
                 float radius = PlanetRadius(p);
 
                 if (p.Id == _selectedId) DrawCircle(center, radius + 9, Color.white);
-                DrawCircle(center, radius + 4, Fmt.OwnerColor(p.Owner, p.FoundByProbe));
+                DrawCircle(center, radius + 4, RingColor(p));
                 var body = p.Knowledge == Knowledge.Silhouette ? new Color(0.35f, 0.37f, 0.42f) : Fmt.ResourceColor(p.Resource);
                 if (p.IsDepleted) body = Color.Lerp(body, new Color(0.15f, 0.15f, 0.18f), 0.75f);
                 DrawCircle(center, radius, body);
@@ -277,6 +346,10 @@ namespace PlanetTrader.Client
             if (_probeMode) HandleProbeCursor();
             DrawLegend(new Rect(r.x + 14, r.yMax - 32, r.width - 28, 24));
         }
+
+        /// <summary>Цвет кольца: владелец, у магнатов — свой цвет у каждого.</summary>
+        static Color RingColor(Planet p) =>
+            p.Owner == Owner.Ai && p.MagnateId == 1 ? new Color(1f, 0.6f, 0.15f) : Fmt.OwnerColor(p.Owner, p.FoundByProbe);
 
         string PlanetTooltip(Planet p)
         {
@@ -370,7 +443,7 @@ namespace PlanetTrader.Client
                 case Owner.Player:
                     string people = p.Inhabited ? (p.OnStrike ? " · забастовка" : $" · лоял. {Mathf.RoundToInt((float)p.Loyalty)}") : "";
                     return (p.IsDepleted ? "ВЫ · пусто" : "ВЫ") + people + marks.Replace(" · жители", "");
-                case Owner.Ai: return "ИИ";
+                case Owner.Ai: return _game.GetMagnate(p.MagnateId)?.Name.Split(' ')[0] ?? "ИИ";
                 default: return p.IsDepleted ? null : Fmt.Money(p.ListPrice(_game.Balance)) + marks;
             }
         }
@@ -379,8 +452,9 @@ namespace PlanetTrader.Client
         {
             float x = r.x;
             x = LegendItem(x, r.y, Fmt.OwnerColor(Owner.Player, false), "ваши");
-            x = LegendItem(x, r.y, Fmt.OwnerColor(Owner.Ai, false), "ИИ");
-            x = LegendItem(x, r.y, Fmt.OwnerColor(Owner.Registry, false), "аукцион (цена)");
+            foreach (var m in _game.Magnates)
+                x = LegendItem(x, r.y, RingColor(new Planet(-1, _game.Balance.PlanetTypes[0], 0) { Owner = Owner.Ai, MagnateId = m.Id }), m.Name.Split(' ')[0]);
+            x = LegendItem(x, r.y, Fmt.OwnerColor(Owner.Registry, false), "свободна (цена)");
             x = LegendItem(x, r.y, Fmt.OwnerColor(Owner.Registry, true), "нашёл ваш зонд");
             x = LegendItem(x, r.y, new Color(0.35f, 0.37f, 0.42f), "силуэт");
             x += 20;
@@ -422,6 +496,7 @@ namespace PlanetTrader.Client
                 case Tab.Market: DrawMarketTab(); break;
                 case Tab.Orders: DrawOrdersTab(); break;
                 case Tab.Finance: DrawFinanceTab(); break;
+                case Tab.Magnates: DrawMagnatesTab(); break;
             }
             GUILayout.EndScrollView();
             GUILayout.EndArea();
@@ -508,6 +583,8 @@ namespace PlanetTrader.Client
                         GUILayout.Label($"Потом шахта: {Fmt.Money(p.Type.MineCost)} и {b.MineBuildTurns} хода постройки.", _small);
                     if (p.Inhabited && !silhouette)
                         DrawNegotiation(p);
+                    else if (p.SoldAtAuction)
+                        DrawAuction(p, silhouette, exact);
                     else
                     {
                         string blind = silhouette ? " вслепую" : exact ? "" : " по оценке";
@@ -527,13 +604,24 @@ namespace PlanetTrader.Client
                     if (p.IsDepleted)
                         GUILayout.Label("Планета выработана, но содержание за неё идёт. Продайте её, чтобы от него избавиться.", _text);
                     if (p.Inhabited) DrawPeople(p);
+                    DrawGuards(p);
                     double sale = g.SalePrice(p);
                     if (ActionButton($"Продать за {Fmt.Money(sale)} (комиссия {Fmt.Percent(b.ResaleCommission)}) · 1 действие", g.ActionsLeft > 0))
                         Act(() => g.SellPlanet(p.Id), $"Продана планета {p.Type.Name} #{p.Id} за {Fmt.Money(sale)}.");
                     break;
 
                 case Owner.Ai:
-                    GUILayout.Label("Планета ИИ-магната. Купить её можно, когда он выставит её на аукцион.", _text);
+                    var owner = g.GetMagnate(p.MagnateId);
+                    GUILayout.Label($"Планета магната {owner?.Name ?? "ИИ"}. Купить её можно, когда он выставит её на аукцион.", _text);
+                    if (p.Inhabited && !silhouette && !p.IsDepleted)
+                    {
+                        double bribe = g.MagnateBribeCost(p);
+                        GUILayout.Label($"Можно подкупить жителей: шанс {Fmt.Percent(b.PlayerBribeChance)}, репутация {Fmt.Amount(b.PlayerBribeReputation)}, " +
+                                        $"Галактический реестр ловит в {Fmt.Percent(b.FineChance)} случаев (штраф {Fmt.Money(b.FineAmount)}).", _small);
+                        int id = p.Id;
+                        if (ActionButton($"Подкупить жителей за {Fmt.Money(bribe)} · 1 действие", g.ActionsLeft > 0 && g.Money >= bribe))
+                            Later(() => Do(g.BribeMagnateResidents(id, out _)));
+                    }
                     DrawExploreButtons(p);
                     break;
             }
@@ -619,6 +707,101 @@ namespace PlanetTrader.Client
 
             foreach (var r in g.Requests.Where(r => r.PlanetId == p.Id).ToList())
                 DrawRequest(r, p);
+            foreach (var x in g.Bribes.Where(x => x.PlanetId == p.Id).ToList())
+                DrawBribe(x, p);
+        }
+
+        /// <summary>Подкуп магната: предупреждение и встречный подкуп.</summary>
+        void DrawBribe(BribeAttempt x, Planet p)
+        {
+            var g = _game;
+            var b = g.Balance;
+            var m = g.GetMagnate(x.MagnateId);
+            int left = x.ResolveTurn - g.Turn + 1;
+            GUILayout.BeginVertical(GUI.skin.box);
+            GUILayout.Label($"<color=#ff8a7a><b>{m?.Name} подкупает жителей {p.Type.Name} #{p.Id}!</b></color> Через {left} х. планета уйдёт к магнату, " +
+                            $"если лояльность ({Mathf.RoundToInt((float)p.Loyalty)}) не поднимется до {Fmt.Amount(b.BribeSuccessLoyalty)}. Помогут праздник или встречный подкуп.", _small);
+            int id = x.Id;
+            if (ActionButton($"Встречный подкуп за {Fmt.Money(b.CounterBribeCost)}: лояльность +{Fmt.Amount(b.CounterBribeLoyalty)}, без действия", g.Money >= b.CounterBribeCost))
+                Act(() => g.CounterBribe(id), $"Встречный подкуп на {p.Type.Name} #{p.Id}: жители остаются с вами.");
+            GUILayout.EndVertical();
+        }
+
+        void DrawGuards(Planet p)
+        {
+            if (!p.Inhabited) return;
+            var g = _game;
+            var b = g.Balance;
+            bool guards = GUILayout.Toggle(p.Guarded,
+                $" Охрана: {Fmt.Money(b.GuardsCost)} за ход. Магнаты подкупают охраняемых жителей, только если лояльность ниже {Fmt.Amount(b.GuardedBribeLoyalty)}", _text);
+            if (guards != p.Guarded)
+            {
+                int id = p.Id;
+                Later(() => Do(g.SetGuards(id, guards)));
+            }
+        }
+
+        /// <summary>Ставки на аукционе с шансом выиграть.</summary>
+        void DrawAuction(Planet p, bool silhouette, bool exact)
+        {
+            var g = _game;
+            GUILayout.Label("Аукцион реестра: магнаты тоже ставят. Проиграете — планета уйдёт к ним, действие потрачено." +
+                            (silhouette ? " Это силуэт: ставка вслепую." : exact ? "" : " Ставка по оценке реестра."), _small);
+            foreach (var f in g.Balance.BidFactors)
+            {
+                double bid = g.BidPrice(p, f);
+                int id = p.Id;
+                double factor = f;
+                if (ActionButton($"Ставка {Fmt.Percent(f)}: {Fmt.Money(bid)} · выиграете с шансом {Fmt.Percent(g.AuctionWinChance(f))}", g.ActionsLeft > 0 && g.Money >= bid))
+                    Later(() =>
+                    {
+                        if (Do(g.PlaceBid(id, factor, out bool won)) && won)
+                            Log($"Аукцион выигран: планета #{id} ваша за {Fmt.Money(bid)}.");
+                    });
+            }
+        }
+
+        void DrawMagnatesTab()
+        {
+            var g = _game;
+            var b = g.Balance;
+            GUILayout.Label("Репутация", _header);
+            Line("Ваша репутация", $"{Mathf.RoundToInt((float)g.Reputation)} из 100");
+            DrawBar((float)(g.Reputation / 100));
+            GUILayout.Label("Грязные дела её портят, выполненные заказы чинят, со временем она возвращается к 50. " +
+                            "От репутации зависят согласие жителей и число заказов.", _small);
+            if (g.FinesPaid > 0) Line("Штрафы реестра", Fmt.Money(g.FinesPaid));
+            Line("Внимание магнатов", $"{Fmt.Percent(g.MagnateAttention)}: чем больше у вас планет, тем чаще пакости");
+            GUILayout.Space(10);
+
+            foreach (var m in g.Magnates)
+            {
+                GUILayout.BeginVertical(GUI.skin.box);
+                int planets = g.AllPlanets.Count(p => p.Owner == Owner.Ai && p.MagnateId == m.Id);
+                GUILayout.Label($"<b>{m.Name}</b>, {m.PersonalityName}. Планет: {planets}.", _text);
+                GUILayout.Label(m.Personality == Personality.Greedy
+                    ? "Скупает выгодные планеты, щедро ставит на аукционах, подкупает жителей с низкой лояльностью."
+                    : "Непредсказуема: ставки вразброс, распускает слухи, переманивает заказчиков и менеджеров.", _small);
+                if (g.Turn < m.QuietUntilTurn)
+                    GUILayout.Label($"Отбивается от ваших слухов до хода {m.QuietUntilTurn}: не покупает и не пакостит.", _small);
+                int id = m.Id;
+                if (ActionButton($"Распустить слух о магнате за {Fmt.Money(b.PlayerRumorCost)}: {b.PlayerRumorQuietTurns} х. тишины · 1 действие",
+                        g.ActionsLeft > 0 && g.Money >= b.PlayerRumorCost))
+                    Later(() => Do(g.SpreadRumor(id)));
+                GUILayout.Label($"Грязное дело: репутация {Fmt.Amount(b.PlayerRumorReputation)}, реестр ловит в {Fmt.Percent(b.FineChance)} случаев (штраф {Fmt.Money(b.FineAmount)}).", _small);
+                GUILayout.EndVertical();
+                GUILayout.Space(6);
+            }
+
+            if (g.Bribes.Count > 0)
+            {
+                GUILayout.Label("Подкупы ваших жителей", _header);
+                foreach (var x in g.Bribes.ToList())
+                {
+                    var p = g.GetPlanet(x.PlanetId);
+                    if (p != null) DrawBribe(x, p);
+                }
+            }
         }
 
         void DrawRequest(ResidentRequest r, Planet p)
@@ -733,6 +916,16 @@ namespace PlanetTrader.Client
         void DrawOrdersTab()
         {
             var g = _game;
+            if (g.Bribes.Count > 0)
+            {
+                GUILayout.Label("Подкупы ваших жителей", _header);
+                foreach (var x in g.Bribes.ToList())
+                {
+                    var p = g.GetPlanet(x.PlanetId);
+                    if (p != null) DrawBribe(x, p);
+                }
+                GUILayout.Space(10);
+            }
             if (g.Requests.Count > 0)
             {
                 GUILayout.Label("Просьбы жителей", _header);
@@ -828,6 +1021,7 @@ namespace PlanetTrader.Client
             Line("Страховка", Fmt.Money(g.InsurancePerTurn));
             Line("Доставка на биржу", Fmt.Money(g.ShippingPerTurn));
             Line("Зарплаты жителям", Fmt.Money(g.WagesPerTurn));
+            Line("Охрана", Fmt.Money(g.GuardsPerTurn));
             Line("<b>Итого</b>", $"<b>{Fmt.Money(g.CostsPerTurn)}</b>");
             Line("Налоги с жителей", $"+{Fmt.Money(g.TaxesPerTurn)} за ход");
         }
