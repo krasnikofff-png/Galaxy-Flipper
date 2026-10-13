@@ -1,3 +1,4 @@
+using System.Threading.Tasks;
 using UnityEngine;
 
 namespace PlanetTrader.Visuals
@@ -15,41 +16,103 @@ namespace PlanetTrader.Visuals
         [Tooltip("Градусов в секунду.")]
         public float SpinSpeed = 4f;
         public float CloudDrift = 1.5f;
+        [Tooltip("Насыщенность цвета: 1 — как есть, 0 — серая (силуэт на карте).")]
+        [Range(0, 1)] public float Saturation = 1;
+        [Tooltip("Яркость: меньше 1 — тусклая (выработанная планета).")]
+        [Range(0, 1.5f)] public float Brightness = 1;
 
         Transform _surface, _clouds, _halo;
         Material _surfaceMat, _cloudMat, _haloMat;
         PlanetTextures _tex;
+        PlanetStyle _style;
+        Task<PlanetPixels> _baking;
+        PlanetLook _bakingLook;
         static Mesh _sphere;
 
-        void Start() => Rebuild();
+        /// <summary>Готова ли поверхность (после асинхронного запекания — не сразу).</summary>
+        public bool Ready => _surface != null;
 
-        /// <summary>Пересобрать планету: после смены типа или зерна.</summary>
+        void Start()
+        {
+            if (_surface == null && _baking == null) Rebuild();
+        }
+
+        /// <summary>Пересобрать планету сразу: после смены типа или зерна.</summary>
         public void Rebuild()
         {
+            _baking = null;
+            Build(Look, PlanetBaker.BakePixels(Look, Seed, Resolution));
+        }
+
+        /// <summary>
+        /// Пересобрать в фоне: пиксели считаются в другом потоке, старый облик виден, пока не готов новый.
+        /// Для карты, где планет много.
+        /// </summary>
+        public void RebuildAsync()
+        {
+            var look = Look;
+            int seed = Seed, res = Resolution;
+            _bakingLook = look;
+            _baking = Task.Run(() => PlanetBaker.BakePixels(look, seed, res));
+        }
+
+        /// <summary>Убрать поверхность и отменить запекание: планета пропадает до следующей сборки.</summary>
+        public void Clear()
+        {
+            _baking = null;
             Cleanup();
-            var style = PlanetSurface.Style(Look);
-            _tex = PlanetBaker.Bake(Look, Seed, Resolution);
+        }
+
+        void Build(PlanetLook look, PlanetPixels pixels)
+        {
+            Cleanup();
+            _style = PlanetSurface.Style(look);
+            _tex = pixels.ToTextures();
             if (_sphere == null) _sphere = SphereMesh.Build(96, 48);
 
             _surfaceMat = new Material(Shader.Find("PlanetTrader/Planet"));
             _surfaceMat.SetTexture("_MainTex", _tex.Albedo);
             _surfaceMat.SetTexture("_NormalTex", _tex.Normal);
             _surfaceMat.SetTexture("_EmissionTex", _tex.Emission);
-            _surfaceMat.SetColor("_AtmoColor", style.Atmosphere);
             _surface = Layer("Поверхность", _surfaceMat, 1f);
 
             if (_tex.Clouds != null)
             {
                 _cloudMat = new Material(Shader.Find("PlanetTrader/PlanetClouds"));
                 _cloudMat.SetTexture("_MainTex", _tex.Clouds);
-                _cloudMat.SetColor("_Color", style.CloudTint);
                 _clouds = Layer("Облака", _cloudMat, 1.012f);
             }
 
             _haloMat = new Material(Shader.Find("PlanetTrader/PlanetAtmosphere"));
-            _haloMat.SetColor("_Color", style.Atmosphere);
             _haloMat.SetFloat("_Inner", 1f / HaloScale);
             _halo = Layer("Атмосфера", _haloMat, HaloScale);
+            ApplyMood();
+        }
+
+        /// <summary>Сменить насыщенность и яркость, если они другие.</summary>
+        public void SetMood(float saturation, float brightness)
+        {
+            if (Saturation == saturation && Brightness == brightness) return;
+            Saturation = saturation;
+            Brightness = brightness;
+            ApplyMood();
+        }
+
+        /// <summary>Применить насыщенность и яркость к уже собранной планете.</summary>
+        public void ApplyMood()
+        {
+            if (_style == null) return;
+            _surfaceMat.SetFloat("_Saturation", Saturation);
+            _surfaceMat.SetFloat("_Brightness", Brightness);
+            _surfaceMat.SetColor("_AtmoColor", Mood(_style.Atmosphere));
+            if (_cloudMat) _cloudMat.SetColor("_Color", Mood(_style.CloudTint));
+            _haloMat.SetColor("_Color", Mood(_style.Atmosphere));
+        }
+
+        Color Mood(Color c)
+        {
+            float gray = c.r * 0.3f + c.g * 0.59f + c.b * 0.11f;
+            return Color.Lerp(new Color(gray, gray, gray), c, Saturation) * Brightness;
         }
 
         const float HaloScale = 1.14f;
@@ -59,6 +122,7 @@ namespace PlanetTrader.Visuals
             var go = new GameObject(name);
             go.transform.SetParent(transform, false);
             go.transform.localScale = Vector3.one * scale;
+            go.layer = gameObject.layer;
             go.AddComponent<MeshFilter>().sharedMesh = _sphere;
             var r = go.AddComponent<MeshRenderer>();
             r.sharedMaterial = mat;
@@ -69,27 +133,47 @@ namespace PlanetTrader.Visuals
 
         void Update()
         {
+            if (_baking != null && _baking.IsCompleted)
+            {
+                var task = _baking;
+                _baking = null;
+                if (task.Status == TaskStatus.RanToCompletion) Build(_bakingLook, task.Result);
+                else Debug.LogException(task.Exception);
+            }
             if (_surface != null) _surface.Rotate(Vector3.up, -SpinSpeed * Time.deltaTime, Space.Self);
             if (_clouds != null) _clouds.Rotate(Vector3.up, -(SpinSpeed + CloudDrift) * Time.deltaTime, Space.Self);
         }
 
         void Cleanup()
         {
-            foreach (Transform child in transform) Destroy(child.gameObject);
+            for (int i = transform.childCount - 1; i >= 0; i--) Kill(transform.GetChild(i).gameObject);
             if (_tex != null)
             {
-                Destroy(_tex.Albedo);
-                Destroy(_tex.Normal);
-                if (_tex.Emission != Texture2D.blackTexture) Destroy(_tex.Emission);
-                if (_tex.Clouds != null) Destroy(_tex.Clouds);
+                Kill(_tex.Albedo);
+                Kill(_tex.Normal);
+                if (_tex.Emission != Texture2D.blackTexture) Kill(_tex.Emission);
+                if (_tex.Clouds != null) Kill(_tex.Clouds);
+                _tex = null;
             }
-            if (_surfaceMat) Destroy(_surfaceMat);
-            if (_cloudMat) Destroy(_cloudMat);
-            if (_haloMat) Destroy(_haloMat);
-            _clouds = null;
+            if (_surfaceMat) Kill(_surfaceMat);
+            if (_cloudMat) Kill(_cloudMat);
+            if (_haloMat) Kill(_haloMat);
+            _surface = _clouds = _halo = null;
+            _style = null;
         }
 
-        void OnDestroy() => Cleanup();
+        /// <summary>Удалить объект и в игре, и в редакторе (снимки планет делаются без Play).</summary>
+        static void Kill(Object o)
+        {
+            if (Application.isPlaying) Destroy(o);
+            else DestroyImmediate(o);
+        }
+
+        void OnDestroy()
+        {
+            _baking = null;
+            Cleanup();
+        }
     }
 
     /// <summary>UV-сфера радиуса 1 с той же развёрткой, что у запечённых текстур.</summary>

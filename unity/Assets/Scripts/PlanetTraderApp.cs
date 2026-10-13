@@ -32,7 +32,21 @@ namespace PlanetTrader.Client
         Tab _tab = Tab.Planet;
         readonly List<string> _log = new List<string>();
         Vector2 _logScroll, _panelScroll;
-        Texture2D _circle, _ring;
+        /// <summary>Для какой вкладки и планеты прокручена правая панель: сменились — прокрутка наверх.</summary>
+        (Tab tab, int planet) _panelScrollFor;
+        Texture2D _circle, _ring, _thinRing;
+
+        // Планеты на карте — настоящие 3D-сферы своей камеры; интерфейс рисует поверх кольца и подписи.
+        SectorMapView _map3d;
+        PlanetPortrait _portrait;
+        const float PortraitHeight = 210;
+        readonly List<MapPlanet> _mapPlanets = new List<MapPlanet>();
+        /// <summary>Прямоугольник карты в виртуальных координатах интерфейса.</summary>
+        Rect _mapBox;
+        /// <summary>Во сколько раз интерфейс увеличен под экран.</summary>
+        float _guiScale = 1;
+        /// <summary>Зерно облика планет: в каждой партии планеты выглядят по-новому.</summary>
+        int _lookSeed;
 
         // Режим зонда: игрок выбирает тип и задание, потом кликает по карте.
         bool _probeMode;
@@ -85,13 +99,61 @@ namespace PlanetTrader.Client
         {
             _circle = MakeCircle(64);
             _ring = MakeRing(256, 3);
+            _thinRing = MakeRing(64, 4);
+            _map3d = gameObject.AddComponent<SectorMapView>();
+            _portrait = gameObject.AddComponent<PlanetPortrait>();
             NewGame();
+        }
+
+        // Пока открыта витрина, интерфейс выключен — вместе с ним прячется и 3D-карта.
+        void OnEnable()
+        {
+            if (_map3d != null) _map3d.enabled = true;
+            if (_portrait != null) _portrait.enabled = true;
+        }
+
+        void OnDisable()
+        {
+            if (_map3d != null) _map3d.enabled = false;
+            if (_portrait != null) _portrait.enabled = false;
+        }
+
+        /// <summary>Как выглядит планета в 3D: тип, зерно, силуэт или выработана.</summary>
+        MapPlanet Describe(Planet p)
+        {
+            bool silhouette = p.Knowledge == Knowledge.Silhouette;
+            return new MapPlanet
+            {
+                Id = p.Id,
+                // Тип силуэта неизвестен — у всех силуэтов серый каменный облик.
+                Look = silhouette ? PlanetLook.Rocky : PlanetSurface.FromResource(p.Resource),
+                Seed = _lookSeed ^ (p.Id * 7919),
+                Silhouette = silhouette,
+                Depleted = p.IsDepleted,
+            };
+        }
+
+        /// <summary>Расставить 3D-планеты по местам, которые карта получила в последнем OnGUI.</summary>
+        void LateUpdate()
+        {
+            if (_mapArea.width <= 0) return;
+            _mapPlanets.Clear();
+            foreach (var p in _game.AllPlanets)
+            {
+                var m = Describe(p);
+                m.Center = ToScreen(p.MapX, p.MapY) * _guiScale;
+                m.Radius = PlanetRadius(p) * _guiScale;
+                _mapPlanets.Add(m);
+            }
+            var box = new Rect(_mapBox.x * _guiScale, _mapBox.y * _guiScale, _mapBox.width * _guiScale, _mapBox.height * _guiScale);
+            _map3d.Show(box, _mapPlanets);
         }
 
         void NewGame()
         {
             var seed = (ulong)DateTime.Now.Ticks;
             _game = Core.Game.New(new Balance(), seed);
+            _lookSeed = (int)(seed % int.MaxValue);
             _rivalsTurnStarted = -1;
             _selectedId = _game.PlayerPlanets.First().Id;
             _tab = Tab.Planet;
@@ -119,6 +181,10 @@ namespace PlanetTrader.Client
 
         Planet Selected => _selectedId < 0 ? null : _game.GetPlanet(_selectedId);
 
+        /// <summary>Для проверки графики (AutoScreenshot): партия и выбор планеты.</summary>
+        internal Core.Game CurrentGame => _game;
+        internal void Select(int planetId) => _selectedId = planetId;
+
         // ------------------------------------------------------------------
         // Кадр
         // ------------------------------------------------------------------
@@ -127,6 +193,7 @@ namespace PlanetTrader.Client
         {
             EnsureStyles();
             float scale = Mathf.Min(Screen.width / RefWidth, Screen.height / RefHeight);
+            _guiScale = scale;
             GUI.matrix = Matrix4x4.TRS(Vector3.zero, Quaternion.identity, new Vector3(scale, scale, 1));
             float width = Screen.width / scale, height = Screen.height / scale;
 
@@ -318,7 +385,8 @@ namespace PlanetTrader.Client
 
         void DrawMap(Rect r)
         {
-            GUI.Box(r, GUIContent.none);
+            // Фон и сами планеты рисует камера 3D-карты (SectorMapView) в этом же прямоугольнике.
+            _mapBox = r;
             var g = _game;
             var b = g.Balance;
             // Карта квадратная, чтобы расстояния и радиусы на экране не искажались.
@@ -362,13 +430,11 @@ namespace PlanetTrader.Client
                 var center = ToScreen(p.MapX, p.MapY);
                 float radius = PlanetRadius(p);
 
-                if (p.Id == _selectedId) DrawCircle(center, radius + 9, Color.white);
-                DrawCircle(center, radius + 4, RingColor(p));
-                var body = p.Knowledge == Knowledge.Silhouette ? new Color(0.35f, 0.37f, 0.42f) : Fmt.ResourceColor(p.Resource);
-                if (p.IsDepleted) body = Color.Lerp(body, new Color(0.15f, 0.15f, 0.18f), 0.75f);
-                DrawCircle(center, radius, body);
+                // Сама планета — 3D-сфера под интерфейсом; здесь только кольца вокруг неё.
+                if (p.Id == _selectedId) DrawThinRing(center, radius + 11, Color.white);
+                DrawThinRing(center, radius + 6, RingColor(p));
                 if (p.Knowledge == Knowledge.Explored && p.Owner != Owner.Player)
-                    DrawCircle(center, 3, Color.white);
+                    DrawCircle(center + new Vector2(radius + 2, -radius - 2), 3.5f, Color.white);
 
                 string label = MapLabel(p);
                 if (label != null)
@@ -480,7 +546,7 @@ namespace PlanetTrader.Client
         static float PlanetRadius(Planet p)
         {
             // Чем дороже тип планеты, тем она крупнее на карте.
-            return 11 + Mathf.Clamp((float)(p.Type.Price - 1600) / 2600f, 0, 1) * 10;
+            return 13 + Mathf.Clamp((float)(p.Type.Price - 1600) / 2600f, 0, 1) * 11;
         }
 
         string MapLabel(Planet p)
@@ -522,6 +588,15 @@ namespace PlanetTrader.Client
             return x + 17 + size.x + 16;
         }
 
+        /// <summary>Тонкое кольцо вокруг планеты: владелец, выбранная планета.</summary>
+        void DrawThinRing(Vector2 center, float radius, Color color)
+        {
+            var old = GUI.color;
+            GUI.color = color;
+            GUI.DrawTexture(new Rect(center.x - radius, center.y - radius, 2 * radius, 2 * radius), _thinRing);
+            GUI.color = old;
+        }
+
         void DrawCircle(Vector2 center, float radius, Color color)
         {
             var old = GUI.color;
@@ -541,6 +616,11 @@ namespace PlanetTrader.Client
             var tab = (Tab)GUILayout.Toolbar((int)_tab, TabNames, _button, GUILayout.Height(34));
             if (tab != _tab) Later(() => _tab = tab);
             GUILayout.Space(10);
+            if (_panelScrollFor != (_tab, _selectedId))
+            {
+                _panelScrollFor = (_tab, _selectedId);
+                _panelScroll = Vector2.zero;
+            }
             _panelScroll = GUILayout.BeginScrollView(_panelScroll);
             switch (_tab)
             {
@@ -554,6 +634,15 @@ namespace PlanetTrader.Client
             }
             GUILayout.EndScrollView();
             GUILayout.EndArea();
+        }
+
+        /// <summary>Крупный план выбранной планеты в 3D.</summary>
+        void DrawPortrait(Planet p)
+        {
+            var rect = GUILayoutUtility.GetRect(10, PortraitHeight, GUILayout.ExpandWidth(true));
+            if (Event.current.type == EventType.Repaint)
+                GUI.DrawTexture(rect, _portrait.Show(Describe(p), rect.size * _guiScale), ScaleMode.StretchToFill, false);
+            GUILayout.Space(8);
         }
 
         void Line(string name, string value)
@@ -587,6 +676,7 @@ namespace PlanetTrader.Client
             bool exact = p.Owner == Owner.Player || p.Knowledge == Knowledge.Explored;
 
             GUILayout.Label(silhouette ? $"Силуэт #{p.Id}" : $"{p.Type.Name} #{p.Id}", _title);
+            DrawPortrait(p);
             Line("Владелец", Fmt.OwnerName(p.Owner, p.FoundByProbe));
             Line("Знание", silhouette ? "силуэт: тип и запас неизвестны" : exact ? "полная разведка" : "скан: тип и оценка реестра");
             Line("До биржи", $"{Fmt.Amount(g.DistanceToExchange(p) * 10)} св. лет, груз идёт {g.ShipTurns(p)} х.");

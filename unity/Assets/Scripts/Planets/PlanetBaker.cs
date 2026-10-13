@@ -24,7 +24,14 @@ namespace PlanetTrader.Visuals
             return new Vector3(c * Mathf.Cos(lon), Mathf.Sin(lat), c * Mathf.Sin(lon));
         }
 
-        public static PlanetTextures Bake(PlanetLook look, int seed, int width = 1024)
+        /// <summary>Запечь и сразу выгрузить в текстуры. Только из главного потока.</summary>
+        public static PlanetTextures Bake(PlanetLook look, int seed, int width = 1024) => BakePixels(look, seed, width).ToTextures();
+
+        /// <summary>
+        /// Посчитать пиксели текстур. Не трогает Unity, поэтому можно звать из фонового потока
+        /// (так планеты карты запекаются, не подвешивая игру); текстуры потом делает <see cref="PlanetPixels.ToTextures"/>.
+        /// </summary>
+        public static PlanetPixels BakePixels(PlanetLook look, int seed, int width = 1024)
         {
             int height = width / 2;
             var noise = new PlanetNoise(seed);
@@ -61,16 +68,18 @@ namespace PlanetTrader.Visuals
                 }
             });
 
-            return new PlanetTextures
+            return new PlanetPixels
             {
-                Albedo = Make(albedo, width, height, linear: false),
-                Normal = Make(normal, width, height, linear: true),
-                Emission = hasGlow ? Make(emission, width, height, linear: false) : Texture2D.blackTexture,
-                Clouds = style.Clouds > 0 ? Make(clouds, width, height, linear: false) : null,
+                Width = width,
+                Height = height,
+                Albedo = albedo,
+                Normal = normal,
+                Emission = hasGlow ? emission : null,
+                Clouds = style.Clouds > 0 ? clouds : null,
             };
         }
 
-        static Texture2D Make(Color32[] pixels, int w, int h, bool linear)
+        internal static Texture2D Make(Color32[] pixels, int w, int h, bool linear)
         {
             var t = new Texture2D(w, h, TextureFormat.RGBA32, true, linear)
             {
@@ -83,5 +92,21 @@ namespace PlanetTrader.Visuals
             t.Apply(true, true);
             return t;
         }
+    }
+
+    /// <summary>Посчитанные пиксели текстур планеты, ещё не выгруженные в Unity.</summary>
+    public sealed class PlanetPixels
+    {
+        public int Width, Height;
+        public Color32[] Albedo, Normal, Emission, Clouds;
+
+        /// <summary>Сделать текстуры. Только из главного потока.</summary>
+        public PlanetTextures ToTextures() => new PlanetTextures
+        {
+            Albedo = PlanetBaker.Make(Albedo, Width, Height, linear: false),
+            Normal = PlanetBaker.Make(Normal, Width, Height, linear: true),
+            Emission = Emission != null ? PlanetBaker.Make(Emission, Width, Height, linear: false) : Texture2D.blackTexture,
+            Clouds = Clouds != null ? PlanetBaker.Make(Clouds, Width, Height, linear: false) : null,
+        };
     }
 }

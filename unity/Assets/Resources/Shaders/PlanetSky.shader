@@ -1,12 +1,17 @@
 // Фон: тёмный космос со звёздами и туманностью; текстура запекается в коде.
+// В витрине — изнанка большой сферы, на карте сектора — плоский прямоугольник (_Cull = 0).
 Shader "PlanetTrader/PlanetSky"
 {
-    Properties { _MainTex ("Небо", 2D) = "black" {} }
+    Properties
+    {
+        _MainTex ("Небо", 2D) = "black" {}
+        [Enum(UnityEngine.Rendering.CullMode)] _Cull ("Какую сторону не рисовать", Float) = 1
+    }
     SubShader
     {
         Tags { "Queue" = "Background" "RenderType" = "Background" }
         ZWrite Off
-        Cull Front
+        Cull [_Cull]
         Pass
         {
             CGPROGRAM

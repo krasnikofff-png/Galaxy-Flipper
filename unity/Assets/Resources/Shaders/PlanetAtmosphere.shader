@@ -46,7 +46,8 @@ Shader "PlanetTrader/PlanetAtmosphere"
 
             fixed4 frag (v2f i) : SV_Target
             {
-                float3 V = normalize(_WorldSpaceCameraPos - i.posW);
+                // Направление на камеру; у ортографической (карта сектора) оно одно для всех точек.
+                float3 V = unity_OrthoParams.w > 0.5 ? normalize(UNITY_MATRIX_V[2].xyz) : normalize(_WorldSpaceCameraPos - i.posW);
                 float3 n = normalize(i.normalW);
                 // Изнанка: в центре диска d≈1, у внешнего края 0. Край планеты — при d = sqrt(1 - inner²).
                 float d = saturate(dot(-n, V));

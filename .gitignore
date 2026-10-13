@@ -489,3 +489,15 @@ $RECYCLE.BIN/
 # Пакеты Unity — часть проекта, их нужно хранить
 !unity/Packages/
 !unity/Packages/manifest.json
+!unity/Packages/packages-lock.json
+
+# Unity: генерируемое редактором. Файлы .meta внутри Assets нужны — в них GUID и настройки импорта
+unity/[Ll]ibrary/
+unity/[Tt]emp/
+unity/[Oo]bj/
+unity/[Bb]uild/
+unity/[Uu]ser[Ss]ettings/
+unity/[Mm]emoryCaptures/
+unity/*.csproj
+unity/*.sln
+!unity/Assets/**/*.meta
