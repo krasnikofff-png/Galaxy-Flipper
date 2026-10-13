@@ -17,6 +17,8 @@
 
 Подвижные части (балансир качалки, радар, стрела крана…) — отдельные объекты «модель__часть», дочерние
 к модели, с началом координат в точке вращения. Как они движутся, задаёт Unity (BuildingMotion) по имени части.
+Источники дыма и огня — пустые объекты «модель__smoke_dark», «модель__smoke_light», «модель__flame»;
+сам дым рисует Unity (SmokeEmitter), пока производство работает.
 """
 import math
 import os
@@ -67,6 +69,13 @@ MODELS = ["mine_rig", "mine_gas", "mine_build", "extractor", "settlement", "scho
 PARTS = []
 # Подвижные части текущей модели: имя → (точка вращения, детали).
 MOVING = {}
+# Источники дыма и огня текущей модели: (вид, точка).
+EMITTERS = []
+
+
+def emitter(kind, loc):
+    """Точка, откуда идёт дым (smoke_dark, smoke_light) или огонь (flame)."""
+    EMITTERS.append((kind, Vector(loc)))
 
 
 class moving:
@@ -402,6 +411,14 @@ def join(name):
         ob.data.transform(Matrix.Translation(-pivot))
         ob.location = pivot
         ob.parent = body
+    for kind, loc in EMITTERS:
+        e = bpy.data.objects.new(f"{name}__{kind}", None)
+        e.empty_display_type = "SINGLE_ARROW"
+        e.empty_display_size = 0.25
+        bpy.context.scene.collection.objects.link(e)
+        e.location = loc
+        e.parent = body
+    EMITTERS.clear()
     PARTS.clear()
     MOVING.clear()
     return body
@@ -451,6 +468,8 @@ def mine_rig():
         box((0.12, 0.12, 0.07), (cx + dx, cy + 0.05, z0 + 0.455), STEEL, shine=0.5, bevel=0.01)
         cyl(0.04, 0.005, (cx + dx, cy + 0.05, z0 + 0.49), DARK, segs=12)
     cyl(0.035, 0.35, (cx + 0.2, cy + 0.12, z0 + 0.42), DARK, segs=10)
+    cyl(0.045, 0.03, (cx + 0.2, cy + 0.12, z0 + 0.74), STEEL, segs=10)
+    emitter("smoke_dark", (cx + 0.2, cy + 0.12, z0 + 0.79))
     polyline([(cx - 0.29, cy - 0.1, z0 + 0.25), (0.2, cy - 0.1, z0 + 0.25), (0.2, 0.1, z0 + 0.25), (0.05, 0.1, z0 + 0.25)], 0.025, STEEL)
     # Баки с поясами, куполами и лестницей.
     for (tx, ty) in ((-0.55, 0.55), (-0.25, 0.78)):
@@ -532,6 +551,14 @@ def mine_gas():
         a = 2 * math.pi * k / 8
         rod((0.42 * math.cos(a), 0.42 * math.sin(a), -2.18), (0.12 * math.cos(a), 0.12 * math.sin(a), -1.83), 0.012, STEEL, segs=4)
     ring(0.42, -2.18, 0.02, HAZARD, segs=24)
+    # Факельная стрела: ферма от края платформы наружу и вверх, на конце — горелка с огнём и копотью.
+    fa, fb = Vector((-0.78, -0.62, 0.1)), Vector((-1.5, -1.18, 0.75))
+    truss(tuple(fa), tuple(fb), 0.09, 0.007, STEEL, panels=7)
+    polyline([(-0.5, -0.4, 0.1), tuple(fa), tuple(fb)], 0.015, DARK, joints=False)
+    cyl(0.04, 0.08, tuple(fb + Vector((0, 0, 0.06))), DARK, segs=10)
+    ring(0.05, fb.z + 0.14, 0.008, HAZARD, segs=10, center=(fb.x, fb.y))
+    emitter("flame", tuple(fb + Vector((0, 0, 0.15))))
+    emitter("smoke_dark", tuple(fb + Vector((0, 0, 0.3))))
     # Двигатели.
     for k in range(4):
         a = 2 * math.pi * k / 4 + math.pi / 4
@@ -632,6 +659,9 @@ def extractor():
     ring(0.035, z0 + 0.13, 0.006, RED, segs=12, center=(hx + 0.08, py))
     crank = (px - 0.2, py, z0 + 0.24)
     box((0.12, 0.1, 0.2), (crank[0], py, z0 + 0.12), DARK, shine=0.4, bevel=0.01)
+    # Выхлоп мотора.
+    polyline([(crank[0] - 0.04, py - 0.05, z0 + 0.18), (crank[0] - 0.04, py - 0.09, z0 + 0.18), (crank[0] - 0.04, py - 0.09, z0 + 0.36)], 0.012, DARK, segs=6)
+    emitter("smoke_light", (crank[0] - 0.04, py - 0.09, z0 + 0.37))
     with moving("pumpjack_crank", crank):
         cyl(0.03, 0.17, (crank[0], py - 0.085, crank[2]), STEEL, segs=10, rot=(-math.pi / 2, 0, 0))
         for sy in (-0.075, 0.075):
@@ -943,8 +973,8 @@ def build_all():
         ob = join(name)
         # В файле модели стоят в ряд, чтобы их было удобно смотреть; выгружаются из начала координат.
         ob.location = ((i % 4) * 3.2, -(i // 4) * 3.5, 0)
-        verts = len(ob.data.vertices) + sum(len(c.data.vertices) for c in ob.children)
-        print(name, verts, "вершин; подвижные части:", ", ".join(c.name for c in ob.children) or "нет")
+        verts = len(ob.data.vertices) + sum(len(c.data.vertices) for c in ob.children if c.type == "MESH")
+        print(name, verts, "вершин; части и источники:", ", ".join(c.name for c in ob.children) or "нет")
     bpy.ops.wm.save_as_mainfile(filepath=BLEND)
     print("Сохранено:", BLEND)
 
@@ -967,7 +997,7 @@ def export_all():
         bpy.ops.export_scene.fbx(
             filepath=path,
             use_selection=True,
-            object_types={"MESH"},
+            object_types={"MESH", "EMPTY"},
             apply_scale_options="FBX_SCALE_ALL",
             axis_forward="-Z",
             axis_up="Y",

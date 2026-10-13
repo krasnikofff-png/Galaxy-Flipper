@@ -147,6 +147,8 @@ namespace PlanetTrader.EditorTools
                     focus[i] = view.Surface.TransformPoint(buildings.Focus);
                 }
                 var motions = root.GetComponentsInChildren<BuildingMotion>();
+                var smokes = root.GetComponentsInChildren<SmokeEmitter>();
+                Debug.Log($"Видео: подвижных частей {motions.Length}, источников дыма и огня {smokes.Length}");
 
                 var rt = new RenderTexture(w, h, 24, RenderTextureFormat.ARGB32) { antiAliasing = 8 };
                 cam.targetTexture = rt;
@@ -155,6 +157,7 @@ namespace PlanetTrader.EditorTools
                 {
                     float t = f / fps;
                     foreach (var m in motions) m.Pose(t);
+                    foreach (var sm in smokes) sm.Pose(t);
                     float sweep = f / (float)Mathf.Max(1, frames - 1);
                     for (int i = 0; i < looks.Length; i++)
                     {

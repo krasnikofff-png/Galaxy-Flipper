@@ -41,8 +41,8 @@ namespace PlanetTrader.Visuals
 
         // Управление мышью. На крупном плане — облёт базы, иначе — вращение и наклон планеты.
         bool _hasBuildings;
-        /// <summary>Игрок сам выбрал «всю планету», хотя постройки есть.</summary>
-        bool _userWhole;
+        /// <summary>Игрок попросил крупный план построек. По умолчанию планета видна целиком.</summary>
+        bool _userCloseUp;
         float _orbitYaw, _orbitElevation = DefaultElevation, _orbitZoom = 1, _wholeZoom = 1, _tilt;
         float _lastInput = -10;
 
@@ -107,7 +107,7 @@ namespace PlanetTrader.Visuals
         /// <summary>Переключить крупный план построек и всю планету.</summary>
         public void ToggleView()
         {
-            _userWhole = !_userWhole;
+            _userCloseUp = !_userCloseUp;
             _lastInput = Time.unscaledTime;
         }
 
@@ -187,9 +187,9 @@ namespace PlanetTrader.Visuals
                 if (!samePlanet)
                 {
                     _view.Clear();
-                    // Новая планета показывается сразу целиком, потом камера подлетает к постройкам.
+                    // Новая планета показывается целиком; к постройкам — по кнопке.
                     _closeUp = 0;
-                    _userWhole = false;
+                    _userCloseUp = false;
                     _orbitYaw = 0;
                     _orbitElevation = DefaultElevation;
                     _orbitZoom = _wholeZoom = 1;
@@ -208,7 +208,7 @@ namespace PlanetTrader.Visuals
                 _facedId = p.Id;
             }
             _hasBuildings = !structures.IsEmpty;
-            _wantCloseUp = _hasBuildings && _view.Ready && !_userWhole;
+            _wantCloseUp = _hasBuildings && _view.Ready && _userCloseUp;
             _shownFrame = Time.frameCount;
             return _rt;
         }

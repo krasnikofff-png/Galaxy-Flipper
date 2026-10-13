@@ -112,7 +112,8 @@ namespace PlanetTrader.Visuals
                 if (s.Mine != MineLook.None)
                 {
                     string model = s.Mine == MineLook.Building ? "mine_build" : gas ? "mine_gas" : "mine_rig";
-                    var go = Put(model, industry, gas ? 1.07f : 0.996f, 1f, rnd, s.Accent);
+                    // Дым из трубы — только пока шахта добывает.
+                    var go = Put(model, industry, gas ? 1.07f : 0.996f, 1f, rnd, s.Accent, working: s.Mine == MineLook.Working);
                     float glow = s.Mine == MineLook.Idle ? 0.25f : 1.3f;
                     SetLights(go, glow, s.Mine == MineLook.Working ? 1 : 0, s.Accent);
                 }
@@ -197,7 +198,7 @@ namespace PlanetTrader.Visuals
             }
         }
 
-        GameObject Put(string model, Vector3 q, float radius, float size, System.Random rnd, Color accent)
+        GameObject Put(string model, Vector3 q, float radius, float size, System.Random rnd, Color accent, bool working = true)
         {
             var prefab = LoadModel(model);
             if (prefab == null) return null;
@@ -218,7 +219,9 @@ namespace PlanetTrader.Visuals
                 r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
                 r.receiveShadows = false;
             }
-            BuildingMotion.Attach(model3d, (float)rnd.NextDouble());
+            float offset = (float)rnd.NextDouble();
+            BuildingMotion.Attach(model3d, offset);
+            SmokeEmitter.Attach(model3d, offset, working);
             SetLights(go, 1.3f, 0, accent);
             _placed.Add(go);
             return go;

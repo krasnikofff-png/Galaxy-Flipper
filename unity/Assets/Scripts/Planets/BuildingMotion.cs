@@ -62,7 +62,7 @@ namespace PlanetTrader.Visuals
         }
 
         /// <summary>«extractor__pumpjack_beam.001» → «pumpjack_beam».</summary>
-        static string PartName(string name)
+        internal static string PartName(string name)
         {
             int i = name.IndexOf("__", System.StringComparison.Ordinal);
             if (i < 0) return null;

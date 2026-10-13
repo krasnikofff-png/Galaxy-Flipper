@@ -87,7 +87,7 @@ namespace PlanetTrader.Client
             {
                 _buildingsDemo = (_buildingsDemo + 1) % 3;
                 Log(_buildingsDemo == 0 ? "Показ построек выключен." :
-                    _buildingsDemo == 1 ? "Показ построек (F3): на выбранной планете все постройки — только в окне планеты, в игре их нет. F3 — стройка шахты." :
+                    _buildingsDemo == 1 ? "Показ построек (F3): на выбранной планете все постройки — только в окне планеты, в игре их нет. «К постройкам» — крупно. F3 — стройка шахты." :
                     "Показ построек (F3): шахта строится. F3 — выключить показ.");
             }
             if (RivalsTurn && Time.unscaledTime - _rivalsTurnStarted >= RivalsTurnSeconds) FinishTurn();
