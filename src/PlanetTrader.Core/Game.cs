@@ -822,6 +822,8 @@ namespace PlanetTrader.Core
                 {
                     p.Mine = MineState.None;
                     p.BuildTurnsLeft = 0;
+                    p.MineWreckedTurn = Turn;
+                    p.MineWreckedByRiot = true;
                     RecordDeed(DeedKind.Riot, p);
                     report.Events.Add($"Бунт на {p.Type.Name} #{p.Id}: жители разнесли шахту. Страховка бунты не покрывает.");
                 }
@@ -1459,6 +1461,8 @@ namespace PlanetTrader.Core
                 {
                     p.Mine = MineState.None;
                     p.AccidentTurnsLeft = 0;
+                    p.MineWreckedTurn = Turn;
+                    p.MineWreckedByRiot = false;
                     mainWorks = false;
                     string line = $"Метеорит разбил шахту на {p.Type.Name} #{p.Id}";
                     if (Insured)

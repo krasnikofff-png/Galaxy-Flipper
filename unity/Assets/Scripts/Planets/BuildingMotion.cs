@@ -36,6 +36,8 @@ namespace PlanetTrader.Visuals
             ["crane_top"] = new Spec { Kind = Kind.Rock, Axis = Vector3.up, Amplitude = 55, Period = 22 },
             ["travel_block"] = new Spec { Kind = Kind.Bob, Axis = Vector3.up, Amplitude = 0.12f, Period = 5 },
             ["dish"] = new Spec { Kind = Kind.Rock, Axis = Vector3.up, Amplitude = 35, Period = 14 },
+            // Пикетчики поднимают плакаты в такт.
+            ["placards"] = new Spec { Kind = Kind.Bob, Axis = Vector3.up, Amplitude = 0.05f, Period = 1.3f },
         };
 
         Spec _spec;

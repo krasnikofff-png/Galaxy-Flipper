@@ -65,6 +65,7 @@ namespace PlanetTrader.EditorTools
             string dir = "frames";
             int frames = 90;
             float fps = 15;
+            bool events = System.Array.IndexOf(args, "-events") >= 0;
             for (int i = 0; i < args.Length - 1; i++)
             {
                 if (args[i] == "-frameDir") dir = args[i + 1];
@@ -72,12 +73,50 @@ namespace PlanetTrader.EditorTools
                 if (args[i] == "-fps") fps = float.Parse(args[i + 1], System.Globalization.CultureInfo.InvariantCulture);
             }
             int code = 0;
-            try { RenderBuildingsAnimation(dir, frames, fps); }
+            try { RenderBuildingsAnimation(dir, frames, fps, events); }
             catch (System.Exception e) { Debug.LogException(e); code = 1; }
             EditorApplication.Exit(code);
         }
 
-        public static void RenderBuildingsAnimation(string dir, int frames, float fps)
+        /// <summary>
+        /// Что стоит на i-й планете видео. Обычно — все постройки (на ледяной шахта строится).
+        /// events — беды: джунгли и газ — авария, забастовка и эпидемия; скалистая — метеорит; ледяная — бунт.
+        /// </summary>
+        static PlanetStructures VideoSet(int i, bool events)
+        {
+            var s = new PlanetStructures
+            {
+                Mine = i == 3 ? MineLook.Building : MineLook.Working,
+                Extractors = new[] { new Color(0.9f, 0.5f, 0.2f), new Color(0.6f, 0.4f, 1f) },
+                Settlement = true,
+                School = true,
+                Guard = true,
+                Ruins = !events,
+                Accent = new Color(0.35f, 0.95f, 0.45f),
+            };
+            if (!events) return s;
+            switch (i)
+            {
+                case 0:
+                case 2:
+                    s.Mine = MineLook.Idle;
+                    s.Accident = s.Strike = s.Epidemic = true;
+                    break;
+                case 1:
+                    s.Mine = MineLook.None;
+                    s.Wreck = WreckLook.Meteor;
+                    s.Epidemic = true;
+                    break;
+                default:
+                    s.Mine = MineLook.None;
+                    s.Wreck = WreckLook.Riot;
+                    s.Strike = true;
+                    break;
+            }
+            return s;
+        }
+
+        public static void RenderBuildingsAnimation(string dir, int frames, float fps, bool events = false)
         {
             const int w = 1032, h = 420;
             var looks = new[] { PlanetLook.Jungle, PlanetLook.Rocky, PlanetLook.Gas, PlanetLook.Ice };
@@ -131,16 +170,7 @@ namespace PlanetTrader.EditorTools
                     view.Resolution = 2048;
                     view.Rebuild();
                     var buildings = new PlanetBuildings();
-                    buildings.Sync(view, new PlanetStructures
-                    {
-                        Mine = i == 3 ? MineLook.Building : MineLook.Working,
-                        Extractors = new[] { new Color(0.9f, 0.5f, 0.2f), new Color(0.6f, 0.4f, 1f) },
-                        Settlement = true,
-                        School = true,
-                        Guard = true,
-                        Ruins = true,
-                        Accent = new Color(0.35f, 0.95f, 0.45f),
-                    });
+                    buildings.Sync(view, VideoSet(i, events));
                     view.TurnToward(buildings.Focus, PlanetPortrait.FacingDir);
                     places[i] = place;
                     views[i] = view;

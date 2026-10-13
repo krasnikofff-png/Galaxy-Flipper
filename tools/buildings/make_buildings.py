@@ -62,8 +62,14 @@ LEAF_DARK = (0.18, 0.42, 0.18)
 TRUNK = (0.42, 0.28, 0.18)
 WOOD = (0.55, 0.38, 0.22)
 OBSIDIAN = (0.3, 0.3, 0.36)
+FIRE_RED = (0.78, 0.12, 0.1)
+SOOT = (0.12, 0.11, 0.11)
+EMBER = (1.0, 0.45, 0.12)
+SKIN = (0.92, 0.74, 0.6)
+CLOTHES = [(0.25, 0.35, 0.6), (0.55, 0.3, 0.2), (0.3, 0.45, 0.3), (0.5, 0.5, 0.55), (0.6, 0.55, 0.35), (0.35, 0.3, 0.45)]
 
-MODELS = ["mine_rig", "mine_gas", "mine_build", "extractor", "settlement", "school", "guard_tower", "ruins"]
+MODELS = ["mine_rig", "mine_gas", "mine_build", "extractor", "settlement", "school", "guard_tower", "ruins",
+          "accident", "wreck", "crater", "picket", "quarantine"]
 
 # Детали текущей модели; join() собирает их в один объект.
 PARTS = []
@@ -71,6 +77,26 @@ PARTS = []
 MOVING = {}
 # Источники дыма и огня текущей модели: (вид, точка).
 EMITTERS = []
+
+
+class transformed:
+    """Всё, что создано внутри with transformed(матрица), будет сдвинуто и повёрнуто этой матрицей (упавшая вышка)."""
+
+    def __init__(self, matrix):
+        self.m = matrix
+
+    def __enter__(self):
+        self.start = len(PARTS)
+
+    def __exit__(self, *exc):
+        for ob in PARTS[self.start:]:
+            ob.data.transform(self.m)
+
+
+def around(pivot, rot):
+    """Матрица поворота rot (углы Эйлера) вокруг точки pivot."""
+    p = Vector(pivot)
+    return Matrix.Translation(p) @ Euler(rot).to_matrix().to_4x4() @ Matrix.Translation(-p)
 
 
 def emitter(kind, loc):
@@ -959,6 +985,205 @@ def ruins():
         a = rnd.random() * 2 * math.pi
         d = 0.85 + rnd.random() * 0.3
         rock(0.03 + rnd.random() * 0.05, (d * math.cos(a), d * math.sin(a), 0.06), STONE if k % 2 else STONE_DARK, rnd)
+
+
+# ----------------------------------------------------------------------
+# События на планете
+# ----------------------------------------------------------------------
+
+def van(x, y, z, angle, color, cross=None, beacon=BLUE_GLOW):
+    """Фургон: кузов, кабина со стеклом, колёса, мигалка на крыше, по желанию — крест на борту."""
+    rot = (0, 0, angle)
+    m = mat((x, y, z), rot)
+
+    def at(p):
+        return tuple(m @ Vector(p))
+
+    box((0.4, 0.18, 0.16), at((-0.03, 0, 0.13)), color, shine=0.5, rot=rot, bevel=0.02)
+    box((0.12, 0.17, 0.12), at((0.2, 0, 0.11)), color, shine=0.5, rot=rot, bevel=0.02)
+    box((0.012, 0.15, 0.06), at((0.261, 0, 0.14)), GLASS, shine=0.95, rot=rot, bevel=0)
+    for sy in (-0.06, 0.06):
+        box((0.008, 0.03, 0.015), at((0.262, sy, 0.08)), WARM, LIGHT, rot=rot, bevel=0)
+    box((0.1, 0.12, 0.025), at((0.05, 0, 0.225)), DARK, rot=rot, bevel=0.004)
+    box((0.04, 0.05, 0.02), at((0.05, -0.03, 0.245)), beacon, LIGHT, rot=rot, bevel=0)
+    box((0.04, 0.05, 0.02), at((0.05, 0.03, 0.245)), RED, LIGHT, rot=rot, bevel=0)
+    if cross:
+        for side in (-1, 1):
+            box((0.1, 0.004, 0.03), at((-0.05, side * 0.092, 0.14)), cross, rot=rot, bevel=0)
+            box((0.03, 0.004, 0.1), at((-0.05, side * 0.092, 0.14)), cross, rot=rot, bevel=0)
+    for wx in (0.15, -0.15):
+        for wy in (0.085, -0.085):
+            cyl(0.045, 0.035, at((wx, wy, 0.045)), ASPHALT, shine=0.1, segs=12, rot=(math.pi / 2, 0, angle))
+
+
+def person(x, y, z, clothes, h=0.32, arm_up=False):
+    """Человечек: ноги, туловище, руки, голова."""
+    for dy in (-0.022, 0.022):
+        rod((x, y + dy, z), (x, y + dy, z + h * 0.4), 0.014, DARK, segs=5)
+    cyl(0.05, h * 0.36, (x, y, z + h * 0.38), clothes, shine=0.15, segs=10, r2=0.042)
+    sphere(0.045, (x, y, z + h * 0.86), SKIN, shine=0.1, u=10, v=6)
+    for side in (-1, 1):
+        end = (x, y + side * 0.07, z + h * (0.95 if arm_up and side > 0 else 0.45))
+        rod((x, y + side * 0.045, z + h * 0.7), end, 0.012, clothes, segs=5)
+
+
+def placard(x, y, z, lean=0.0):
+    """Плакат на палке: белый щит с красной полосой и «текстом»."""
+    rod((x, y, z), (x, y, z + 0.35), 0.008, WOOD, segs=4)
+    m = mat((x, y, z + 0.38), (0, 0, lean))
+    def at(p):
+        return tuple(m @ Vector(p))
+    box((0.006, 0.2, 0.13), at((0, 0, 0)), WHITE, shine=0.1, rot=(0, 0, lean), bevel=0)
+    box((0.008, 0.2, 0.025), at((0, 0, 0.045)), RED, shine=0.1, rot=(0, 0, lean), bevel=0)
+    for k in range(3):
+        box((0.008, 0.14 - k * 0.03, 0.01), at((0, 0, 0.005 - k * 0.025)), DARK, rot=(0, 0, lean), bevel=0)
+
+
+def accident():
+    """Авария на шахте (накладывается на буровую или газовую платформу): пожар и чёрный дым,
+    пожарная машина с лестницей и мигалками, рукав к огню, ограждение, лужа масла, мигающий маяк."""
+    z0 = 0.12
+    for (x, y, r) in ((0.62, 0.45, 0.3), (0.12, 0.08, 0.25), (-0.45, 0.62, 0.18)):
+        cyl(r, 0.004, (x, y, z0 + 0.001), SOOT, shine=0.05, segs=14)
+    emitter("fire", (0.62, 0.45, z0 + 0.44))
+    emitter("fire", (0.12, 0.08, z0 + 0.38))
+    emitter("smoke_black", (0.62, 0.45, z0 + 0.6))
+    emitter("smoke_black", (0.12, 0.08, z0 + 0.55))
+    cyl(0.16, 0.003, (-0.5, 0.35, z0 + 0.002), (0.05, 0.05, 0.06), shine=0.95, segs=14)
+    # Пожарная машина с лестницей и лафетом.
+    fx, fy, fa = -0.35, -0.8, math.radians(25)
+    van(fx, fy, z0, fa, FIRE_RED)
+    m = mat((fx, fy, z0), (0, 0, fa))
+    for side in (-0.04, 0.04):
+        rod(tuple(m @ Vector((-0.2, side, 0.24))), tuple(m @ Vector((0.15, side, 0.42))), 0.008, METAL, segs=4)
+    for k in range(7):
+        t = k / 6
+        a = Vector((-0.2, -0.04, 0.24)).lerp(Vector((0.15, -0.04, 0.42)), t)
+        rod(tuple(m @ a), tuple(m @ (a + Vector((0, 0.08, 0)))), 0.005, METAL, segs=3)
+    polyline([tuple(m @ Vector((-0.2, 0.09, 0.08))), (0.0, -0.45, z0 + 0.02), (0.35, 0.1, z0 + 0.02), (0.48, 0.3, z0 + 0.02)], 0.012, FIRE_RED, segs=6)
+    # Ограждение и маяк.
+    for (x, y, a) in ((0.9, -0.3, 1.2), (0.75, -0.62, 0.7), (-0.85, 0.1, -1.3)):
+        mb = mat((x, y, z0), (0, 0, a))
+        for sx in (-0.12, 0.12):
+            rod(tuple(mb @ Vector((sx, -0.05, 0))), tuple(mb @ Vector((sx, 0, 0.14))), 0.008, DARK, segs=4)
+            rod(tuple(mb @ Vector((sx, 0.05, 0))), tuple(mb @ Vector((sx, 0, 0.14))), 0.008, DARK, segs=4)
+        for k in range(4):
+            box((0.07, 0.012, 0.05), tuple(mb @ Vector((-0.105 + k * 0.07, 0, 0.12))), HAZARD if k % 2 else WHITE, rot=(0, 0, a), bevel=0)
+    rod((0.95, 0.1, z0), (0.95, 0.1, z0 + 0.45), 0.012, STEEL, segs=5)
+    sphere(0.035, (0.95, 0.1, z0 + 0.48), EMBER, LIGHT, u=10, v=6)
+    person(-0.05, -0.62, z0, FIRE_RED, h=0.3)
+    person(0.2, -0.35, z0, FIRE_RED, h=0.3, arm_up=True)
+
+
+def wreck():
+    """Обломки шахты после метеорита или бунта: треснувшая площадка в копоти, пенёк фермы и упавшая вышка,
+    смятый цех, опрокинутый бак, разбросанные балки, тлеющие угли, огонь и дым."""
+    rnd = random.Random(13)
+    pad(1.1)
+    z0 = 0.12
+    cyl(0.75, 0.004, (0.05, 0.05, z0 + 0.001), SOOT, shine=0.05, segs=14)
+    for k in range(6):
+        a = rnd.random() * math.pi
+        box((0.6 + rnd.random() * 0.4, 0.015, 0.006), (rnd.uniform(-0.4, 0.4), rnd.uniform(-0.4, 0.4), z0 + 0.003), ASPHALT, rot=(0, 0, a), bevel=0)
+    with transformed(around((0, 0, z0), (0.08, -0.12, 0))):
+        lattice_tower(0.36, 0.3, z0, 0.45, 2, 0.016, STEEL)
+    with transformed(around((0.0, 0.0, z0), (0, math.radians(-78), 0.6)) @ Matrix.Translation((0.15, 0, 0.0))):
+        lattice_tower(0.3, 0.1, z0, 1.35, 5, 0.016, STEEL)
+    with transformed(around((0.62, 0.45, z0), (0.25, -0.18, 0.1))):
+        box((0.58, 0.4, 0.16), (0.62, 0.45, z0 + 0.08), METAL, shine=0.3, bevel=0.02)
+        box((0.5, 0.36, 0.03), (0.6, 0.42, z0 + 0.2), DARK, shine=0.3, rot=(0.3, 0.1, 0.2))
+    cyl(0.14, 0.45, (-0.75, 0.25, z0 + 0.14), WHITE, ACCENT, shine=0.4, segs=20, rot=(math.pi / 2, 0, 0.7))
+    for k in range(14):
+        x, y = rnd.uniform(-0.9, 0.9), rnd.uniform(-0.9, 0.9)
+        if x * x + y * y > 0.8:
+            continue
+        if k % 2:
+            box((rnd.uniform(0.2, 0.45), 0.035, 0.035), (x, y, z0 + 0.02), STEEL, shine=0.4, rot=(rnd.uniform(-0.2, 0.2), rnd.uniform(-0.3, 0.3), rnd.random() * 3), bevel=0.004)
+        else:
+            rock(0.05, (x, y, z0 + 0.02), STONE_DARK, rnd)
+    for k in range(10):
+        x, y = rnd.uniform(-0.5, 0.6), rnd.uniform(-0.4, 0.6)
+        box((0.04, 0.03, 0.02), (x, y, z0 + 0.01), EMBER, LIGHT, rot=(0, 0, rnd.random() * 3), bevel=0)
+    emitter("fire", (0.55, 0.4, z0 + 0.12))
+    emitter("smoke_black", (0.55, 0.4, z0 + 0.25))
+    emitter("smoke_small", (-0.3, -0.2, z0 + 0.1))
+
+
+def crater():
+    """Кратер от метеорита: оплавленный вал из камней, чёрная чаша, раскалённый обломок с трещинами, дым."""
+    rnd = random.Random(7)
+    cyl(0.85, 0.12, (0, 0, 0), STONE_DARK, shine=0.05, segs=18, r2=0.55, smooth=False)
+    cyl(0.56, 0.005, (0, 0, 0.115), SOOT, shine=0.05, segs=18)
+    for k in range(22):
+        a = 2 * math.pi * k / 22 + rnd.random() * 0.2
+        d = 0.68 + rnd.random() * 0.2
+        rock(0.06 + rnd.random() * 0.06, (d * math.cos(a), d * math.sin(a), 0.1), STONE if k % 3 else STONE_DARK, rnd)
+    rock(0.2, (0.05, 0, 0.2), (0.18, 0.16, 0.17), rnd, shine=0.3)
+    for k in range(9):
+        a = rnd.random() * 2 * math.pi
+        box((0.1, 0.012, 0.012), (0.05 + 0.17 * math.cos(a), 0.17 * math.sin(a), 0.2 + rnd.uniform(-0.05, 0.08)), EMBER, LIGHT,
+            rot=(rnd.random(), rnd.random(), a), bevel=0)
+    for k in range(8):
+        a = rnd.random() * 2 * math.pi
+        d = 0.2 + rnd.random() * 0.3
+        box((0.03, 0.03, 0.015), (d * math.cos(a), d * math.sin(a), 0.12), EMBER, LIGHT, rot=(0, 0, a), bevel=0)
+    emitter("smoke_dark", (0.05, 0, 0.35))
+    emitter("fire", (0.0, 0.05, 0.3))
+
+
+def picket():
+    """Забастовка: жители с плакатами (машут ими в такт), транспарант на двух шестах, горящая бочка."""
+    cyl(0.75, 0.03, (0, 0, 0), CONCRETE, shine=0.05, segs=12, smooth=False)
+    z0 = 0.03
+    spots = [(-0.4, -0.2), (-0.2, -0.32), (0.02, -0.36), (0.25, -0.3), (0.42, -0.15), (0.1, -0.05), (-0.25, 0.05)]
+    for i, (x, y) in enumerate(spots):
+        person(x, y, z0, CLOTHES[i % len(CLOTHES)], arm_up=i % 2 == 0)
+    with moving("placards", (0, -0.2, z0 + 0.3)):
+        for i, (x, y) in enumerate(spots):
+            if i % 2 == 0:
+                placard(x, y + 0.07, z0 + 0.25, lean=0.15 * (i - 3))
+    # Транспарант.
+    for x in (-0.45, 0.45):
+        rod((x, 0.3, z0), (x, 0.3, z0 + 0.62), 0.012, WOOD, segs=5)
+    box((0.86, 0.008, 0.18), (0, 0.3, z0 + 0.5), RED, shine=0.15, bevel=0)
+    for k in range(3):
+        box((0.6 - k * 0.12, 0.01, 0.025), (0, 0.3, z0 + 0.55 - k * 0.045), WHITE, shine=0.1, bevel=0)
+    # Горящая бочка.
+    cyl(0.07, 0.16, (0.45, 0.1, z0), (0.45, 0.25, 0.15), shine=0.3, segs=12)
+    for bz in (0.04, 0.12):
+        cyl(0.073, 0.012, (0.45, 0.1, z0 + bz), DARK, segs=12)
+    emitter("fire", (0.45, 0.1, z0 + 0.17))
+    emitter("smoke_small", (0.45, 0.1, z0 + 0.3))
+
+
+def quarantine():
+    """Карантин: две медицинские палатки с крестами, лента ограждения на столбиках, скорая с мигалкой, медик."""
+    cyl(0.95, 0.03, (0, 0, 0), CONCRETE, shine=0.05, segs=14, smooth=False)
+    z0 = 0.03
+    for (x, y, a) in ((-0.3, 0.15, 0.2), (0.3, 0.25, -0.3)):
+        prism_tri(0.5, 0.36, 0.65, (x, y, z0), WHITE, shine=0.2, yaw=a)
+        m = mat((x, y, z0), (0, 0, a))
+        box((0.12, 0.66, 0.012), tuple(m @ Vector((0, 0, 0.36))), (0.85, 0.85, 0.82), rot=(0, 0, a), bevel=0)
+        box((0.16, 0.01, 0.2), tuple(m @ Vector((0, -0.326, 0.1))), (0.3, 0.32, 0.35), rot=(0, 0, a), bevel=0)
+        # Красный крест на фронтоне над входом.
+        c = m @ Vector((0, -0.33, 0.25))
+        box((0.08, 0.008, 0.024), tuple(c), RED, rot=(0, 0, a), bevel=0)
+        box((0.024, 0.008, 0.08), tuple(c), RED, rot=(0, 0, a), bevel=0)
+    n = 16
+    for k in range(n):
+        a = 2 * math.pi * k / n
+        x, y = 0.82 * math.cos(a), 0.82 * math.sin(a)
+        rod((x, y, z0), (x, y, z0 + 0.16), 0.01, HAZARD if k % 2 else WHITE, segs=4)
+        a2 = 2 * math.pi * (k + 1) / n
+        if k != 11:
+            rod((x, y, z0 + 0.14), (0.82 * math.cos(a2), 0.82 * math.sin(a2), z0 + 0.14), 0.005, RED if k % 2 else WHITE, segs=3)
+    van(0.45, -0.45, z0, math.radians(-30), WHITE, cross=RED)
+    person(0.0, -0.35, z0, WHITE)
+    person(-0.6, -0.25, z0, (0.7, 0.85, 0.75))
+    box((0.02, 0.18, 0.13), (-0.75, -0.55, z0 + 0.25), WHITE, shine=0.1, rot=(0, 0, 0.6), bevel=0)
+    rod((-0.75, -0.55, z0), (-0.75, -0.55, z0 + 0.19), 0.008, STEEL, segs=4)
+    box((0.024, 0.03, 0.1), (-0.75, -0.55, z0 + 0.25), RED, rot=(0, 0, 0.6), bevel=0)
+    box((0.024, 0.1, 0.03), (-0.75, -0.55, z0 + 0.25), RED, rot=(0, 0, 0.6), bevel=0)
 
 
 # ----------------------------------------------------------------------

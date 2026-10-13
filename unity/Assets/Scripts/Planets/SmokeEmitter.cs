@@ -24,6 +24,12 @@ namespace PlanetTrader.Visuals
             ["smoke_dark"] = new Spec { Puffs = 22, Color = new Color(0.22f, 0.22f, 0.24f, 0.9f), Life = 4.5f, Rise = 1.5f, Size0 = 0.12f, Size1 = 0.9f, Wind = 0.5f },
             // Выхлоп мотора: светлый, лёгкий, невысоко.
             ["smoke_light"] = new Spec { Puffs = 12, Color = new Color(0.8f, 0.8f, 0.82f, 0.7f), Life = 2.6f, Rise = 0.7f, Size0 = 0.05f, Size1 = 0.42f, Wind = 0.35f },
+            // Чёрный дым пожара: густой, высоко.
+            ["smoke_black"] = new Spec { Puffs = 26, Color = new Color(0.07f, 0.07f, 0.08f, 0.95f), Life = 5f, Rise = 2f, Size0 = 0.2f, Size1 = 1.2f, Wind = 0.45f },
+            // Дымок горящей бочки и тлеющих обломков.
+            ["smoke_small"] = new Spec { Puffs = 10, Color = new Color(0.35f, 0.34f, 0.34f, 0.7f), Life = 3f, Rise = 0.6f, Size0 = 0.05f, Size1 = 0.35f, Wind = 0.3f },
+            // Пожар: высокие яркие языки.
+            ["fire"] = new Spec { Puffs = 18, Color = new Color(1, 0.6f, 0.2f, 0.95f), Life = 0.9f, Rise = 0.45f, Size0 = 0.32f, Size1 = 0.08f, Wind = 0.15f, Fire = 1, Additive = true },
             // Огонь факела: короткие яркие языки.
             ["flame"] = new Spec { Puffs = 14, Color = new Color(1, 0.6f, 0.2f, 0.95f), Life = 0.6f, Rise = 0.28f, Size0 = 0.22f, Size1 = 0.06f, Wind = 0.2f, Fire = 1, Additive = true },
         };

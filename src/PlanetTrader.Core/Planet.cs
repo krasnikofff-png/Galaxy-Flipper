@@ -65,6 +65,10 @@ namespace PlanetTrader.Core
         public bool Guarded;
         /// <summary>Сколько ещё ходов идёт эпидемия: добыча вполовину.</summary>
         public int EpidemicTurnsLeft;
+        /// <summary>Ход, когда шахту разбил метеорит или разнесли бунтовщики; −1 — не было. Нужен картинке: обломки.</summary>
+        public int MineWreckedTurn = -1;
+        /// <summary>Шахту разнесли бунтовщики, а не метеорит.</summary>
+        public bool MineWreckedByRiot;
         /// <summary>Основное месторождение восстанавливается: столько ходов ещё, из скольких.</summary>
         public int RegenTurnsLeft;
         public int RegenTotal;

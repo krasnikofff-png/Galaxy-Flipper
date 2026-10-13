@@ -47,8 +47,19 @@ namespace PlanetTrader.Client
         float _guiScale = 1;
         /// <summary>Зерно облика планет: в каждой партии планеты выглядят по-новому.</summary>
         int _lookSeed;
-        /// <summary>F3 — показ построек: 0 — как в игре, 1 — все постройки на выбранной планете, 2 — то же со стройкой шахты.</summary>
+        /// <summary>F3 — показ построек и событий на выбранной планете (только картинка); 0 — как в игре.</summary>
         int _buildingsDemo;
+        static readonly string[] DemoNames =
+        {
+            "Показ построек выключен.",
+            "Показ (F3): на выбранной планете все постройки — только в окне планеты, в игре их нет. «К постройкам» — крупно. Дальше F3 — стройка шахты.",
+            "Показ (F3): шахта строится. Дальше F3 — беды: авария, забастовка, эпидемия.",
+            "Показ (F3): авария на шахте, забастовка, эпидемия. Дальше F3 — обломки после метеорита.",
+            "Показ (F3): метеорит разбил шахту. Дальше F3 — обломки после бунта.",
+            "Показ (F3): бунтовщики разнесли шахту, забастовка продолжается. F3 — выключить показ.",
+        };
+        /// <summary>Сколько ходов лежат обломки разбитой шахты (если новую не начали строить раньше).</summary>
+        const int WreckTurns = 8;
 
         // Режим зонда: игрок выбирает тип и задание, потом кликает по карте.
         bool _probeMode;
@@ -85,10 +96,8 @@ namespace PlanetTrader.Client
             // Показ построек: только картинка в окне планеты, экономика не меняется.
             if (Input.GetKeyDown(KeyCode.F3))
             {
-                _buildingsDemo = (_buildingsDemo + 1) % 3;
-                Log(_buildingsDemo == 0 ? "Показ построек выключен." :
-                    _buildingsDemo == 1 ? "Показ построек (F3): на выбранной планете все постройки — только в окне планеты, в игре их нет. «К постройкам» — крупно. F3 — стройка шахты." :
-                    "Показ построек (F3): шахта строится. F3 — выключить показ.");
+                _buildingsDemo = (_buildingsDemo + 1) % DemoNames.Length;
+                Log(DemoNames[_buildingsDemo]);
             }
             if (RivalsTurn && Time.unscaledTime - _rivalsTurnStarted >= RivalsTurnSeconds) FinishTurn();
             if (_pending.Count > 0)
@@ -160,6 +169,13 @@ namespace PlanetTrader.Client
                 Guard = p.Guarded,
                 Ruins = p.Knowledge == Knowledge.Explored && p.HasUnlootedRuins,
                 Accent = p.Owner == Owner.Registry ? new Color(0.75f, 0.78f, 0.85f) : RingColor(p),
+                Accident = p.Mine == MineState.Working && p.AccidentTurnsLeft > 0,
+                Strike = p.Inhabited && p.OnStrike,
+                Epidemic = p.Inhabited && p.EpidemicTurnsLeft > 0,
+                // Обломки лежат, пока не начали строить новую шахту, но не дольше WreckTurns ходов.
+                Wreck = p.Mine == MineState.None && p.MineWreckedTurn >= 0 && _game.Turn - p.MineWreckedTurn <= WreckTurns
+                    ? (p.MineWreckedByRiot ? WreckLook.Riot : WreckLook.Meteor)
+                    : WreckLook.None,
             };
         }
 
@@ -169,13 +185,17 @@ namespace PlanetTrader.Client
             var others = ResourceTypes.All.Where(r => r != p.Resource).Take(2).Select(Fmt.ResourceColor).ToArray();
             return new PlanetStructures
             {
-                Mine = _buildingsDemo == 2 ? MineLook.Building : MineLook.Working,
+                Mine = _buildingsDemo == 2 ? MineLook.Building : _buildingsDemo == 3 ? MineLook.Idle : _buildingsDemo >= 4 ? MineLook.None : MineLook.Working,
                 Extractors = others,
                 Settlement = true,
                 School = true,
                 Guard = true,
                 Ruins = true,
                 Accent = p.Owner == Owner.Registry ? Fmt.OwnerColor(Owner.Player, false) : RingColor(p),
+                Accident = _buildingsDemo == 3,
+                Strike = _buildingsDemo == 3 || _buildingsDemo == 5,
+                Epidemic = _buildingsDemo == 3,
+                Wreck = _buildingsDemo == 4 ? WreckLook.Meteor : _buildingsDemo == 5 ? WreckLook.Riot : WreckLook.None,
             };
         }
 

@@ -15,6 +15,16 @@ namespace PlanetTrader.Visuals
         Idle,
     }
 
+    /// <summary>Что осталось от разбитой шахты.</summary>
+    public enum WreckLook
+    {
+        None,
+        /// <summary>Метеорит: обломки и кратер рядом.</summary>
+        Meteor,
+        /// <summary>Бунт: обломки.</summary>
+        Riot,
+    }
+
     /// <summary>Постройки на планете — по ним расставляются модели в 3D-окне планеты.</summary>
     public struct PlanetStructures
     {
@@ -31,13 +41,25 @@ namespace PlanetTrader.Visuals
         /// <summary>Цвет владельца: полоски, флаги, баки.</summary>
         public Color Accent;
 
-        public bool IsEmpty => Mine == MineLook.None && (Extractors == null || Extractors.Length == 0) && !Settlement && !School && !Guard && !Ruins;
+        // События.
+        /// <summary>Авария на шахте: пожар, чёрный дым, пожарные.</summary>
+        public bool Accident;
+        /// <summary>Забастовка: пикет с плакатами у шахты (или у поселения, если шахты нет).</summary>
+        public bool Strike;
+        /// <summary>Эпидемия: карантин у поселения.</summary>
+        public bool Epidemic;
+        /// <summary>Шахту недавно разбили: обломки на её месте.</summary>
+        public WreckLook Wreck;
+
+        public bool IsEmpty => Mine == MineLook.None && (Extractors == null || Extractors.Length == 0) && !Settlement && !School && !Guard && !Ruins
+                               && !Strike && !Epidemic && Wreck == WreckLook.None;
 
         /// <summary>Ключ для сравнения: изменилось ли что-то, что надо перестроить.</summary>
         public string Key()
         {
             var sb = new System.Text.StringBuilder();
             sb.Append((int)Mine).Append(Settlement ? 'S' : '-').Append(School ? 'K' : '-').Append(Guard ? 'G' : '-').Append(Ruins ? 'R' : '-');
+            sb.Append(Accident ? 'A' : '-').Append(Strike ? 'T' : '-').Append(Epidemic ? 'E' : '-').Append((int)Wreck);
             sb.Append(ColorUtility.ToHtmlStringRGB(Accent));
             if (Extractors != null)
                 foreach (var c in Extractors) sb.Append(ColorUtility.ToHtmlStringRGB(c));
@@ -106,7 +128,8 @@ namespace PlanetTrader.Visuals
             Focus = Vector3.zero;
 
             Vector3 industry = Vector3.zero, town = Vector3.zero;
-            if (s.Mine != MineLook.None || extractors > 0)
+            bool wreck = s.Mine == MineLook.None && s.Wreck != WreckLook.None;
+            if (s.Mine != MineLook.None || extractors > 0 || wreck)
             {
                 industry = FindSite(look, noise, rnd, used, Vector3.zero, 0, 9);
                 if (s.Mine != MineLook.None)
@@ -116,6 +139,15 @@ namespace PlanetTrader.Visuals
                     var go = Put(model, industry, gas ? 1.07f : 0.996f, 1f, rnd, s.Accent, working: s.Mine == MineLook.Working);
                     float glow = s.Mine == MineLook.Idle ? 0.25f : 1.3f;
                     SetLights(go, glow, s.Mine == MineLook.Working ? 1 : 0, s.Accent);
+                    // Авария — пожар, дым и пожарные поверх той же шахты; мигалки мигают.
+                    if (s.Accident && s.Mine != MineLook.Building)
+                        SetLights(PutOver("accident", go, rnd, s.Accent), 1.4f, 1, s.Accent);
+                }
+                else if (wreck)
+                {
+                    Put("wreck", industry, gas ? 1.07f : 0.996f, 1f, rnd, s.Accent);
+                    if (s.Wreck == WreckLook.Meteor)
+                        Put("crater", FindSite(look, noise, rnd, used, industry, 13, 10), gas ? 1.02f : 0.996f, 0.9f, rnd, s.Accent);
                 }
                 for (int i = 0; i < extractors; i++)
                 {
@@ -133,6 +165,20 @@ namespace PlanetTrader.Visuals
                 if (s.School) Put("school", FindSite(look, noise, rnd, used, town, 17, 12), gas ? 1.03f : 0.996f, 0.8f, rnd, s.Accent);
                 if (s.Guard) Put("guard_tower", FindSite(look, noise, rnd, used, town, 16, 11), gas ? 1.03f : 0.996f, 0.75f, rnd, s.Accent);
                 if (industry == Vector3.zero) Focus = town;
+            }
+
+            // Пикет встаёт у шахты — мешать работе; если шахты нет — у поселения.
+            if (s.Strike)
+            {
+                var near = s.Mine != MineLook.None || wreck ? industry : town;
+                Put("picket", FindSite(look, noise, rnd, used, near, near == Vector3.zero ? 0 : 11, 8), gas ? 1.03f : 0.996f, 0.8f, rnd, s.Accent);
+                if (Focus == Vector3.zero) Focus = near;
+            }
+            if (s.Epidemic)
+            {
+                var near = town != Vector3.zero ? town : industry;
+                SetLights(Put("quarantine", FindSite(look, noise, rnd, used, near, near == Vector3.zero ? 0 : 15, 10), gas ? 1.03f : 0.996f, 0.85f, rnd, s.Accent),
+                    1.3f, 1, s.Accent);
             }
 
             if (s.Ruins)
@@ -198,7 +244,19 @@ namespace PlanetTrader.Visuals
             }
         }
 
-        GameObject Put(string model, Vector3 q, float radius, float size, System.Random rnd, Color accent, bool working = true)
+        GameObject Put(string model, Vector3 q, float radius, float size, System.Random rnd, Color accent, bool working = true) =>
+            Spawn(model, q * radius, Quaternion.FromToRotation(Vector3.up, q) * Quaternion.AngleAxis((float)rnd.NextDouble() * 360, Vector3.up),
+                Scale * size, rnd, accent, working);
+
+        /// <summary>Модель поверх другой, в той же точке и с тем же поворотом (пожар на шахте).</summary>
+        GameObject PutOver(string model, GameObject target, System.Random rnd, Color accent)
+        {
+            if (target == null) return null;
+            var t = target.transform;
+            return Spawn(model, t.localPosition, t.localRotation, t.localScale.x, rnd, accent, true);
+        }
+
+        GameObject Spawn(string model, Vector3 position, Quaternion rotation, float scale, System.Random rnd, Color accent, bool working)
         {
             var prefab = LoadModel(model);
             if (prefab == null) return null;
@@ -206,9 +264,9 @@ namespace PlanetTrader.Visuals
             var go = new GameObject(model);
             var t = go.transform;
             t.SetParent(_parent, false);
-            t.localPosition = q * radius;
-            t.localRotation = Quaternion.FromToRotation(Vector3.up, q) * Quaternion.AngleAxis((float)rnd.NextDouble() * 360, Vector3.up);
-            t.localScale = Vector3.one * (Scale * size);
+            t.localPosition = position;
+            t.localRotation = rotation;
+            t.localScale = Vector3.one * scale;
             var model3d = Object.Instantiate(prefab, t, false);
             model3d.name = model;
             int layer = _parent.gameObject.layer;
