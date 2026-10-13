@@ -1,35 +1,109 @@
 <ui:UXML xmlns:ui="UnityEngine.UIElements">
     <ui:Style src="Game.uss" />
     <ui:VisualElement name="screen" class="screen">
-        <ui:VisualElement name="topBar" class="top-bar">
+        <ui:VisualElement name="topBar" class="top-bar frame">
+            <ui:Button name="logoButton" focusable="false" class="logo-button">
+                <ui:VisualElement class="icon icon-logo logo-icon" />
+            </ui:Button>
+            <ui:VisualElement class="turn-box" picking-mode="Ignore">
+                <ui:Label text="Ход" class="turn-label" />
+                <ui:Label name="turnValue" class="turn-value" />
+            </ui:VisualElement>
             <ui:VisualElement name="stats" class="stats" picking-mode="Ignore" />
-            <ui:Button name="probesButton" text="Зонды" focusable="false" class="button top-button" />
-            <ui:Button name="endTurnButton" text="Конец хода →" focusable="false" class="button top-button end-turn" />
-            <ui:Button name="showcaseButton" text="Планеты (F2)" focusable="false" class="button top-button" />
-            <ui:Button name="newGameButton" text="Новая игра" focusable="false" class="button top-button" />
+            <ui:VisualElement class="spacer" picking-mode="Ignore" />
+            <ui:VisualElement name="tabs" class="tabs" />
+            <ui:Button name="endTurnButton" focusable="false" class="end-turn">
+                <ui:Label text="Конец хода" class="end-turn-text" picking-mode="Ignore" />
+                <ui:VisualElement class="icon icon-arrow" />
+            </ui:Button>
         </ui:VisualElement>
-        <ui:Label name="eventBar" class="event-bar" />
         <ui:VisualElement name="body" class="body">
-            <ui:VisualElement name="map" class="map">
+            <ui:VisualElement name="map" class="map frame">
                 <ui:VisualElement name="mapCanvas" class="map-canvas" />
                 <ui:VisualElement name="mapLabels" class="map-labels" picking-mode="Ignore" />
+                <ui:VisualElement class="map-header" picking-mode="Ignore">
+                    <ui:Label text="ГАЛАКТИЧЕСКАЯ КАРТА" class="panel-title" />
+                    <ui:Label name="sectorName" class="panel-subtitle" />
+                    <ui:Label name="eventLine" class="event-line" />
+                </ui:VisualElement>
+                <ui:VisualElement name="legend" class="legend" picking-mode="Ignore" />
                 <ui:VisualElement name="probeBar" class="probe-bar hidden">
                     <ui:VisualElement name="probeTypes" class="segmented probe-types" />
                     <ui:VisualElement name="probeMissions" class="segmented probe-missions" />
                     <ui:VisualElement class="spacer" picking-mode="Ignore" />
                     <ui:Button name="probeDone" text="Готово" focusable="false" class="button probe-done" />
                 </ui:VisualElement>
-                <ui:Label name="mapHint" text="колесо — ближе/дальше, тянуть мышью — сдвинуть" class="map-hint" picking-mode="Ignore" />
-                <ui:VisualElement name="legend" class="legend" picking-mode="Ignore" />
+                <ui:VisualElement class="map-tools">
+                    <ui:Button name="centerButton" focusable="false" class="tool-button">
+                        <ui:VisualElement class="icon icon-target" />
+                    </ui:Button>
+                    <ui:VisualElement class="zoom-box">
+                        <ui:Button name="zoomOutButton" focusable="false" class="tool-button">
+                            <ui:VisualElement class="icon icon-minus" />
+                        </ui:Button>
+                        <ui:Label name="zoomValue" text="100%" class="zoom-value" />
+                        <ui:Button name="zoomInButton" focusable="false" class="tool-button">
+                            <ui:VisualElement class="icon icon-plus" />
+                        </ui:Button>
+                    </ui:VisualElement>
+                    <ui:Button name="probesButton" focusable="false" class="tool-button">
+                        <ui:VisualElement class="icon icon-rocket" />
+                        <ui:Label name="probesText" text="Зонды" class="tool-text" picking-mode="Ignore" />
+                    </ui:Button>
+                </ui:VisualElement>
             </ui:VisualElement>
-            <ui:VisualElement name="side" class="side panel">
-                <ui:VisualElement name="tabs" class="segmented tabs" />
+            <ui:VisualElement name="side" class="side frame">
                 <ui:ScrollView name="sideScroll" mode="Vertical" horizontal-scroller-visibility="Hidden" touch-scroll-type="Clamped" class="side-scroll" />
             </ui:VisualElement>
         </ui:VisualElement>
-        <ui:ScrollView name="log" mode="Vertical" horizontal-scroller-visibility="Hidden" touch-scroll-type="Clamped" class="log panel" />
-        <ui:VisualElement name="rivals" class="rivals hidden">
-            <ui:VisualElement class="rivals-card panel">
+        <ui:VisualElement name="bottom" class="bottom">
+            <ui:VisualElement class="bottom-panel market-panel frame">
+                <ui:VisualElement class="panel-head">
+                    <ui:Label text="Рынок" class="panel-title-small" />
+                    <ui:Label text="(за ед.)" class="panel-note" />
+                </ui:VisualElement>
+                <ui:VisualElement name="marketCards" class="market-cards" />
+            </ui:VisualElement>
+            <ui:VisualElement class="bottom-panel events-panel frame">
+                <ui:VisualElement class="panel-head">
+                    <ui:Label text="События" class="panel-title-small" />
+                    <ui:VisualElement class="spacer" />
+                    <ui:Button name="journalButton" focusable="false" class="small-button">
+                        <ui:Label text="Журнал событий" picking-mode="Ignore" />
+                        <ui:VisualElement class="icon icon-arrow" />
+                    </ui:Button>
+                </ui:VisualElement>
+                <ui:VisualElement name="eventsList" class="events-list" />
+            </ui:VisualElement>
+            <ui:VisualElement class="bottom-panel actions-panel frame">
+                <ui:VisualElement class="panel-head">
+                    <ui:Label text="Действия" class="panel-title-small" />
+                    <ui:Label text="в этом ходу" class="panel-note" />
+                    <ui:VisualElement class="spacer" />
+                    <ui:Label name="actionsCount" class="actions-count" />
+                </ui:VisualElement>
+                <ui:ScrollView name="actionsList" mode="Vertical" horizontal-scroller-visibility="Hidden" touch-scroll-type="Clamped" class="actions-list" />
+            </ui:VisualElement>
+        </ui:VisualElement>
+        <ui:VisualElement name="menu" class="menu-popup frame hidden">
+            <ui:Button name="newGameButton" text="Новая игра" focusable="false" class="button" />
+            <ui:Button name="showcaseButton" text="Витрина планет (F2)" focusable="false" class="button" />
+        </ui:VisualElement>
+        <ui:VisualElement name="journal" class="overlay hidden">
+            <ui:VisualElement class="journal-card frame">
+                <ui:VisualElement class="panel-head">
+                    <ui:Label text="Журнал событий" class="panel-title-small" />
+                    <ui:VisualElement class="spacer" />
+                    <ui:Button name="journalClose" focusable="false" class="small-button">
+                        <ui:Label text="Закрыть" picking-mode="Ignore" />
+                        <ui:VisualElement class="icon icon-close" />
+                    </ui:Button>
+                </ui:VisualElement>
+                <ui:ScrollView name="journalList" mode="Vertical" horizontal-scroller-visibility="Hidden" touch-scroll-type="Clamped" class="journal-list" />
+            </ui:VisualElement>
+        </ui:VisualElement>
+        <ui:VisualElement name="rivals" class="overlay hidden">
+            <ui:VisualElement class="rivals-card frame">
                 <ui:Label name="rivalsTitle" class="title" />
                 <ui:VisualElement name="rivalsList" />
                 <ui:VisualElement class="spacer" />

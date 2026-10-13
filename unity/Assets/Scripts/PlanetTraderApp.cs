@@ -107,17 +107,27 @@ namespace PlanetTrader.Client
             {
                 var actions = _pending.ToArray();
                 _pending.Clear();
-                foreach (var a in actions) a();
+                foreach (var a in actions)
+                {
+                    var game = _game;
+                    int actionsBefore = game.ActionsLeft, logBefore = _logSerial;
+                    a();
+                    FlushNotices();
+                    // Партия та же (не «Новая игра») — потраченное действие попадает в «Действия в этом ходу».
+                    if (game == _game) RecordAction(actionsBefore, logBefore);
+                }
                 MarkDirty();
             }
-            // Сообщения ядра о том, что случилось во время действий (руины при покупке и т. п.).
-            if (_game.Notices.Count > 0)
-            {
-                foreach (var n in _game.Notices) Log(n);
-                _game.Notices.Clear();
-                MarkDirty();
-            }
+            FlushNotices();
             RefreshScreen();
+        }
+
+        /// <summary>Сообщения ядра о том, что случилось во время действий (руины при покупке, отказ жителей и т. п.).</summary>
+        void FlushNotices()
+        {
+            if (_game.Notices.Count == 0) return;
+            foreach (var n in _game.Notices) Log(n);
+            _game.Notices.Clear();
         }
 
         void Awake()
@@ -321,6 +331,8 @@ namespace PlanetTrader.Client
             _rivalsTurnStarted = -1;
             ShowRivals(false);
             EndTurn();
+            _turnActions.Clear();
+            RecordPrices();
             MarkDirty();
         }
 
@@ -334,8 +346,12 @@ namespace PlanetTrader.Client
             }
             if (Input.GetKeyDown(KeyCode.Space) || Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.KeypadEnter))
                 Later(RequestEndTurn);
-            else if (Input.GetKeyDown(KeyCode.Escape) && _probeMode)
-                Later(() => _probeMode = false);
+            else if (Input.GetKeyDown(KeyCode.Escape))
+            {
+                if (!_journal.ClassListContains("hidden")) _journal.AddToClassList("hidden");
+                else if (!_menu.ClassListContains("hidden")) _menu.AddToClassList("hidden");
+                else if (_probeMode) Later(() => _probeMode = false);
+            }
         }
 
         void EndTurn()

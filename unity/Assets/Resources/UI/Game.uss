@@ -1,16 +1,18 @@
 :root {
-    --panel-bg: rgba(14, 18, 30, 0.92);
-    --panel-border: rgba(120, 150, 210, 0.22);
-    --card-bg: rgba(255, 255, 255, 0.045);
-    --text: #e6e9f0;
-    --text-dim: #bfc7d9;
-    --text-muted: #8a93a6;
-    --header: #99bfff;
-    --accent: #4d8fe0;
-    --button-bg: rgba(64, 86, 130, 0.55);
-    --button-hover: rgba(86, 114, 170, 0.75);
-    --button-active: rgba(46, 64, 100, 0.9);
-    --button-border: rgba(140, 170, 230, 0.35);
+    --text: #e9ecf2;
+    --text-dim: #b9c0cd;
+    --muted: #8b93a3;
+    --gold: #d6a24e;
+    --orange: #f0a43a;
+    --green: #58d68d;
+    --red: #ff5d4f;
+    --cyan: #5ec8ff;
+    --card-bg: rgba(255, 255, 255, 0.035);
+    --card-line: rgba(214, 162, 78, 0.18);
+    --button-bg: rgba(20, 24, 34, 0.95);
+    --button-hover: rgba(36, 40, 52, 0.98);
+    --button-active: rgba(14, 16, 24, 1);
+    --button-line: rgba(140, 118, 80, 0.55);
 }
 
 /* Каркас экрана */
@@ -21,6 +23,7 @@
     top: 0;
     right: 0;
     bottom: 0;
+    padding: 6px 8px 8px 8px;
     -unity-font-definition: url("project://database/Assets/Resources/UI/Fonts/Inter-Regular.ttf");
     font-size: 16px;
     color: var(--text);
@@ -30,71 +33,196 @@
     display: none;
 }
 
-.panel {
-    background-color: var(--panel-bg);
-    border-width: 1px;
-    border-color: var(--panel-border);
-    border-radius: 6px;
-}
-
 .spacer {
     flex-grow: 1;
+}
+
+.icon {
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
+}
+
+.frame {
+    --frame-fill: rgba(9, 12, 19, 0.94);
+    --frame-line: rgba(92, 78, 52, 1);
+    --frame-accent: rgba(220, 160, 70, 1);
+    --frame-cut: 12;
 }
 
 /* Верхняя панель */
 
 .top-bar {
-    height: 52px;
+    height: 60px;
     flex-direction: row;
     align-items: center;
-    padding-left: 12px;
-    padding-right: 12px;
-    background-color: var(--panel-bg);
-    border-bottom-width: 1px;
-    border-color: var(--panel-border);
+    padding: 0 8px 0 6px;
+    margin-bottom: 8px;
+}
+
+.logo-button {
+    width: 44px;
+    height: 44px;
+    margin: 0 6px 0 0;
+    padding: 8px;
+    background-color: rgba(0, 0, 0, 0);
+    border-width: 0;
+    color: var(--gold);
+}
+
+.logo-button:hover {
+    color: var(--orange);
+}
+
+.logo-icon {
+    width: 26px;
+    height: 26px;
+}
+
+.turn-box {
+    flex-direction: row;
+    align-items: center;
+    padding-right: 14px;
+    margin-right: 6px;
+    border-right-width: 1px;
+    border-color: rgba(92, 78, 52, 0.8);
+}
+
+.turn-label {
+    font-size: 18px;
+    color: var(--text-dim);
+    margin-right: 6px;
+}
+
+.turn-value {
+    font-size: 26px;
+    -unity-font-definition: url("project://database/Assets/Resources/UI/Fonts/Inter-SemiBold.ttf");
 }
 
 .stats {
     flex-direction: row;
-    flex-grow: 1;
     flex-shrink: 1;
     overflow: hidden;
 }
 
 .stat {
-    margin-right: 22px;
+    flex-direction: row;
+    align-items: center;
+    flex-shrink: 0;
+    padding: 0 10px;
+    border-right-width: 1px;
+    border-color: rgba(92, 78, 52, 0.5);
 }
 
-.button.top-button {
-    height: 34px;
-    margin: 0 0 0 8px;
-    padding-left: 14px;
-    padding-right: 14px;
+.stat-icon {
+    width: 20px;
+    height: 20px;
+    margin-right: 7px;
+    color: var(--gold);
 }
 
-.button.end-turn {
-    width: 150px;
-    background-color: rgba(60, 120, 90, 0.7);
-    border-color: rgba(120, 220, 160, 0.45);
+.stat-label {
+    font-size: 11px;
+    color: var(--muted);
 }
 
-.button.end-turn:hover {
-    background-color: rgba(76, 150, 112, 0.85);
+.stat-value {
+    font-size: 17px;
+    white-space: nowrap;
+    -unity-font-definition: url("project://database/Assets/Resources/UI/Fonts/Inter-SemiBold.ttf");
 }
 
-.event-bar {
-    height: 30px;
-    padding-left: 14px;
-    padding-right: 14px;
-    font-size: 13px;
-    -unity-text-align: middle-left;
+.stat.debt > .stat-icon,
+.stat.debt .stat-value {
+    color: var(--red);
+}
+
+.stat.capital > .stat-icon,
+.stat.capital .stat-value {
+    color: var(--green);
+}
+
+.stat.costs > .stat-icon,
+.stat.costs .stat-value {
+    color: var(--orange);
+}
+
+.stat.actions > .stat-icon {
     color: var(--text-dim);
-    background-color: rgba(255, 255, 255, 0.06);
 }
 
-.event-bar.active {
+.tabs {
+    flex-direction: row;
+    flex-shrink: 0;
+    margin: 0 8px;
+}
+
+.tab {
+    flex-direction: row;
+    align-items: center;
+    height: 40px;
+    flex-shrink: 0;
+    margin: 0 0 0 4px;
+    padding: 0 7px;
+    font-size: 13px;
+    white-space: nowrap;
+    color: var(--text-dim);
+    background-color: var(--button-bg);
+    border-width: 1px;
+    border-color: rgba(70, 74, 88, 0.9);
+    border-radius: 3px;
+    transition-duration: 0.12s;
+}
+
+.tab:hover {
+    background-color: var(--button-hover);
     color: var(--text);
-    background-color: rgba(242, 191, 77, 0.22);
+}
+
+.tab.selected {
+    color: var(--orange);
+    border-color: var(--orange);
+    background-color: rgba(70, 45, 15, 0.55);
+}
+
+.tab-icon {
+    width: 15px;
+    height: 15px;
+    margin-right: 5px;
+}
+
+.end-turn {
+    flex-shrink: 0;
+    flex-direction: row;
+    align-items: center;
+    height: 42px;
+    margin: 0;
+    padding: 0 14px;
+    background-color: rgba(120, 74, 20, 0.95);
+    border-width: 1px;
+    border-color: var(--orange);
+    border-radius: 3px;
+    color: #ffd08a;
+    transition-duration: 0.12s;
+}
+
+.end-turn:hover {
+    background-color: rgba(150, 94, 28, 1);
+    color: #ffe2b0;
+}
+
+.end-turn-text {
+    font-size: 17px;
+    -unity-font-definition: url("project://database/Assets/Resources/UI/Fonts/Inter-SemiBold.ttf");
+    margin-right: 8px;
+}
+
+.menu-popup {
+    position: absolute;
+    left: 14px;
+    top: 66px;
+    width: 240px;
+    padding: 10px;
 }
 
 /* Тело: карта и правая панель */
@@ -102,12 +230,13 @@
 .body {
     flex-grow: 1;
     flex-direction: row;
-    margin: 10px;
+    margin-bottom: 8px;
 }
 
 .map {
     flex-grow: 1;
     overflow: hidden;
+    --frame-fill: rgba(0, 0, 0, 0);
 }
 
 .map-canvas {
@@ -126,28 +255,118 @@
     bottom: 0;
 }
 
-.map-label {
+.map-header {
     position: absolute;
-    width: 140px;
-    font-size: 12px;
-    -unity-text-align: upper-center;
-    color: var(--text-dim);
-    text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.9);
+    left: 22px;
+    top: 14px;
 }
 
-.map-hint {
+.panel-title {
+    font-size: 17px;
+    letter-spacing: 2px;
+    color: #d4d8e0;
+    -unity-font-definition: url("project://database/Assets/Resources/UI/Fonts/Inter-SemiBold.ttf");
+}
+
+.panel-subtitle {
+    font-size: 13px;
+    color: var(--muted);
+}
+
+.event-line {
+    font-size: 12px;
+    color: var(--muted);
+    margin-top: 4px;
+    max-width: 520px;
+    white-space: normal;
+}
+
+.event-line.active {
+    color: #ffd27a;
+    padding: 3px 8px;
+    background-color: rgba(120, 80, 20, 0.45);
+    border-width: 1px;
+    border-color: rgba(240, 164, 58, 0.6);
+    border-radius: 3px;
+}
+
+.map-label {
     position: absolute;
-    right: 12px;
-    top: 8px;
-    font-size: 11px;
-    color: rgba(191, 204, 230, 0.55);
+    width: 150px;
+    align-items: center;
+}
+
+.map-label-name {
+    font-size: 13px;
+    -unity-font-definition: url("project://database/Assets/Resources/UI/Fonts/Inter-SemiBold.ttf");
+    text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.95);
+}
+
+.map-label-price {
+    flex-direction: row;
+    align-items: center;
+}
+
+.map-label-price > .icon {
+    width: 12px;
+    height: 12px;
+    margin-right: 3px;
+    color: var(--orange);
+}
+
+.map-label-price > .label-text {
+    font-size: 12px;
+    color: var(--text-dim);
+    text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.95);
+}
+
+.map-label-price.owned > .label-text {
+    color: #ffc36b;
+}
+
+.legend {
+    position: absolute;
+    right: 16px;
+    top: 14px;
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    max-width: 560px;
+    padding: 6px 12px;
+    background-color: rgba(10, 13, 20, 0.85);
+    border-width: 1px;
+    border-color: rgba(92, 78, 52, 0.7);
+    border-radius: 3px;
+}
+
+.legend-item {
+    flex-direction: row;
+    align-items: center;
+    margin: 1px 0 1px 14px;
+    font-size: 12px;
+    color: var(--text-dim);
+}
+
+.dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 5px;
+    margin-right: 6px;
+}
+
+.route-dash {
+    width: 18px;
+    height: 2px;
+    margin-right: 6px;
+    border-top-width: 2px;
+    border-color: var(--orange);
 }
 
 .probe-bar {
     position: absolute;
-    left: 12px;
-    right: 12px;
-    top: 8px;
+    left: 20px;
+    right: 20px;
+    top: 72px;
     height: 34px;
     flex-direction: row;
 }
@@ -172,69 +391,595 @@
     width: 90px;
 }
 
-.legend {
+.map-tools {
     position: absolute;
-    left: 8px;
-    right: 8px;
-    bottom: 6px;
-    flex-direction: row;
-    flex-wrap: wrap;
-    padding: 3px 6px;
-    border-radius: 5px;
-    background-color: rgba(6, 8, 16, 0.72);
-}
-
-.legend-item {
+    left: 16px;
+    bottom: 14px;
     flex-direction: row;
     align-items: center;
-    margin-right: 16px;
-    font-size: 12px;
+}
+
+.tool-button {
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    height: 36px;
+    min-width: 36px;
+    margin: 0 8px 0 0;
+    padding: 0 8px;
     color: var(--text-dim);
+    background-color: rgba(12, 15, 22, 0.92);
+    border-width: 1px;
+    border-color: rgba(92, 78, 52, 0.9);
+    border-radius: 3px;
 }
 
-.legend-gap {
-    width: 20px;
+.tool-button:hover {
+    color: var(--orange);
 }
 
-.dot {
-    width: 12px;
-    height: 12px;
-    border-radius: 6px;
-    margin-right: 5px;
+.tool-button.selected {
+    color: var(--orange);
+    border-color: var(--orange);
+    background-color: rgba(70, 45, 15, 0.7);
+}
+
+.tool-button > .icon {
+    width: 18px;
+    height: 18px;
+}
+
+.tool-text {
+    font-size: 14px;
+    margin-left: 6px;
+}
+
+.zoom-box {
+    flex-direction: row;
+    align-items: center;
+    height: 36px;
+    margin-right: 8px;
+    background-color: rgba(12, 15, 22, 0.92);
+    border-width: 1px;
+    border-color: rgba(92, 78, 52, 0.9);
+    border-radius: 3px;
+}
+
+.zoom-box > .tool-button {
+    margin: 0;
+    border-width: 0;
+    background-color: rgba(0, 0, 0, 0);
+}
+
+.zoom-value {
+    width: 52px;
+    font-size: 14px;
+    -unity-text-align: middle-center;
 }
 
 .side {
-    width: 560px;
-    margin-left: 10px;
-    padding: 10px 12px;
-}
-
-.tabs {
-    height: 34px;
-    flex-shrink: 0;
-}
-
-.tabs > .segment {
-    font-size: 14px;
-    padding-left: 2px;
-    padding-right: 2px;
+    width: 570px;
+    margin-left: 8px;
+    padding: 12px 8px 10px 16px;
 }
 
 .side-scroll {
     flex-grow: 1;
-    margin-top: 10px;
 }
 
-.log {
-    height: 190px;
-    margin: 0 10px 10px 10px;
-    padding: 8px 4px 8px 12px;
+/* Нижние панели */
+
+.bottom {
+    height: 178px;
+    flex-direction: row;
 }
 
-.log-line {
-    font-size: 14px;
-    white-space: normal;
+.bottom-panel {
+    padding: 10px 14px 10px 16px;
+    margin-right: 8px;
+}
+
+.market-panel {
+    flex-grow: 1.35;
+    flex-basis: 0;
+}
+
+.events-panel {
+    flex-grow: 1;
+    flex-basis: 0;
+}
+
+.actions-panel {
+    width: 400px;
+    margin-right: 0;
+}
+
+.panel-head {
+    flex-direction: row;
+    align-items: center;
+    height: 26px;
+    margin-bottom: 6px;
+}
+
+.panel-title-small {
+    font-size: 17px;
+    color: var(--orange);
+    -unity-font-definition: url("project://database/Assets/Resources/UI/Fonts/Inter-SemiBold.ttf");
+    margin-right: 6px;
+}
+
+.panel-note {
+    font-size: 13px;
+    color: var(--muted);
+}
+
+.market-cards {
+    flex-grow: 1;
+    flex-direction: row;
+}
+
+.market-card {
+    flex-grow: 1;
+    flex-basis: 0;
+    margin-right: 6px;
+    padding: 6px 7px 4px 7px;
+    background-color: var(--card-bg);
+    border-width: 1px;
+    border-color: var(--card-line);
+    border-radius: 3px;
+}
+
+.market-card:hover {
+    border-color: rgba(240, 164, 58, 0.6);
+}
+
+.mc-head {
+    flex-direction: row;
+    align-items: center;
+}
+
+.mc-icon {
+    width: 15px;
+    height: 15px;
+    margin-right: 4px;
+}
+
+.mc-name {
+    font-size: 11px;
+    color: var(--text-dim);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    flex-shrink: 1;
+}
+
+.mc-price {
+    font-size: 17px;
+    margin-top: 3px;
+    -unity-font-definition: url("project://database/Assets/Resources/UI/Fonts/Inter-SemiBold.ttf");
+}
+
+.mc-change {
+    flex-direction: row;
+    align-items: center;
+}
+
+.mc-change > .label-text {
+    font-size: 13px;
+}
+
+.mc-change > .icon {
+    width: 11px;
+    height: 11px;
+    margin-left: 4px;
+}
+
+.mc-change.up {
+    color: var(--green);
+}
+
+.mc-change.down {
+    color: var(--red);
+}
+
+.mc-change.flat {
+    color: var(--muted);
+}
+
+.sparkline {
+    flex-grow: 1;
+    min-height: 16px;
+    margin-top: 2px;
+}
+
+.small-button {
+    flex-direction: row;
+    align-items: center;
+    height: 24px;
+    margin: 0;
+    padding: 0 8px;
+    font-size: 12px;
+    color: var(--text-dim);
+    background-color: rgba(18, 22, 30, 0.95);
+    border-width: 1px;
+    border-color: rgba(92, 78, 52, 0.9);
+    border-radius: 3px;
+}
+
+.small-button:hover {
+    color: var(--orange);
+}
+
+.small-button > .icon {
+    width: 13px;
+    height: 13px;
+    margin-left: 5px;
+}
+
+.events-list {
+    flex-grow: 1;
+    overflow: hidden;
+}
+
+.event-row {
+    flex-direction: row;
+    align-items: center;
+    height: 29px;
+    border-bottom-width: 1px;
+    border-color: rgba(255, 255, 255, 0.05);
+}
+
+.event-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 4px;
+    margin-right: 10px;
+    flex-shrink: 0;
+    background-color: var(--muted);
+}
+
+.event-dot.good {
+    background-color: var(--green);
+}
+
+.event-dot.bad {
+    background-color: var(--red);
+}
+
+.event-dot.warn {
+    background-color: var(--orange);
+}
+
+.event-dot.info {
+    background-color: var(--cyan);
+}
+
+.event-turn {
+    width: 44px;
+    flex-shrink: 0;
+    font-size: 13px;
+    color: var(--muted);
+}
+
+.event-text {
+    flex-grow: 1;
+    flex-shrink: 1;
+    font-size: 13px;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.actions-count {
+    font-size: 17px;
+    -unity-font-definition: url("project://database/Assets/Resources/UI/Fonts/Inter-SemiBold.ttf");
+}
+
+.actions-list {
+    flex-grow: 1;
+}
+
+.action-row {
+    flex-direction: row;
+    align-items: center;
+    height: 27px;
+    padding: 0 6px;
     margin-bottom: 2px;
+    background-color: rgba(255, 255, 255, 0.03);
+    border-radius: 3px;
+}
+
+.action-num {
+    width: 22px;
+    height: 22px;
+    border-radius: 11px;
+    margin-right: 12px;
+    font-size: 12px;
+    -unity-text-align: middle-center;
+    color: var(--text-dim);
+    background-color: rgba(255, 255, 255, 0.08);
+}
+
+.action-text {
+    flex-grow: 1;
+    flex-shrink: 1;
+    font-size: 13px;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.action-row.free > .action-text {
+    color: var(--muted);
+}
+
+.action-check {
+    width: 20px;
+    height: 20px;
+    border-width: 1.5px;
+    border-radius: 10px;
+    border-color: rgba(255, 255, 255, 0.25);
+}
+
+.action-check.done {
+    border-color: var(--green);
+    color: var(--green);
+    padding: 2px;
+}
+
+/* Окно планеты */
+
+.planet-head {
+    flex-direction: row;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.planet-title {
+    font-size: 25px;
+    -unity-font-definition: url("project://database/Assets/Resources/UI/Fonts/Inter-SemiBold.ttf");
+    margin-right: 12px;
+}
+
+.pill {
+    font-size: 13px;
+    padding: 3px 10px;
+    border-width: 1px;
+    border-radius: 10px;
+    color: var(--text-dim);
+    border-color: rgba(185, 192, 205, 0.5);
+    background-color: rgba(185, 192, 205, 0.08);
+}
+
+.pill.mine {
+    color: var(--green);
+    border-color: rgba(88, 214, 141, 0.7);
+    background-color: rgba(30, 110, 60, 0.3);
+}
+
+.pill.rival {
+    color: var(--red);
+    border-color: rgba(255, 93, 79, 0.7);
+    background-color: rgba(120, 30, 24, 0.3);
+}
+
+.pill.found {
+    color: #ffe066;
+    border-color: rgba(255, 224, 102, 0.6);
+    background-color: rgba(120, 100, 20, 0.25);
+}
+
+.coords {
+    align-items: flex-end;
+}
+
+.coords > .label-text {
+    font-size: 11px;
+    color: var(--muted);
+}
+
+.portrait {
+    height: 250px;
+    margin-bottom: 10px;
+    overflow: hidden;
+    background-color: #05060c;
+    border-width: 1px;
+    border-color: rgba(92, 78, 52, 0.7);
+}
+
+.button.portrait-button {
+    position: absolute;
+    right: 8px;
+    top: 8px;
+    width: 124px;
+    min-height: 26px;
+    font-size: 13px;
+    padding: 2px 6px;
+}
+
+.chips {
+    flex-direction: row;
+    margin-bottom: 10px;
+    background-color: var(--card-bg);
+    border-width: 1px;
+    border-color: var(--card-line);
+    border-radius: 3px;
+}
+
+.chip {
+    flex-grow: 1;
+    flex-basis: 0;
+    flex-direction: row;
+    align-items: center;
+    padding: 7px 8px;
+    border-right-width: 1px;
+    border-color: var(--card-line);
+}
+
+.chip.last {
+    border-right-width: 0;
+}
+
+.chip-icon {
+    width: 24px;
+    height: 24px;
+    margin-right: 8px;
+    color: var(--green);
+}
+
+.chip-label {
+    font-size: 11px;
+    color: var(--muted);
+}
+
+.chip-value {
+    font-size: 14px;
+    -unity-font-definition: url("project://database/Assets/Resources/UI/Fonts/Inter-SemiBold.ttf");
+    white-space: normal;
+}
+
+.stat-grid {
+    flex-direction: row;
+    margin-bottom: 10px;
+}
+
+.stat-col {
+    flex-grow: 1;
+    flex-basis: 0;
+    padding: 4px 10px;
+    background-color: var(--card-bg);
+    border-width: 1px;
+    border-color: var(--card-line);
+    border-radius: 3px;
+}
+
+.stat-col.first {
+    margin-right: 8px;
+}
+
+.stat-row {
+    min-height: 38px;
+    justify-content: center;
+    border-bottom-width: 1px;
+    border-color: rgba(255, 255, 255, 0.05);
+}
+
+.stat-row.last {
+    border-bottom-width: 0;
+}
+
+.stat-row-main {
+    flex-direction: row;
+    align-items: center;
+}
+
+.stat-row-icon {
+    width: 18px;
+    height: 18px;
+    margin-right: 10px;
+    color: var(--gold);
+}
+
+.stat-row-name {
+    flex-grow: 1;
+    font-size: 13px;
+    color: var(--text-dim);
+}
+
+.stat-row-value {
+    font-size: 15px;
+    -unity-font-definition: url("project://database/Assets/Resources/UI/Fonts/Inter-SemiBold.ttf");
+    -unity-text-align: middle-right;
+}
+
+.stat-row > .bar {
+    margin: 3px 0 4px 28px;
+    height: 4px;
+}
+
+.big-buttons {
+    flex-direction: row;
+    margin-bottom: 12px;
+}
+
+.big-button {
+    flex-grow: 1;
+    flex-basis: 0;
+    flex-direction: row;
+    align-items: center;
+    min-height: 58px;
+    margin: 0;
+    padding: 6px 14px;
+    border-width: 1px;
+    border-radius: 3px;
+    transition-duration: 0.12s;
+}
+
+.big-button.second {
+    margin-left: 8px;
+}
+
+.big-icon {
+    width: 30px;
+    height: 30px;
+    margin-right: 12px;
+}
+
+.big-text {
+    flex-grow: 1;
+    flex-shrink: 1;
+    align-items: center;
+}
+
+.big-title {
+    font-size: 17px;
+    -unity-font-definition: url("project://database/Assets/Resources/UI/Fonts/Inter-SemiBold.ttf");
+    -unity-text-align: middle-center;
+    white-space: normal;
+}
+
+.big-sub {
+    font-size: 13px;
+    -unity-text-align: middle-center;
+    white-space: normal;
+}
+
+.big-primary {
+    color: #2b1803;
+    background-color: rgb(236, 157, 52);
+    border-color: rgb(255, 196, 110);
+}
+
+.big-primary:hover {
+    background-color: rgb(248, 174, 70);
+}
+
+.big-primary:active {
+    background-color: rgb(210, 136, 40);
+}
+
+.big-danger {
+    color: var(--red);
+    background-color: rgba(70, 18, 16, 0.85);
+    border-color: rgba(220, 70, 58, 0.85);
+}
+
+.big-danger:hover {
+    background-color: rgba(96, 24, 20, 0.95);
+}
+
+.big-plain {
+    color: var(--text);
+    background-color: var(--button-bg);
+    border-color: var(--button-line);
+}
+
+.big-plain:hover {
+    background-color: var(--button-hover);
+}
+
+.big-button:disabled {
+    opacity: 0.4;
 }
 
 /* Текст панели */
@@ -247,11 +992,12 @@
 }
 
 .header {
-    font-size: 17px;
+    font-size: 15px;
+    letter-spacing: 1px;
     -unity-font-definition: url("project://database/Assets/Resources/UI/Fonts/Inter-SemiBold.ttf");
-    color: var(--header);
-    margin-top: 4px;
-    margin-bottom: 4px;
+    color: var(--orange);
+    margin-top: 6px;
+    margin-bottom: 5px;
 }
 
 .text {
@@ -274,7 +1020,7 @@
 .line-name {
     width: 200px;
     flex-shrink: 0;
-    color: var(--text-dim);
+    color: var(--muted);
     white-space: normal;
 }
 
@@ -330,15 +1076,15 @@
 .card {
     background-color: var(--card-bg);
     border-width: 1px;
-    border-color: rgba(255, 255, 255, 0.08);
-    border-radius: 6px;
+    border-color: var(--card-line);
+    border-radius: 3px;
     padding: 8px 10px;
     margin-bottom: 6px;
 }
 
 .card.alert {
-    background-color: rgba(255, 110, 90, 0.08);
-    border-color: rgba(255, 138, 122, 0.4);
+    background-color: rgba(255, 93, 79, 0.08);
+    border-color: rgba(255, 93, 79, 0.45);
 }
 
 .space-s {
@@ -354,12 +1100,12 @@
 }
 
 .bar {
-    height: 10px;
+    height: 8px;
     margin-left: 200px;
     margin-top: 2px;
     margin-bottom: 6px;
-    background-color: rgba(255, 255, 255, 0.15);
-    border-radius: 3px;
+    background-color: rgba(255, 255, 255, 0.1);
+    border-radius: 2px;
     overflow: hidden;
 }
 
@@ -384,13 +1130,14 @@
     -unity-text-align: middle-center;
     background-color: var(--button-bg);
     border-width: 1px;
-    border-color: var(--button-border);
-    border-radius: 5px;
+    border-color: var(--button-line);
+    border-radius: 3px;
     transition-duration: 0.12s;
 }
 
 .button:hover {
     background-color: var(--button-hover);
+    border-color: rgba(240, 164, 58, 0.7);
 }
 
 .button:active {
@@ -415,18 +1162,19 @@
 
 .segment.first {
     border-left-width: 1px;
-    border-top-left-radius: 5px;
-    border-bottom-left-radius: 5px;
+    border-top-left-radius: 3px;
+    border-bottom-left-radius: 3px;
 }
 
 .segment.last {
-    border-top-right-radius: 5px;
-    border-bottom-right-radius: 5px;
+    border-top-right-radius: 3px;
+    border-bottom-right-radius: 3px;
 }
 
 .button.selected {
-    background-color: var(--accent);
-    border-color: rgba(170, 205, 255, 0.7);
+    color: var(--orange);
+    background-color: rgba(70, 45, 15, 0.7);
+    border-color: var(--orange);
 }
 
 .check {
@@ -447,8 +1195,8 @@
     margin-right: 8px;
     margin-top: 1px;
     border-width: 1px;
-    border-color: var(--button-border);
-    border-radius: 4px;
+    border-color: var(--button-line);
+    border-radius: 3px;
     background-color: var(--button-bg);
     font-size: 13px;
     -unity-text-align: middle-center;
@@ -456,12 +1204,13 @@
 }
 
 .check:hover > .check-box {
-    background-color: var(--button-hover);
+    border-color: var(--orange);
 }
 
 .check.on > .check-box {
-    background-color: var(--accent);
-    color: #ffffff;
+    background-color: rgb(236, 157, 52);
+    border-color: rgb(255, 196, 110);
+    color: #2b1803;
 }
 
 .check-text {
@@ -469,30 +1218,9 @@
     white-space: normal;
 }
 
-/* Окно планеты */
+/* Окна поверх: ход соперников, журнал */
 
-.portrait {
-    height: 210px;
-    margin-top: 2px;
-    margin-bottom: 8px;
-    border-radius: 6px;
-    overflow: hidden;
-    background-color: #05060c;
-}
-
-.portrait-button {
-    position: absolute;
-    right: 8px;
-    top: 8px;
-    width: 124px;
-    min-height: 26px;
-    font-size: 13px;
-    padding: 2px 6px;
-}
-
-/* Ход соперников */
-
-.rivals {
+.overlay {
     position: absolute;
     left: 0;
     top: 0;
@@ -500,18 +1228,39 @@
     bottom: 0;
     align-items: center;
     justify-content: center;
-    background-color: rgba(0, 0, 0, 0.45);
+    background-color: rgba(0, 0, 0, 0.5);
 }
 
 .rivals-card {
     width: 660px;
     height: 300px;
-    padding: 14px 20px;
-    background-color: rgba(14, 18, 30, 0.97);
+    padding: 16px 24px;
+    --frame-fill: rgba(9, 12, 19, 0.98);
 }
 
 .rivals-fill {
-    background-color: rgb(153, 204, 255);
+    background-color: var(--orange);
+}
+
+.journal-card {
+    width: 900px;
+    height: 640px;
+    padding: 16px 20px;
+    --frame-fill: rgba(9, 12, 19, 0.98);
+}
+
+.journal-list {
+    flex-grow: 1;
+}
+
+.journal-list .event-row {
+    height: auto;
+    min-height: 26px;
+    padding: 3px 0;
+}
+
+.journal-list .event-text {
+    white-space: normal;
 }
 
 /* Подсказка */
@@ -521,8 +1270,8 @@
     padding: 5px 8px;
     font-size: 13px;
     color: var(--text-dim);
-    background-color: rgba(10, 12, 20, 0.95);
+    background-color: rgba(8, 10, 16, 0.96);
     border-width: 1px;
-    border-color: var(--panel-border);
-    border-radius: 4px;
+    border-color: rgba(92, 78, 52, 0.9);
+    border-radius: 3px;
 }

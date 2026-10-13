@@ -8,16 +8,27 @@ namespace PlanetTrader.Client
 {
     /// <summary>
     /// Карта сектора. Планеты, станцию и корабли рисует 3D-камера (SectorMapView) в прямоугольнике карты;
-    /// интерфейс поверх рисует кольца владельцев, пунктир зондов и круг скана (Painter2D), подписи и легенду,
-    /// и ловит клики по планетам.
+    /// интерфейс поверх рисует орбиты, торговые пути, кольца владельцев, прицел выбранной планеты, пунктир зондов
+    /// и круг скана (Painter2D), подписи, легенду и кнопки приближения, и ловит клики по планетам.
     /// </summary>
     public sealed partial class PlanetTraderApp
     {
-        Label _mapHint;
+        Label _sectorName, _eventLine, _zoomValue, _probesText;
+        Button _probesButton;
+
+        /// <summary>Подпись на карте: имя (магнат, «ВЫ», «Биржа») и строка с ценой или пометкой.</summary>
+        sealed class MapLabelView
+        {
+            public VisualElement Root, PriceRow, Coin;
+            public Label Name, Price;
+        }
+
+        static readonly string[] SectorNames =
+            { "Алгол", "Вега", "Ригель", "Денеб", "Капелла", "Альтаир", "Антарес", "Бетельгейзе", "Мира", "Спика", "Поллукс", "Процион" };
         /// <summary>Карту приблизили или сдвинули — переставить подписи (правую панель пересобирать незачем).</summary>
         bool _mapDirty;
         VisualElement _map, _mapCanvas, _mapLabels, _legend, _probeBar, _probeTypes, _probeMissions;
-        readonly List<Label> _mapLabelPool = new List<Label>();
+        readonly List<MapLabelView> _mapLabelPool = new List<MapLabelView>();
         /// <summary>Курсор над картой, в точках относительно карты; null — курсор не над картой.</summary>
         Vector2? _mapPointer;
         /// <summary>Квадрат с планетами в точках относительно карты: координаты 0..1 планет растягиваются на него.</summary>
@@ -40,7 +51,20 @@ namespace PlanetTrader.Client
             _mapCanvas = root.Q("mapCanvas");
             _mapLabels = root.Q("mapLabels");
             _legend = root.Q("legend");
-            _mapHint = root.Q<Label>("mapHint");
+            _sectorName = root.Q<Label>("sectorName");
+            _eventLine = root.Q<Label>("eventLine");
+            _zoomValue = root.Q<Label>("zoomValue");
+            _probesText = root.Q<Label>("probesText");
+            _probesButton = root.Q<Button>("probesButton");
+            _probesButton.clicked += () => Later(() => _probeMode = !_probeMode);
+            root.Q<Button>("zoomInButton").clicked += () => ZoomMap(-2, _map.contentRect.center);
+            root.Q<Button>("zoomOutButton").clicked += () => ZoomMap(2, _map.contentRect.center);
+            root.Q<Button>("centerButton").clicked += () =>
+            {
+                _zoom = 1;
+                _pan = Vector2.zero;
+                _mapDirty = true;
+            };
             _probeBar = root.Q("probeBar");
             _probeTypes = root.Q("probeTypes");
             _probeMissions = root.Q("probeMissions");
@@ -76,18 +100,21 @@ namespace PlanetTrader.Client
                 i => Later(() => _probeTypeIndex = i), _probeTypes);
             PanelBuilder.MakeChoice(MissionNames, (int)_probeMission, i => Later(() => _probeMission = (ProbeMission)i), _probeMissions);
 
+            _sectorName.text = "Сектор " + SectorNames[(int)((uint)_lookSeed % SectorNames.Length)];
+
             _legend.Clear();
-            LegendItem(Fmt.OwnerColor(Owner.Player, false), "ваши");
+            LegendItem(Fmt.OwnerColor(Owner.Player, false), "Ваши");
             foreach (var m in _game.Magnates)
                 LegendItem(RingColor(Owner.Ai, m.Id, false), m.Name.Split(' ')[0]);
-            LegendItem(Fmt.OwnerColor(Owner.Registry, false), "свободна (цена)");
-            LegendItem(Fmt.OwnerColor(Owner.Registry, true), "нашёл ваш зонд");
-            LegendItem(new Color(0.35f, 0.37f, 0.42f), "силуэт");
-            var gap = new VisualElement();
-            gap.AddToClassList("legend-gap");
-            _legend.Add(gap);
-            foreach (var res in ResourceTypes.All)
-                LegendItem(Fmt.ResourceColor(res), res.RuName());
+            LegendItem(Fmt.OwnerColor(Owner.Registry, false), "Свободные (цена)");
+            LegendItem(Fmt.OwnerColor(Owner.Registry, true), "Нашёл ваш зонд");
+            var route = new VisualElement();
+            route.AddToClassList("legend-item");
+            var dash = new VisualElement();
+            dash.AddToClassList("route-dash");
+            route.Add(dash);
+            route.Add(new Label("Торговые пути"));
+            _legend.Add(route);
         }
 
         void LegendItem(Color color, string text)
@@ -108,9 +135,10 @@ namespace PlanetTrader.Client
             var r = _map.contentRect;
             if (float.IsNaN(r.width) || r.width < 100 || r.height < 100) return false;
             // Карта квадратная, чтобы расстояния и радиусы на экране не искажались.
-            float top = _probeMode ? 48 : 16;
-            float side = Mathf.Min(r.width - 60, r.height - top - 46);
-            _mapArea = new Rect((r.width - side) / 2, top + 6, side, side);
+            // Сверху — заголовок и легенда (и полоска зонда), снизу — кнопки приближения.
+            float top = _probeMode ? 112 : 70;
+            float side = Mathf.Min(r.width - 60, r.height - top - 58);
+            _mapArea = new Rect((r.width - side) / 2, top, side, side);
             return true;
         }
 
@@ -178,7 +206,10 @@ namespace PlanetTrader.Client
         {
             _mapDirty = false;
             _probeBar.EnableInClassList("hidden", !_probeMode);
-            _mapHint.EnableInClassList("hidden", _probeMode);
+            _probesButton.EnableInClassList("selected", _probeMode);
+            _probesText.text = _game.Probes.Count > 0 ? $"Зонды ({_game.Probes.Count} в полёте)" : "Зонды";
+            _zoomValue.text = $"{Mathf.RoundToInt(_zoom * 100)}%";
+            RefreshEventLine();
             PanelBuilder.Select(_probeTypes, _probeTypeIndex);
             PanelBuilder.Select(_probeMissions, (int)_probeMission);
             if (!LayoutMap()) return;
@@ -187,49 +218,77 @@ namespace PlanetTrader.Client
             var b = _game.Balance;
             // Биржа — 3D-станция карты; здесь только подпись.
             var ex = ToMap(b.ExchangeX, b.ExchangeY);
-            MapLabel(ref used, "Биржа", ex + new Vector2(0, ExchangeRadius * MapScale * 0.8f));
+            MapLabel(ref used, ex + new Vector2(0, ExchangeRadius * MapScale * 0.8f), "Биржа", Color.white, null, false);
             foreach (var pr in _game.Probes)
-                MapLabel(ref used, $"зонд: {pr.ResolveTurn - _game.Turn + 1} х.", ToMap(pr.TargetX, pr.TargetY) - new Vector2(0, 26));
+                MapLabel(ref used, ToMap(pr.TargetX, pr.TargetY) - new Vector2(0, 26), null, default, $"зонд: {pr.ResolveTurn - _game.Turn + 1} х.", false);
             foreach (var p in _game.AllPlanets)
             {
-                string label = MapLabel(p);
-                if (label != null) MapLabel(ref used, label, ToMap(p.MapX, p.MapY) + new Vector2(0, MapRadius(p) + 5));
+                var at = ToMap(p.MapX, p.MapY) + new Vector2(0, MapRadius(p) + 4);
+                string marks = "";
+                if (p.Knowledge == Knowledge.Explored && p.HasUnlootedRuins) marks += " · руины";
+                if (p.Knowledge != Knowledge.Silhouette && p.Inhabited) marks += " · жители";
+                switch (p.Owner)
+                {
+                    case Owner.Player:
+                        string note = p.IsRegenerating ? $"восст. {p.RegenTurnsLeft} х." : p.IsDepleted ? "пусто"
+                            : p.Inhabited ? (p.OnStrike ? "забастовка" : $"лоял. {Mathf.RoundToInt((float)p.Loyalty)}") : null;
+                        MapLabel(ref used, at, "ВЫ", RingColor(p), note, false);
+                        break;
+                    case Owner.Ai:
+                        MapLabel(ref used, at, _game.GetMagnate(p.MagnateId)?.Name.Split(' ')[0] ?? "ИИ", RingColor(p), null, false);
+                        break;
+                    default:
+                        if (!p.IsDepleted) MapLabel(ref used, at, null, default, Fmt.Money(p.ListPrice(b)) + marks, true);
+                        break;
+                }
             }
-            for (int i = used; i < _mapLabelPool.Count; i++) _mapLabelPool[i].AddToClassList("hidden");
+            for (int i = used; i < _mapLabelPool.Count; i++) _mapLabelPool[i].Root.AddToClassList("hidden");
         }
 
-        /// <summary>Подпись на карте с центром по x в точке at.</summary>
-        void MapLabel(ref int used, string text, Vector2 at)
+        /// <summary>
+        /// Подпись на карте с центром по x в точке at: имя цветом владельца (или без имени)
+        /// и строка под ним — цена с монеткой или пометка.
+        /// </summary>
+        void MapLabel(ref int used, Vector2 at, string name, Color nameColor, string line, bool coin)
         {
             if (used == _mapLabelPool.Count)
             {
-                var l = new Label { pickingMode = PickingMode.Ignore };
-                l.AddToClassList("map-label");
-                _mapLabels.Add(l);
-                _mapLabelPool.Add(l);
+                var v = new MapLabelView { Root = new VisualElement(), Name = new Label(), PriceRow = new VisualElement(), Coin = Icons.Make("coin"), Price = new Label() };
+                v.Root.AddToClassList("map-label");
+                v.Root.pickingMode = PickingMode.Ignore;
+                v.Name.AddToClassList("map-label-name");
+                v.PriceRow.AddToClassList("map-label-price");
+                v.Price.AddToClassList("label-text");
+                v.PriceRow.Add(v.Coin);
+                v.PriceRow.Add(v.Price);
+                v.Root.Add(v.Name);
+                v.Root.Add(v.PriceRow);
+                v.Root.Query<VisualElement>().ForEach(e => e.pickingMode = PickingMode.Ignore);
+                _mapLabels.Add(v.Root);
+                _mapLabelPool.Add(v);
             }
             var label = _mapLabelPool[used++];
-            label.text = text;
-            label.RemoveFromClassList("hidden");
-            label.style.left = at.x - 70;
-            label.style.top = at.y;
+            label.Root.RemoveFromClassList("hidden");
+            label.Name.EnableInClassList("hidden", name == null);
+            label.Name.text = name ?? "";
+            // Цвет имени — цвет владельца на карте: данные, а не оформление.
+            if (name != null) label.Name.style.color = nameColor;
+            label.PriceRow.EnableInClassList("hidden", line == null);
+            label.Price.text = line ?? "";
+            label.Coin.EnableInClassList("hidden", !coin);
+            label.Root.style.left = at.x - 75;
+            label.Root.style.top = at.y;
         }
 
-        string MapLabel(Planet p)
+        /// <summary>Строка под заголовком карты: идущее галактическое событие или затишье.</summary>
+        void RefreshEventLine()
         {
-            string marks = "";
-            if (p.Knowledge == Knowledge.Explored && p.HasUnlootedRuins) marks += " · руины";
-            if (p.Knowledge != Knowledge.Silhouette && p.Inhabited) marks += " · жители";
-            switch (p.Owner)
-            {
-                case Owner.Player when p.IsRegenerating:
-                    return $"ВЫ · восст. {p.RegenTurnsLeft} х.";
-                case Owner.Player:
-                    string people = p.Inhabited ? (p.OnStrike ? " · забастовка" : $" · лоял. {Mathf.RoundToInt((float)p.Loyalty)}") : "";
-                    return (p.IsDepleted ? "ВЫ · пусто" : "ВЫ") + people + marks.Replace(" · жители", "");
-                case Owner.Ai: return _game.GetMagnate(p.MagnateId)?.Name.Split(' ')[0] ?? "ИИ";
-                default: return p.IsDepleted ? null : Fmt.Money(p.ListPrice(_game.Balance)) + marks;
-            }
+            var g = _game;
+            var ev = g.CurrentEvent;
+            _eventLine.EnableInClassList("active", ev != null);
+            _eventLine.text = ev == null
+                ? $"Затишье. Следующее галактическое событие — не раньше хода {Mathf.Max(g.NextEventTurn, g.Turn + 1)}."
+                : $"<b>{ev.Event.Name}</b> (ещё {ev.EndTurn - g.Turn + 1} х.): {ev.Event.Description} {EventEffects(ev.Event)}";
         }
 
         // ------------------------------------------------------------------
@@ -242,6 +301,21 @@ namespace PlanetTrader.Client
             var paint = ctx.painter2D;
             var g = _game;
             var b = g.Balance;
+
+            // Орбиты вокруг биржи — едва заметные, чтобы карта читалась как сектор.
+            foreach (float orbit in new[] { 0.17f, 0.31f, 0.45f })
+                MapRing(paint, b.ExchangeX, b.ExchangeY, orbit, new Color(1, 1, 1, 0.045f), 1);
+
+            // Торговые пути: пунктир от добывающих планет к бирже (по ним летают грузовики).
+            var ex = ToMap(b.ExchangeX, b.ExchangeY);
+            foreach (var p in g.AllPlanets)
+            {
+                if (!p.IsProducing || p.Knowledge == Knowledge.Silhouette) continue;
+                var from = ToMap(p.MapX, p.MapY);
+                float length = Vector2.Distance(from, ex);
+                for (float d = MapRadius(p) + 6; d < length - ExchangeRadius * MapScale * 0.7f; d += 7)
+                    Disc(paint, Vector2.Lerp(from, ex, d / length), 1.1f, new Color(0.95f, 0.62f, 0.2f, 0.55f));
+            }
 
             if (_probeMode)
             {
@@ -267,7 +341,7 @@ namespace PlanetTrader.Client
                 var center = ToMap(p.MapX, p.MapY);
                 float radius = MapRadius(p);
                 // Сама планета — 3D-сфера под интерфейсом; здесь только кольца вокруг неё.
-                if (p.Id == _selectedId) Ring(paint, center, radius + 8, Color.white, 1f);
+                if (p.Id == _selectedId) Brackets(paint, center, radius + 9, new Color(0.45f, 0.95f, 0.85f));
                 Ring(paint, center, radius + 4, RingColor(p), 0.8f);
                 if (p.Knowledge == Knowledge.Explored && p.Owner != Owner.Player)
                     Disc(paint, center + new Vector2(radius + 2, -radius - 2), 3.5f, Color.white);
@@ -283,8 +357,26 @@ namespace PlanetTrader.Client
         }
 
         /// <summary>Кольцо радиусом radius в координатах карты (0..1).</summary>
-        void MapRing(Painter2D paint, double x, double y, double radius, Color color) =>
-            Ring(paint, ToMap(x, y), (float)radius * _mapArea.width * _zoom, color, 2);
+        void MapRing(Painter2D paint, double x, double y, double radius, Color color, float width = 2) =>
+            Ring(paint, ToMap(x, y), (float)radius * _mapArea.width * _zoom, color, width);
+
+        /// <summary>Прицел выбранной планеты: четыре уголка вокруг неё.</summary>
+        static void Brackets(Painter2D paint, Vector2 center, float half, Color color)
+        {
+            float arm = half * 0.45f;
+            paint.strokeColor = color;
+            paint.lineWidth = 1.6f;
+            paint.lineCap = LineCap.Butt;
+            foreach (var corner in new[] { new Vector2(-1, -1), new Vector2(1, -1), new Vector2(1, 1), new Vector2(-1, 1) })
+            {
+                var c = center + corner * half;
+                paint.BeginPath();
+                paint.MoveTo(c - new Vector2(0, corner.y * arm));
+                paint.LineTo(c);
+                paint.LineTo(c - new Vector2(corner.x * arm, 0));
+                paint.Stroke();
+            }
+        }
 
         static void Ring(Painter2D paint, Vector2 center, float radius, Color color, float width)
         {

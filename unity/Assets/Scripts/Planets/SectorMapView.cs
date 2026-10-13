@@ -112,7 +112,7 @@ namespace PlanetTrader.Visuals
             sun.intensity = 1.1f;
             sun.transform.rotation = Quaternion.LookRotation(-new Vector3(-0.5f, 0.4f, -0.78f).normalized);
 
-            _stars = BakeStars(1024, 4242);
+            _stars = BakeStars(2048, 4242);
             _backdropMat = new Material(Shader.Find("PlanetTrader/PlanetSky"));
             _backdropMat.SetTexture("_MainTex", _stars);
             _backdropMat.SetFloat("_Cull", 0);
@@ -304,32 +304,55 @@ namespace PlanetTrader.Visuals
             _backdropMesh.RecalculateBounds();
         }
 
-        /// <summary>Звёзды разной яркости и слабая туманность.</summary>
+        /// <summary>
+        /// Фон карты: плотное звёздное небо и приглушённые туманности с прожилками пыли.
+        /// Яркость намеренно низкая — фон не должен спорить с планетами. Считается на всех ядрах.
+        /// </summary>
         internal static Texture2D BakeStars(int size, int seed)
         {
             var noise = new PlanetNoise(seed);
-            var rnd = new System.Random(seed);
             var px = new Color[size * size];
-            for (int y = 0; y < size; y++)
-            for (int x = 0; x < size; x++)
+            var deepBlue = new Color(0.07f, 0.11f, 0.26f);
+            var violet = new Color(0.26f, 0.09f, 0.26f);
+            var ember = new Color(0.30f, 0.14f, 0.08f);
+            // Насколько гуще звёзды в каждой точке: в облаках туманности их больше.
+            var density = new float[size * size];
+            System.Threading.Tasks.Parallel.For(0, size, y =>
             {
-                var q = new Vector3(x / (float)size, y / (float)size, 0.37f);
-                float neb = Mathf.Clamp01(noise.Fbm(q * 3.5f, 5, 400) * 0.09f + 0.02f);
-                float tint = Mathf.Clamp01(noise.Fbm(q * 2f, 3, 401) + 0.5f);
-                var c = Color.Lerp(new Color(0.20f, 0.28f, 0.55f), new Color(0.45f, 0.22f, 0.5f), tint) * neb;
-                c.a = 1;
-                px[y * size + x] = c;
-            }
-            // Звёзды — мягкие точки, у ярких небольшой ореол.
-            int count = size * size / 900;
+                for (int x = 0; x < size; x++)
+                {
+                    var q = new Vector3(x / (float)size, y / (float)size, 0.37f);
+                    // Облака: шум, искажённый другим шумом, — получаются клочья и рукава, а не ровные пятна.
+                    var warp = new Vector3(noise.Fbm(q * 1.6f, 4, 410), noise.Fbm(q * 1.6f, 4, 420), 0);
+                    float cloud = noise.Fbm(q * 2.4f + warp * 0.9f, 6, 400) * 0.5f + 0.5f;
+                    cloud = Mathf.SmoothStep(0.5f, 1.05f, cloud);
+                    // Пыль — тёмные прожилки поперёк облаков.
+                    float dust = Mathf.Clamp01((noise.Ridged(q * 5f + warp, 4, 430) - 0.62f) * 2.2f);
+                    float hue = Mathf.Clamp01(noise.Fbm(q * 1.3f, 3, 401) + 0.5f);
+                    float warm = Mathf.Clamp01((noise.Fbm(q * 2.8f, 3, 440) - 0.18f) * 3);
+                    var tint = Color.Lerp(Color.Lerp(deepBlue, violet, hue), ember, warm * 0.6f);
+                    float glow = cloud * (1 - dust * 0.75f) * 0.7f + 0.025f;
+                    var c = tint * glow;
+                    c.a = 1;
+                    px[y * size + x] = c;
+                    density[y * size + x] = 0.55f + cloud;
+                }
+            });
+
+            // Звёзды — мягкие точки: почти все слабые, изредка яркие с ореолом.
+            var rnd = new System.Random(seed);
+            int count = size * size / 150;
             for (int i = 0; i < count; i++)
             {
                 float sx = (float)rnd.NextDouble() * size, sy = (float)rnd.NextDouble() * size;
-                float b = Mathf.Pow((float)rnd.NextDouble(), 3) * 0.9f + 0.1f;
-                var col = Color.Lerp(new Color(0.75f, 0.85f, 1f), new Color(1f, 0.9f, 0.75f), (float)rnd.NextDouble()) * b;
-                float r = 0.6f + b * 1.4f;
-                for (int dy = -3; dy <= 3; dy++)
-                for (int dx = -3; dx <= 3; dx++)
+                int ci = Mathf.Clamp((int)sy, 0, size - 1) * size + Mathf.Clamp((int)sx, 0, size - 1);
+                if (rnd.NextDouble() * 1.6 > density[ci]) continue;
+                float b = Mathf.Pow((float)rnd.NextDouble(), 4.5f) * 0.9f + 0.12f;
+                var col = Color.Lerp(new Color(0.72f, 0.82f, 1f), new Color(1f, 0.88f, 0.72f), (float)rnd.NextDouble()) * b;
+                float r = 0.55f + b * 1.5f;
+                int reach = b > 0.5f ? 3 : 2;
+                for (int dy = -reach; dy <= reach; dy++)
+                for (int dx = -reach; dx <= reach; dx++)
                 {
                     int ix = (int)sx + dx, iy = (int)sy + dy;
                     if (ix < 0 || iy < 0 || ix >= size || iy >= size) continue;

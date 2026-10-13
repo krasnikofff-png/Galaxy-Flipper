@@ -144,6 +144,30 @@ namespace PlanetTrader.Client
             return Open(card);
         }
 
+        /// <summary>Контейнер с классом; всё до конца using попадает внутрь.</summary>
+        public IDisposable Box(string cls)
+        {
+            var box = new VisualElement();
+            box.AddToClassList(cls);
+            return Open(box);
+        }
+
+        /// <summary>Большая кнопка: значок, крупная надпись и строка пояснения под ней.</summary>
+        public Button BigButton(string icon, string title, string sub, string cls, bool enabled, Action onClick)
+        {
+            var b = new Button(() => _run(onClick)) { focusable = false };
+            b.AddToClassList("big-button");
+            b.AddToClassList(cls);
+            b.Add(Icons.Make(icon, "big-icon"));
+            var text = new VisualElement { pickingMode = PickingMode.Ignore };
+            text.AddToClassList("big-text");
+            text.Add(new Label(title) { pickingMode = PickingMode.Ignore }.WithClass("big-title"));
+            if (!string.IsNullOrEmpty(sub)) text.Add(new Label(sub) { pickingMode = PickingMode.Ignore }.WithClass("big-sub"));
+            b.Add(text);
+            b.SetEnabled(enabled);
+            return Add(b);
+        }
+
         /// <summary>Ряд элементов слева направо.</summary>
         public IDisposable Row()
         {
@@ -164,6 +188,16 @@ namespace PlanetTrader.Client
             readonly Stack<VisualElement> _stack;
             public Closer(Stack<VisualElement> stack) => _stack = stack;
             public void Dispose() => _stack.Pop();
+        }
+    }
+
+    public static class UiExtensions
+    {
+        /// <summary>Добавить класс и вернуть тот же элемент — чтобы собирать элементы одной строкой.</summary>
+        public static T WithClass<T>(this T e, string cls) where T : VisualElement
+        {
+            e.AddToClassList(cls);
+            return e;
         }
     }
 }

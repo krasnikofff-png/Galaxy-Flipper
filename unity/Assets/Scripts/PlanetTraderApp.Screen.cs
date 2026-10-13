@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.RegularExpressions;
 using PlanetTrader.Core;
 using PlanetTrader.Visuals;
 using UnityEngine;
@@ -8,20 +9,22 @@ using UnityEngine.UIElements;
 namespace PlanetTrader.Client
 {
     /// <summary>
-    /// Экран на UI Toolkit: верхняя панель, полоса события, правая панель с вкладками, журнал,
-    /// пауза «ходят соперники» и окно планеты. Разметка — Resources/UI/Game.uxml, вид — Game.uss.
+    /// Экран на UI Toolkit: верхняя панель с показателями и вкладками, правая панель, нижние панели
+    /// «Рынок», «События», «Действия в этом ходу», журнал, меню, пауза «ходят соперники» и окно планеты.
+    /// Разметка — Resources/UI/Game.uxml, вид — Game.uss; значки — <see cref="Icons"/>, рамки — <see cref="Frames"/>.
     /// </summary>
     public sealed partial class PlanetTraderApp
     {
         // Интерфейс задан в точках для экрана 1600×900 и масштабируется под настоящий, не выходя за его края.
         static readonly Vector2Int ReferenceResolution = new Vector2Int(1600, 900);
 
+        static readonly string[] TabIcons = { "planet", "chart", "clipboard", "bars", "person", "flask", "crown" };
+
         UIDocument _document;
-        VisualElement _screen, _stats, _tabs, _rivals, _rivalsList, _rivalsProgress;
-        ScrollView _sideScroll, _logView;
-        Label _eventBar, _tooltip, _rivalsTitle;
-        Button _probesButton;
-        readonly List<Label> _statLabels = new List<Label>();
+        VisualElement _screen, _tabs, _rivals, _rivalsList, _rivalsProgress, _menu, _journal, _eventsList, _marketCards;
+        ScrollView _sideScroll, _actionsList, _journalList;
+        Label _turnValue, _tooltip, _rivalsTitle, _actionsCount;
+        readonly Dictionary<string, Label> _statValues = new Dictionary<string, Label>();
 
         /// <summary>Состояние игры изменилось — пересобрать панели в конце кадра.</summary>
         bool _dirty = true;
@@ -32,6 +35,31 @@ namespace PlanetTrader.Client
         VisualElement _portraitBox;
         Button _portraitButton;
         Texture _portraitTexture;
+
+        /// <summary>Запись журнала: ход, текст и цвет точки (good, bad, warn, info или пусто).</summary>
+        sealed class LogEntry
+        {
+            public int Turn;
+            public string Text, Kind;
+        }
+
+        readonly List<LogEntry> _logEntries = new List<LogEntry>();
+        /// <summary>Сколько всего записей было в журнале — чтобы понять, что добавило действие.</summary>
+        int _logSerial;
+        /// <summary>Что сделано за этот ход: по строке на потраченное действие.</summary>
+        readonly List<string> _turnActions = new List<string>();
+        /// <summary>Цены на бирже по ходам — для графиков в панели «Рынок».</summary>
+        readonly Dictionary<Resource, List<double>> _priceHistory = new Dictionary<Resource, List<double>>();
+        const int PriceHistoryLength = 24;
+
+        sealed class MarketCard
+        {
+            public Label Price, Change;
+            public VisualElement ChangeBox, ChangeIcon;
+            public Sparkline Line;
+        }
+
+        readonly Dictionary<Resource, MarketCard> _market = new Dictionary<Resource, MarketCard>();
 
         void MarkDirty() => _dirty = true;
 
@@ -57,46 +85,160 @@ namespace PlanetTrader.Client
 
             var root = _document.rootVisualElement;
             _screen = root.Q("screen");
-            _stats = root.Q("stats");
             _tabs = root.Q("tabs");
             _sideScroll = root.Q<ScrollView>("sideScroll");
-            _logView = root.Q<ScrollView>("log");
-            _eventBar = root.Q<Label>("eventBar");
             _tooltip = root.Q<Label>("tooltip");
+            _turnValue = root.Q<Label>("turnValue");
             _rivals = root.Q("rivals");
             _rivalsList = root.Q("rivalsList");
             _rivalsProgress = root.Q("rivalsProgress");
             _rivalsTitle = root.Q<Label>("rivalsTitle");
-            _probesButton = root.Q<Button>("probesButton");
+            _menu = root.Q("menu");
+            _journal = root.Q("journal");
+            _journalList = root.Q<ScrollView>("journalList");
+            _eventsList = root.Q("eventsList");
+            _actionsList = root.Q<ScrollView>("actionsList");
+            _actionsCount = root.Q<Label>("actionsCount");
+            _marketCards = root.Q("marketCards");
 
-            _probesButton.clicked += () => Later(() => _probeMode = !_probeMode);
             root.Q<Button>("endTurnButton").clicked += () => Later(RequestEndTurn);
-            root.Q<Button>("showcaseButton").clicked += () => Later(() => PlanetShowcase.Toggle(this));
-            root.Q<Button>("newGameButton").clicked += () => Later(NewGame);
-
-            foreach (var name in new[] { "Ход", "Деньги", "Долг", "Капитал", "Расходы/ход", "Действия", "Репутация" })
+            var logo = root.Q<Button>("logoButton");
+            logo.clicked += () => _menu.ToggleInClassList("hidden");
+            root.Q<Button>("newGameButton").clicked += () =>
             {
-                var l = new Label { name = name };
-                l.AddToClassList("stat");
-                _stats.Add(l);
-                _statLabels.Add(l);
+                _menu.AddToClassList("hidden");
+                Later(NewGame);
+            };
+            root.Q<Button>("showcaseButton").clicked += () =>
+            {
+                _menu.AddToClassList("hidden");
+                Later(() => PlanetShowcase.Toggle(this));
+            };
+            root.Q<Button>("journalButton").clicked += OpenJournal;
+            root.Q<Button>("journalClose").clicked += () => _journal.AddToClassList("hidden");
+            // Клик мимо меню закрывает его; клик по тёмному фону журнала — закрывает журнал.
+            _screen.RegisterCallback<PointerDownEvent>(e =>
+            {
+                if (_menu.ClassListContains("hidden")) return;
+                if (e.target is VisualElement t && (_menu.Contains(t) || logo.Contains(t))) return;
+                _menu.AddToClassList("hidden");
+            }, TrickleDown.TrickleDown);
+            _journal.RegisterCallback<PointerDownEvent>(e =>
+            {
+                if (e.target == _journal) _journal.AddToClassList("hidden");
+            });
+
+            var stats = root.Q("stats");
+            AddStat(stats, "money", "coins", "Деньги");
+            AddStat(stats, "debt", "coins", "Долг");
+            AddStat(stats, "capital", "layers", "Капитал");
+            AddStat(stats, "costs", "flame", "Расходы");
+            AddStat(stats, "actions", "bolt", "Действия");
+
+            for (int i = 0; i < TabNames.Length; i++)
+            {
+                int index = i;
+                var tab = new Button(() => Later(() => _tab = (Tab)index)) { focusable = false };
+                tab.AddToClassList("tab");
+                tab.Add(Icons.Make(TabIcons[i], "tab-icon"));
+                tab.Add(new Label(TabNames[i]) { pickingMode = PickingMode.Ignore });
+                _tabs.Add(tab);
             }
-            PanelBuilder.MakeChoice(TabNames, (int)_tab, i => Later(() => _tab = (Tab)i), _tabs);
+
+            foreach (var r in ResourceTypes.All)
+                _marketCards.Add(MakeMarketCard(r));
 
             CreatePortrait();
             CreateMap(root);
+            Icons.AttachAll(root);
+            Frames.AttachAll(root);
+        }
+
+        void AddStat(VisualElement parent, string key, string icon, string name)
+        {
+            var stat = new VisualElement();
+            stat.AddToClassList("stat");
+            stat.AddToClassList(key);
+            stat.Add(Icons.Make(icon, "stat-icon"));
+            var text = new VisualElement();
+            var label = new Label(name);
+            label.AddToClassList("stat-label");
+            var value = new Label();
+            value.AddToClassList("stat-value");
+            text.Add(label);
+            text.Add(value);
+            stat.Add(text);
+            parent.Add(stat);
+            _statValues[key] = value;
+        }
+
+        static string ResourceIcon(Resource r)
+        {
+            switch (r)
+            {
+                case Resource.Ice: return "ice";
+                case Resource.Metal: return "metal";
+                case Resource.Gas: return "flame";
+                case Resource.Biomass: return "leaf";
+                case Resource.Crystals: return "gem";
+                default: return "spark";
+            }
+        }
+
+        VisualElement MakeMarketCard(Resource r)
+        {
+            var card = new VisualElement();
+            card.AddToClassList("market-card");
+            card.RegisterCallback<ClickEvent>(_ => Later(() => _tab = Tab.Market));
+            var head = new VisualElement();
+            head.AddToClassList("mc-head");
+            var icon = Icons.Make(ResourceIcon(r), "mc-icon");
+            // Цвет значка — цвет ресурса, такой же, как у планет на карте.
+            icon.style.color = Fmt.ResourceColor(r);
+            head.Add(icon);
+            var name = new Label(r.RuName());
+            name.AddToClassList("mc-name");
+            head.Add(name);
+            card.Add(head);
+            var m = new MarketCard { Price = new Label(), ChangeBox = new VisualElement(), Change = new Label(), Line = new Sparkline() };
+            m.Price.AddToClassList("mc-price");
+            m.ChangeBox.AddToClassList("mc-change");
+            m.Change.AddToClassList("label-text");
+            m.ChangeIcon = Icons.Make("up");
+            m.ChangeBox.Add(m.Change);
+            m.ChangeBox.Add(m.ChangeIcon);
+            card.Add(m.Price);
+            card.Add(m.ChangeBox);
+            card.Add(m.Line);
+            _market[r] = m;
+            return card;
         }
 
         void ShowScreen(bool shown) => _screen?.EnableInClassList("hidden", !shown);
 
-        /// <summary>Новая партия: журнал пуст, панели — заново.</summary>
+        /// <summary>Новая партия: журнал и история цен — заново.</summary>
         void ResetScreen()
         {
-            _logView.Clear();
+            _logEntries.Clear();
+            _turnActions.Clear();
+            _priceHistory.Clear();
+            RecordPrices();
             HideTooltip();
             ShowRivals(false);
+            _journal.AddToClassList("hidden");
             ResetMap();
             MarkDirty();
+        }
+
+        /// <summary>Запомнить цены биржи этого хода.</summary>
+        void RecordPrices()
+        {
+            foreach (var r in ResourceTypes.All)
+            {
+                if (!_priceHistory.TryGetValue(r, out var list)) _priceHistory[r] = list = new List<double>();
+                list.Add(_game.Market.Price(r));
+                if (list.Count > PriceHistoryLength) list.RemoveAt(0);
+            }
         }
 
         void RefreshScreen()
@@ -107,47 +249,150 @@ namespace PlanetTrader.Client
             if (!_dirty) return;
             _dirty = false;
             RefreshTopBar();
-            RefreshEventBar();
             RefreshSidePanel();
             RefreshMap();
-        }
-
-        void Log(string message)
-        {
-            var line = new Label(message);
-            line.AddToClassList("log-line");
-            _logView.Insert(0, line);
-            var lines = _logView.contentContainer;
-            while (lines.childCount > MaxLogLines) lines.RemoveAt(lines.childCount - 1);
+            RefreshMarket();
+            RefreshEvents();
+            RefreshActions();
         }
 
         // ------------------------------------------------------------------
-        // Верхняя панель и полоса события
+        // Журнал
+        // ------------------------------------------------------------------
+
+        void Log(string message)
+        {
+            _logEntries.Insert(0, new LogEntry { Turn = _game?.Turn ?? 1, Text = message, Kind = EventKind(message) });
+            _logSerial++;
+            if (_logEntries.Count > MaxLogLines) _logEntries.RemoveAt(_logEntries.Count - 1);
+            if (!_journal.ClassListContains("hidden")) _journalList.Insert(0, EventRow(_logEntries[0]));
+            MarkDirty();
+        }
+
+        static readonly Regex Tags = new Regex("<[^>]+>");
+
+        /// <summary>Цвет точки у записи: хорошее, плохое, предупреждение, сведения.</summary>
+        static string EventKind(string text)
+        {
+            var t = Tags.Replace(text, "").ToLowerInvariant();
+            if (t.StartsWith("нельзя") || t.Contains("банкрот") || t.Contains("забастов") || t.Contains("авари") || t.Contains("подкуп")
+                || t.Contains("иск ") || t.Contains("коллектор") || t.Contains("штраф") || t.Contains("отказал") || t.Contains("перебил")
+                || t.Contains("метеорит") || t.Contains("эпидеми") || t.Contains("бунт") || t.Contains("не хватило"))
+                return "bad";
+            if (t.Contains("куплен") || t.Contains("продан") || t.Contains("построен") || t.Contains("выполнен") || t.Contains("согласил")
+                || t.Contains("выигран") || t.Contains("нанят") || t.Contains("отклонён") || t.Contains("сработал") || t.Contains("ушли от"))
+                return "good";
+            if (t.StartsWith("—") || t.Contains("событие") || t.Contains("картел") || t.Contains("показ")) return "warn";
+            if (t.Contains("зонд") || t.Contains("разведк") || t.Contains("скан")) return "info";
+            return "";
+        }
+
+        VisualElement EventRow(LogEntry e)
+        {
+            var row = new VisualElement();
+            row.AddToClassList("event-row");
+            var dot = new VisualElement();
+            dot.AddToClassList("event-dot");
+            if (e.Kind != "") dot.AddToClassList(e.Kind);
+            var turn = new Label($"ход {e.Turn}");
+            turn.AddToClassList("event-turn");
+            var text = new Label(e.Text);
+            text.AddToClassList("event-text");
+            row.Add(dot);
+            row.Add(turn);
+            row.Add(text);
+            return row;
+        }
+
+        void RefreshEvents()
+        {
+            _eventsList.Clear();
+            foreach (var e in _logEntries.Take(4)) _eventsList.Add(EventRow(e));
+        }
+
+        void OpenJournal()
+        {
+            _journalList.Clear();
+            foreach (var e in _logEntries) _journalList.Add(EventRow(e));
+            _journal.RemoveFromClassList("hidden");
+            _journalList.scrollOffset = Vector2.zero;
+        }
+
+        /// <summary>Действие игрока прошло: если на него ушли очки действий — записать в «Действия в этом ходу».</summary>
+        void RecordAction(int actionsBefore, int logBefore)
+        {
+            if (_game.ActionsLeft >= actionsBefore) return;
+            string text = _logSerial > logBefore ? Tags.Replace(_logEntries[0].Text, "") : "Действие";
+            for (int i = _game.ActionsLeft; i < actionsBefore; i++) _turnActions.Add(text);
+        }
+
+        void RefreshActions()
+        {
+            var g = _game;
+            _actionsCount.text = $"{g.ActionsPerTurn - g.ActionsLeft} / {g.ActionsPerTurn}";
+            _actionsList.Clear();
+            int total = Mathf.Max(g.ActionsPerTurn, _turnActions.Count);
+            for (int i = 0; i < total; i++)
+            {
+                bool done = i < _turnActions.Count;
+                var row = new VisualElement();
+                row.AddToClassList("action-row");
+                if (!done) row.AddToClassList("free");
+                var num = new Label((i + 1).ToString());
+                num.AddToClassList("action-num");
+                var text = new Label(done ? _turnActions[i] : "— доступно действие");
+                text.AddToClassList("action-text");
+                var check = new VisualElement();
+                check.AddToClassList("action-check");
+                if (done)
+                {
+                    check.AddToClassList("done");
+                    check.Add(Icons.Make("check"));
+                }
+                row.Add(num);
+                row.Add(text);
+                row.Add(check);
+                _actionsList.Add(row);
+            }
+        }
+
+        // ------------------------------------------------------------------
+        // Верхняя панель и рынок
         // ------------------------------------------------------------------
 
         void RefreshTopBar()
         {
             var g = _game;
-            string[] values =
-            {
-                g.Turn.ToString(), Fmt.Money(g.Money), Fmt.Money(g.Debt), Fmt.Money(g.Capital), Fmt.Money(g.CostsPerTurn),
-                $"{g.ActionsLeft}/{g.ActionsPerTurn}", Mathf.RoundToInt((float)g.Reputation).ToString(),
-            };
-            for (int i = 0; i < values.Length; i++)
-                _statLabels[i].text = $"<color=#8a93a6>{_statLabels[i].name}</color> <b>{values[i]}</b>";
-            _probesButton.text = g.Probes.Count > 0 ? $"Зонды ({g.Probes.Count} в полёте)" : "Зонды";
-            _probesButton.EnableInClassList("selected", _probeMode);
+            _turnValue.text = g.Turn.ToString();
+            _statValues["money"].text = Fmt.Money(g.Money);
+            _statValues["debt"].text = Fmt.Money(g.Debt);
+            _statValues["capital"].text = Fmt.Money(g.Capital);
+            _statValues["costs"].text = $"{Fmt.Money(g.CostsPerTurn)} / ход";
+            _statValues["actions"].text = $"{g.ActionsLeft}/{g.ActionsPerTurn}";
+            for (int i = 0; i < _tabs.childCount; i++)
+                _tabs[i].EnableInClassList("selected", i == (int)_tab);
         }
 
-        /// <summary>Полоса сезонного события: что идёт, сколько ещё и чем грозит; в затишье — когда ждать следующего.</summary>
-        void RefreshEventBar()
+        void RefreshMarket()
         {
             var g = _game;
-            var ev = g.CurrentEvent;
-            _eventBar.EnableInClassList("active", ev != null);
-            _eventBar.text = ev == null
-                ? $"Затишье. Следующее галактическое событие — не раньше хода {Mathf.Max(g.NextEventTurn, g.Turn + 1)}."
-                : $"<b>{ev.Event.Name}</b> (ещё {ev.EndTurn - g.Turn + 1} х.): {ev.Event.Description} <color=#ffd27a>{EventEffects(ev.Event)}</color>";
+            foreach (var r in ResourceTypes.All)
+            {
+                var m = _market[r];
+                double price = g.Market.Price(r);
+                double toBase = price / g.Balance.BasePrice(r) - 1;
+                m.Price.text = Fmt.Money(price);
+                string kind = toBase > 0.005 ? "up" : toBase < -0.005 ? "down" : "flat";
+                m.ChangeBox.EnableInClassList("up", kind == "up");
+                m.ChangeBox.EnableInClassList("down", kind == "down");
+                m.ChangeBox.EnableInClassList("flat", kind == "flat");
+                m.Change.text = (toBase >= 0 ? "+" : "") + Fmt.Percent(toBase);
+                Icons.Change(m.ChangeIcon, kind == "down" ? "down" : "up");
+                m.ChangeIcon.EnableInClassList("hidden", kind == "flat");
+                // График — прошлые ходы и цена прямо сейчас (её двигают продажи этого хода).
+                var values = new List<double>(_priceHistory[r]) { price };
+                m.Line.Show(values, kind == "down" ? new Color(1f, 0.36f, 0.31f) : new Color(0.35f, 0.84f, 0.55f));
+            }
         }
 
         // ------------------------------------------------------------------
@@ -156,7 +401,6 @@ namespace PlanetTrader.Client
 
         void RefreshSidePanel()
         {
-            PanelBuilder.Select(_tabs, (int)_tab);
             var key = (_tab, _selectedId);
             var offset = key == _panelFor ? _sideScroll.scrollOffset : Vector2.zero;
             _panelFor = key;

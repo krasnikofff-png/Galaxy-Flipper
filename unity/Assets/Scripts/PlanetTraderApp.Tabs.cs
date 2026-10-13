@@ -4,6 +4,7 @@ using System.Linq;
 using PlanetTrader.Core;
 using PlanetTrader.Visuals;
 using UnityEngine;
+using UnityEngine.UIElements;
 
 namespace PlanetTrader.Client
 {
@@ -28,36 +29,16 @@ namespace PlanetTrader.Client
             bool silhouette = p.Knowledge == Knowledge.Silhouette;
             bool exact = p.Owner == Owner.Player || p.Knowledge == Knowledge.Explored;
 
-            ui.Title(silhouette ? $"Силуэт #{p.Id}" : $"{p.Type.Name} #{p.Id}");
+            PlanetHead(ui, p, silhouette);
             ui.Add(_portraitBox);
-            // Главные действия — сразу под окном планеты, чтобы не искать их под характеристиками.
+            PlanetChips(ui, p, silhouette, exact);
+            PlanetStats(ui, p, silhouette, exact);
+            // Главные действия — большими кнопками сразу под показателями.
             MainActions(ui, p, silhouette, exact);
-            ui.Space("m");
-            ui.Line("Владелец", Fmt.OwnerName(p.Owner, p.FoundByProbe));
-            ui.Line("Знание", silhouette ? "силуэт: тип и запас неизвестны" : exact ? "полная разведка" : "скан: тип и оценка реестра");
-            ui.Line("До биржи", $"{Fmt.Amount(g.DistanceToExchange(p) * 10)} св. лет, груз идёт {g.ShipTurns(p)} х.");
 
             if (!silhouette)
             {
-                ui.Line("Ресурс", $"{p.Resource.RuName()}, на бирже сейчас {Fmt.Money(g.Market.Price(p.Resource))} за ед.");
-                if (exact)
-                {
-                    string aged = p.Capacity < p.InitialReserve - 0.5 ? $" (было {Fmt.Amount(p.InitialReserve)}: месторождение стареет)" : "";
-                    ui.Line("Запас", $"{Fmt.Amount(p.Reserve)} из {Fmt.Amount(p.Capacity)}{aged}");
-                    ui.Bar(p.Capacity > 0 ? (float)(p.Reserve / p.Capacity) : 0);
-                }
-                else
-                    ui.Line("Запас", $"≈ {Fmt.Amount(p.EstimatedReserve)} по оценке реестра (может врать)");
-                double known = g.KnownReserve(p) ?? 0;
-                ui.Line("Добыча", $"{Fmt.Amount(p.Type.OutputPerTurn)} за ход, хватит на {(exact ? "" : "≈ ")}{Fmt.Amount(known / p.Type.OutputPerTurn)} х.");
-                ui.Line("Шахта", Fmt.MineName(p) + (p.EpidemicTurnsLeft > 0 ? $", эпидемия ещё {p.EpidemicTurnsLeft} х.: добыча вполовину" : ""));
-                if (p.Owner == Owner.Player)
-                    ui.Line("Содержание", $"{Fmt.Money(g.PlanetUpkeep(p))} за ход ({Fmt.Multiplier(g.UpkeepMultiplierNow)} за число планет)");
-                else
-                    ui.Line("Содержание", $"{Fmt.Money(p.Type.Upkeep)} за ход, без множителя");
-                ui.Line(exact ? "Рыночная стоимость" : "Стоимость по оценке", Fmt.Money(g.KnownValue(p) ?? 0));
                 Deposits(ui, p, exact);
-                if (p.Inhabited) ui.Line("Жители", p.Owner == Owner.Player ? "есть, см. ниже" : "есть: планету продают сами жители");
                 if (p.Knowledge == Knowledge.Explored || p.Owner == Owner.Player)
                 {
                     var surprises = new List<string>();
@@ -66,10 +47,11 @@ namespace PlanetTrader.Client
                     if (p.Reserve < 0.6 * p.EstimatedReserve) surprises.Add("подвох: реестр завысил запас");
                     ui.Line("Сюрпризы", surprises.Count == 0 ? "нет" : string.Join(", ", surprises));
                 }
+                if (!exact) ui.Small("Запас и стоимость — по оценке реестра, она может врать. Точные цифры даст полная разведка.");
             }
-            ui.Space("l");
+            ui.Space("m");
 
-            // Остальное: разведка, жители, охрана; продажа — в самом конце, чтобы не нажать случайно.
+            // Остальное: разведка, жители, охрана.
             switch (p.Owner)
             {
                 case Owner.Registry:
@@ -80,6 +62,7 @@ namespace PlanetTrader.Client
                     if (p.Inhabited) People(ui, p);
                     else
                     {
+                        ui.Header("Колонисты");
                         ui.Small($"Планета необитаема. Колонисты будут платить налоги, а выучившись — зарабатывать умом, даже когда месторождение выработано. " +
                                  $"Но шахта их раздражает: −{Fmt.Amount(b.LoyaltyMiningDrain)} лояльности за ход.");
                         ui.Button($"Заселить колонистов за {Fmt.Money(g.ColonyCost)}: лояльность {Fmt.Amount(b.ColonyLoyalty)} · {Doer(Skill.People)}",
@@ -87,13 +70,6 @@ namespace PlanetTrader.Client
                             () => Act(() => g.SettleColony(p.Id), $"На {p.Type.Name} #{p.Id} прибыли колонисты."));
                     }
                     Guards(ui, p);
-                    ui.Space("m");
-                    double sale = g.SellPlanetPrice(p);
-                    double hype = g.CurrentEvent?.Event.PlanetSale(p.Resource) ?? 1;
-                    if (hype != 1)
-                        ui.Text($"<color=#ffd27a>Событие «{g.CurrentEvent.Event.Name}»: такие планеты сейчас продаются ×{hype:0.##}.</color>");
-                    ui.Button($"Продать за {Fmt.Money(sale)} (комиссия {Fmt.Percent(b.ResaleCommission)}) · {Doer(Skill.Negotiation)}", g.ActionsLeft > 0,
-                        () => Act(() => g.SellPlanet(p.Id), $"Продана планета {p.Type.Name} #{p.Id} за {Fmt.Money(sale)}."));
                     break;
 
                 case Owner.Ai:
@@ -102,7 +78,112 @@ namespace PlanetTrader.Client
             }
         }
 
-        /// <summary>Главное, что можно сделать с планетой: купить, построить шахту, отбить иск, подкупить жителей магната.</summary>
+        /// <summary>Заголовок: имя планеты, плашка владельца, координаты в секторе.</summary>
+        void PlanetHead(PanelBuilder ui, Planet p, bool silhouette)
+        {
+            var head = ui.Add(new VisualElement());
+            head.AddToClassList("planet-head");
+            var title = new Label(silhouette ? $"Силуэт #{p.Id}" : $"{p.Type.Name} #{p.Id}");
+            title.AddToClassList("planet-title");
+            head.Add(title);
+            string pill = p.Owner == Owner.Player ? "Ваша планета"
+                : p.Owner == Owner.Ai ? "Планета " + (_game.GetMagnate(p.MagnateId)?.Name.Split(' ')[0] ?? "магната")
+                : silhouette ? "Силуэт" : p.FoundByProbe ? "Нашёл ваш зонд" : "Свободна";
+            var tag = new Label(pill);
+            tag.AddToClassList("pill");
+            tag.AddToClassList(p.Owner == Owner.Player ? "mine" : p.Owner == Owner.Ai ? "rival" : p.FoundByProbe ? "found" : "free");
+            head.Add(tag);
+            head.Add(new VisualElement { pickingMode = PickingMode.Ignore }.WithClass("spacer"));
+            var coords = new VisualElement();
+            coords.AddToClassList("coords");
+            coords.Add(new Label(_sectorName.text).WithClass("label-text"));
+            coords.Add(new Label($"X: {p.MapX * 1000:0}   Y: {p.MapY * 1000:0}").WithClass("label-text"));
+            head.Add(coords);
+        }
+
+        /// <summary>Ряд коротких характеристик: тип, ресурс, владелец, что о планете известно.</summary>
+        void PlanetChips(PanelBuilder ui, Planet p, bool silhouette, bool exact)
+        {
+            var chips = ui.Add(new VisualElement());
+            chips.AddToClassList("chips");
+            chips.Add(Chip("planet", "Тип", silhouette ? "неизвестен" : p.Type.Name, null));
+            chips.Add(Chip(silhouette ? "cube" : ResourceIcon(p.Resource), silhouette ? "Ресурс" : "Ресурс (основной)",
+                silhouette ? "неизвестен" : p.Resource.RuName(), silhouette ? (Color?)null : Fmt.ResourceColor(p.Resource)));
+            chips.Add(Chip("flag", "Владелец", p.Owner == Owner.Player ? "вы" : p.Owner == Owner.Ai ? (_game.GetMagnate(p.MagnateId)?.Name.Split(' ')[0] ?? "магнат") : "реестр",
+                RingColor(p)));
+            var last = Chip("eye", "Знание", silhouette ? "силуэт" : exact ? "разведана" : "скан", new Color(0.37f, 0.78f, 1f));
+            last.AddToClassList("last");
+            chips.Add(last);
+        }
+
+        static VisualElement Chip(string icon, string label, string value, Color? color)
+        {
+            var chip = new VisualElement();
+            chip.AddToClassList("chip");
+            var i = Icons.Make(icon, "chip-icon");
+            // Цвет значка — цвет ресурса или владельца: данные, а не оформление.
+            if (color.HasValue) i.style.color = color.Value;
+            chip.Add(i);
+            var text = new VisualElement();
+            text.Add(new Label(label).WithClass("chip-label"));
+            text.Add(new Label(value).WithClass("chip-value"));
+            chip.Add(text);
+            return chip;
+        }
+
+        /// <summary>Две карточки показателей: запас, добыча, цены — и содержание, шахта, жители, путь до биржи.</summary>
+        void PlanetStats(PanelBuilder ui, Planet p, bool silhouette, bool exact)
+        {
+            var g = _game;
+            var grid = ui.Add(new VisualElement());
+            grid.AddToClassList("stat-grid");
+            var left = new VisualElement();
+            left.AddToClassList("stat-col");
+            left.AddToClassList("first");
+            var right = new VisualElement();
+            right.AddToClassList("stat-col");
+            grid.Add(left);
+            grid.Add(right);
+
+            const string unknown = "?";
+            double known = silhouette ? 0 : g.KnownReserve(p) ?? 0;
+            if (silhouette)
+                StatRow(left, "layers", "Запас", unknown, null, false);
+            else if (exact)
+                StatRow(left, "layers", "Запас", $"{Fmt.Amount(p.Reserve)} / {Fmt.Amount(p.Capacity)}", p.Capacity > 0 ? (float)(p.Reserve / p.Capacity) : 0, false);
+            else
+                StatRow(left, "layers", "Запас", $"≈ {Fmt.Amount(p.EstimatedReserve)}", null, false);
+            StatRow(left, "pickaxe", "Добыча", silhouette ? unknown
+                : $"{Fmt.Amount(p.Type.OutputPerTurn)} / ход, на {(exact ? "" : "≈")}{Fmt.Amount(known / p.Type.OutputPerTurn)} х.", null, false);
+            StatRow(left, "tag", "Рыночная цена", silhouette ? unknown : $"{Fmt.Money(g.Market.Price(p.Resource))} за ед.", null, false);
+            StatRow(left, "coins", exact ? "Рыночная стоимость" : "Стоимость (оценка)", silhouette ? unknown : Fmt.Money(g.KnownValue(p) ?? 0), null, true);
+
+            string upkeep = p.Owner == Owner.Player ? $"{Fmt.Money(g.PlanetUpkeep(p))} / ход" : $"{Fmt.Money(p.Type.Upkeep)} / ход";
+            StatRow(right, "gear", "Содержание", silhouette ? unknown : upkeep, null, false);
+            StatRow(right, "pickaxe", "Шахта", silhouette ? unknown
+                : Fmt.MineName(p) + (p.EpidemicTurnsLeft > 0 ? $", эпидемия {p.EpidemicTurnsLeft} х." : ""), null, false);
+            StatRow(right, "people", "Жители", silhouette ? unknown
+                : !p.Inhabited ? "нет" : p.Owner == Owner.Player ? (p.OnStrike ? "забастовка" : $"лояльность {Mathf.RoundToInt((float)p.Loyalty)}") : "есть", null, false);
+            StatRow(right, "station", "До биржи", $"{Fmt.Amount(g.DistanceToExchange(p) * 10)} св. лет, {g.ShipTurns(p)} х.", null, true);
+        }
+
+        static void StatRow(VisualElement col, string icon, string name, string value, float? share, bool last)
+        {
+            var row = new VisualElement();
+            row.AddToClassList("stat-row");
+            if (last) row.AddToClassList("last");
+            var main = new VisualElement();
+            main.AddToClassList("stat-row-main");
+            main.Add(Icons.Make(icon, "stat-row-icon"));
+            main.Add(new Label(name).WithClass("stat-row-name"));
+            main.Add(new Label(value).WithClass("stat-row-value"));
+            row.Add(main);
+            if (share.HasValue)
+                row.Add(PanelBuilder.MakeBar(share.Value, Color.Lerp(new Color(1f, 0.4f, 0.3f), new Color(0.35f, 0.84f, 0.55f), share.Value)));
+            col.Add(row);
+        }
+
+        /// <summary>Главное, что можно сделать с планетой: купить, построить шахту, продать, отбить иск, подкупить жителей магната.</summary>
         void MainActions(PanelBuilder ui, Planet p, bool silhouette, bool exact)
         {
             var g = _game;
@@ -118,9 +199,8 @@ namespace PlanetTrader.Client
                     double price = g.PurchasePrice(p);
                     string note = p.FoundByProbe ? "без надбавки: её нашёл ваш зонд" : $"с надбавкой аукциона {Fmt.Percent(b.AuctionMarkup)}";
                     if (p.Mine == MineState.Working) note += ", шахта уже стоит";
-                    ui.Text($"Цена {Fmt.Money(price)} ({note}). Реестр считает цену по своей оценке запаса.");
-                    if (p.Mine == MineState.None)
-                        ui.Small($"Потом шахта: {Fmt.Money(g.MineCost(p))} и {b.MineBuildTurns} хода постройки.");
+                    ui.Small($"Цена {Fmt.Money(price)} ({note}). Реестр считает цену по своей оценке запаса." +
+                             (p.Mine == MineState.None ? $" Потом шахта: {Fmt.Money(g.MineCost(p))} и {b.MineBuildTurns} хода постройки." : ""));
                     if (p.Inhabited && !silhouette)
                         Negotiation(ui, p);
                     else if (p.SoldAtAuction)
@@ -128,36 +208,53 @@ namespace PlanetTrader.Client
                     else
                     {
                         string blind = silhouette ? " вслепую" : exact ? "" : " по оценке";
-                        ui.Button($"Купить{blind} за {Fmt.Money(price)} · {Doer(Skill.Negotiation)}", g.ActionsLeft > 0 && g.Money >= price,
-                            () => Act(() => g.BuyPlanet(p.Id), $"Куплена планета {p.Type.Name} #{p.Id} за {Fmt.Money(price)}."));
+                        using (ui.Box("big-buttons"))
+                            ui.BigButton("coins", $"Купить{blind}", $"за {Fmt.Money(price)} · {Doer(Skill.Negotiation)}", "big-primary",
+                                g.ActionsLeft > 0 && g.Money >= price,
+                                () => Act(() => g.BuyPlanet(p.Id), $"Куплена планета {p.Type.Name} #{p.Id} за {Fmt.Money(price)}."));
                     }
                     break;
 
                 case Owner.Player:
                     foreach (var x in g.Claims.Where(c => c.PlanetId == p.Id).ToList())
                         Claim(ui, x, p);
-                    if (p.Mine == MineState.None && !p.IsDepleted)
-                    {
-                        double mine = g.MineCost(p);
-                        ui.Button($"Построить шахту за {Fmt.Money(mine)}, {b.MineBuildTurns} хода · {Doer(Skill.Geology)}", g.ActionsLeft > 0 && g.Money >= mine,
-                            () => Act(() => g.BuildMine(p.Id), $"Начата постройка шахты на {p.Type.Name} #{p.Id}."));
-                    }
                     if (p.IsDepleted)
                         ui.Text(p.Inhabited && p.Education > 0
                             ? "Основное месторождение восстанавливается. Пока шахта стоит, все жители заняты умственным трудом."
                             : "Основное месторождение восстанавливается, а содержание идёт. Жители с образованием зарабатывали бы и сейчас.");
+                    double sale = g.SellPlanetPrice(p);
+                    double hype = g.CurrentEvent?.Event.PlanetSale(p.Resource) ?? 1;
+                    if (hype != 1)
+                        ui.Small($"<color=#ffd27a>Событие «{g.CurrentEvent.Event.Name}»: такие планеты сейчас продаются ×{hype:0.##}.</color>");
+                    using (ui.Box("big-buttons"))
+                    {
+                        bool canMine = p.Mine == MineState.None && !p.IsDepleted;
+                        if (canMine)
+                        {
+                            double mine = g.MineCost(p);
+                            double turns = (g.KnownReserve(p) ?? 0) / p.Type.OutputPerTurn;
+                            ui.BigButton("pickaxe", "Построить шахту", $"{Fmt.Money(mine)} · {Fmt.Amount(p.Type.OutputPerTurn)} за ход, на {Fmt.Amount(turns)} х.", "big-primary",
+                                g.ActionsLeft > 0 && g.Money >= mine,
+                                () => Act(() => g.BuildMine(p.Id), $"Начата постройка шахты на {p.Type.Name} #{p.Id}."));
+                        }
+                        ui.BigButton("tag", "Продать планету", $"получить {Fmt.Money(sale)} (комиссия {Fmt.Percent(b.ResaleCommission)})", "big-danger",
+                            g.ActionsLeft > 0,
+                            () => Act(() => g.SellPlanet(p.Id), $"Продана планета {p.Type.Name} #{p.Id} за {Fmt.Money(sale)}."))
+                            .EnableInClassList("second", canMine);
+                    }
                     break;
 
                 case Owner.Ai:
                     var owner = g.GetMagnate(p.MagnateId);
-                    ui.Text($"Планета магната {owner?.Name ?? "ИИ"}. Купить её можно, когда он выставит её на аукцион.");
+                    ui.Small($"Планета магната {owner?.Name ?? "ИИ"}. Купить её можно, когда он выставит её на аукцион.");
                     if (p.Inhabited && !silhouette && !p.IsDepleted)
                     {
                         double bribe = g.MagnateBribeCost(p);
                         ui.Small($"Можно подкупить жителей: шанс {Fmt.Percent(b.PlayerBribeChance)}, репутация {Fmt.Amount(b.PlayerBribeReputation)}, " +
                                  $"Галактический реестр ловит в {Fmt.Percent(b.FineChance)} случаев (штраф {Fmt.Money(b.FineAmount)}).");
-                        ui.Button($"Подкупить жителей за {Fmt.Money(bribe)} · 1 действие", g.ActionsLeft > 0 && g.Money >= bribe,
-                            () => Do(g.BribeMagnateResidents(p.Id, out _)));
+                        using (ui.Box("big-buttons"))
+                            ui.BigButton("people", "Подкупить жителей", $"{Fmt.Money(bribe)} · 1 действие", "big-plain",
+                                g.ActionsLeft > 0 && g.Money >= bribe, () => Do(g.BribeMagnateResidents(p.Id, out _)));
                     }
                     break;
             }
