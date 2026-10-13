@@ -65,6 +65,13 @@ namespace PlanetTrader.Core
         /// <summary>Основное месторождение восстанавливается: столько ходов ещё, из скольких.</summary>
         public int RegenTurnsLeft;
         public int RegenTotal;
+        /// <summary>Ёмкость основного месторождения сейчас: после каждого восстановления немного меньше.</summary>
+        public double Capacity;
+        /// <summary>Уровень образования жителей 0–3: чем выше, тем больше доход от умственного труда.</summary>
+        public int Education;
+        public Specialty Specialty;
+        /// <summary>Сколько ходов ещё учатся до следующего уровня; 0 — не учатся.</summary>
+        public int EducationTurnsLeft;
         /// <summary>Дополнительные месторождения: небольшие, других ресурсов.</summary>
         public readonly List<Deposit> ExtraDeposits = new List<Deposit>();
 
@@ -74,6 +81,7 @@ namespace PlanetTrader.Core
             Type = type;
             Reserve = reserve;
             InitialReserve = reserve;
+            Capacity = reserve;
             EstimatedInitialReserve = reserve;
         }
 
@@ -91,6 +99,18 @@ namespace PlanetTrader.Core
 
         /// <summary>Текущий запас по оценке реестра.</summary>
         public double EstimatedReserve => InitialReserve > 0 ? EstimatedInitialReserve * Reserve / InitialReserve : 0;
+
+        /// <summary>Ёмкость основного месторождения по оценке реестра.</summary>
+        public double EstimatedCapacity => InitialReserve > 0 ? EstimatedInitialReserve * Capacity / InitialReserve : 0;
+
+        public bool IsStudying => EducationTurnsLeft > 0;
+
+        /// <summary>Склонны ли жители к своей специальности.</summary>
+        public bool NaturalSpecialty => Specialty != Specialty.None && Specialty == Specialties.Natural(Resource);
+
+        /// <summary>Доход от умственного труда за ход при лояльности 50 и без шахты.</summary>
+        public double IntellectBase(Balance b) =>
+            !Inhabited || Education <= 0 ? 0 : b.IntellectIncome[Education] * (NaturalSpecialty ? 1 + b.NaturalSpecialtyBonus : 1);
 
         public bool HasUnlootedRuins => RuinsValue > 0 && !RuinsLooted;
 
@@ -116,12 +136,12 @@ namespace PlanetTrader.Core
         /// Рыночная стоимость. Месторождения не кончаются, а восстанавливаются, поэтому это бесконечный доход:
         /// средняя за цикл «добыча + восстановление» выручка минус содержание, делённые на ставку дисконтирования.
         /// Пока основное месторождение восстанавливается, стоимость дисконтируется на оставшиеся ходы.
-        /// Дополнительные месторождения с экстракторами добавляют свою среднюю выручку.
+        /// Дополнительные месторождения с экстракторами добавляют свою среднюю выручку, образованные жители — умственный труд.
         /// </summary>
-        public double MarketValue(Balance b) => ValueWithCapacity(b, InitialReserve);
+        public double MarketValue(Balance b) => ValueWithCapacity(b, Capacity);
 
         /// <summary>Стоимость по оценке реестра — так планету видят все, кто её не разведал.</summary>
-        public double EstimatedValue(Balance b) => ValueWithCapacity(b, EstimatedInitialReserve);
+        public double EstimatedValue(Balance b) => ValueWithCapacity(b, EstimatedCapacity);
 
         /// <summary>Средняя добыча за цикл: месторождение capacity, добыча output, восстановление regen ходов.</summary>
         public static double CycleAverage(double capacity, double output, double regen)
@@ -134,7 +154,11 @@ namespace PlanetTrader.Core
         public double ValueWithCapacity(Balance b, double capacity)
         {
             double r = b.DiscountRate;
-            double revenue = CycleAverage(capacity, Type.OutputPerTurn, b.RegenTurns[(int)Resource]) * b.BasePrice(Resource);
+            double mainAverage = CycleAverage(capacity, Type.OutputPerTurn, b.RegenTurns[(int)Resource]);
+            double revenue = mainAverage * b.BasePrice(Resource);
+            // Умственный труд: пока шахта работает, им занята только часть жителей.
+            double miningShare = Mine == MineState.None ? 0 : mainAverage / Type.OutputPerTurn;
+            revenue += IntellectBase(b) * (1 - miningShare * (1 - b.IntellectWhileMining));
             foreach (var d in ExtraDeposits)
                 if (d.HasExtractor)
                     revenue += CycleAverage(d.Capacity, d.OutputPerTurn, b.RegenTurns[(int)d.Resource]) * b.BasePrice(d.Resource);

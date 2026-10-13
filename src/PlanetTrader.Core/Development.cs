@@ -9,6 +9,7 @@ namespace PlanetTrader.Core
     public sealed class Deposit
     {
         public Resource Resource;
+        /// <summary>Ёмкость сейчас: после каждого восстановления месторождение немного беднеет.</summary>
         public double Capacity;
         public double Reserve;
         public double OutputPerTurn;
@@ -72,6 +73,10 @@ namespace PlanetTrader.Core
         GenerousDeal,
         BribedRivalResidents,
         CounterBribe,
+        /// <summary>Жители получили новый уровень образования.</summary>
+        Education,
+        /// <summary>На необитаемую планету заселили колонистов.</summary>
+        Colony,
     }
 
     public sealed class Deed
@@ -91,11 +96,13 @@ namespace PlanetTrader.Core
             {
                 case DeedKind.School:
                 case DeedKind.RequestDone:
+                case DeedKind.Education:
                     return 2;
                 case DeedKind.Festival:
                 case DeedKind.Wages:
                 case DeedKind.GenerousDeal:
                 case DeedKind.CounterBribe:
+                case DeedKind.Colony:
                     return 1;
                 case DeedKind.HighTax:
                 case DeedKind.LowballDeal:
@@ -108,6 +115,71 @@ namespace PlanetTrader.Core
                     return -3;
                 default:
                     return 0;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Чем зарабатывают образованные жители. Умственный труд приносит меньше ресурсов,
+    /// зато не кончается и даёт небольшой бонус всей корпорации.
+    /// </summary>
+    public enum Specialty
+    {
+        None,
+        /// <summary>Технари: реже аварии и метеориты на всех ваших планетах.</summary>
+        Engineers,
+        /// <summary>Химики: месторождения восстанавливаются быстрее.</summary>
+        Chemists,
+        /// <summary>Физики: исследования дешевле.</summary>
+        Physicists,
+        /// <summary>Биологи: жители всех планет довольнее, эпидемии реже.</summary>
+        Biologists,
+        /// <summary>Экономисты: рынок глубже, продажи меньше роняют цену.</summary>
+        Economists,
+    }
+
+    public static class Specialties
+    {
+        public static readonly Specialty[] All =
+            { Specialty.Engineers, Specialty.Chemists, Specialty.Physicists, Specialty.Biologists, Specialty.Economists };
+
+        public static string RuName(this Specialty s)
+        {
+            switch (s)
+            {
+                case Specialty.Engineers: return "технари";
+                case Specialty.Chemists: return "химики";
+                case Specialty.Physicists: return "физики";
+                case Specialty.Biologists: return "биологи";
+                case Specialty.Economists: return "экономисты";
+                default: return "—";
+            }
+        }
+
+        /// <summary>Что даёт корпорации каждый уровень образования планеты с этой специальностью.</summary>
+        public static string BonusText(this Specialty s)
+        {
+            switch (s)
+            {
+                case Specialty.Engineers: return "аварии и метеориты реже";
+                case Specialty.Chemists: return "месторождения восстанавливаются быстрее";
+                case Specialty.Physicists: return "исследования дешевле";
+                case Specialty.Biologists: return "жители довольнее, эпидемии реже";
+                case Specialty.Economists: return "продажи меньше роняют цену";
+                default: return "";
+            }
+        }
+
+        /// <summary>К чему склонны жители планеты: так они зарабатывают больше.</summary>
+        public static Specialty Natural(Resource r)
+        {
+            switch (r)
+            {
+                case Resource.Ice:
+                case Resource.Metal: return Specialty.Engineers;
+                case Resource.Gas: return Specialty.Chemists;
+                case Resource.Biomass: return Specialty.Biologists;
+                default: return Specialty.Physicists;
             }
         }
     }

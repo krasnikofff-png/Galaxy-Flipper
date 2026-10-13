@@ -18,6 +18,11 @@ namespace PlanetTrader.Core
 
         public double Price(Resource r) => _price[(int)r];
 
+        /// <summary>Множитель глубины рынка: экономисты игрока делают рынок глубже.</summary>
+        public double DepthFactor = 1;
+
+        public double Depth(Resource r) => _b.Depth(r) * DepthFactor;
+
         /// <summary>К какой цене возвращается рынок: базовая, а во время события — с его множителем.</summary>
         public double TargetPrice(Resource r) => _b.BasePrice(r) * _eventFactor[(int)r];
 
@@ -36,7 +41,7 @@ namespace PlanetTrader.Core
         /// <summary>Во сколько раз упадёт цена, если продать amount.</summary>
         double DropFactor(Resource r, double amount) =>
             Math.Max(_b.MinPriceShare * _b.BasePrice(r) / _price[(int)r],
-                1 - _b.SalesImpact * amount / _b.Depth(r));
+                1 - _b.SalesImpact * amount / Depth(r));
 
         /// <summary>Выручка за amount без изменения цены (средняя цена между «до» и «после»).</summary>
         public double Quote(Resource r, double amount)

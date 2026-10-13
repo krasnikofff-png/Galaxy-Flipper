@@ -273,7 +273,7 @@ public class DiscoveryTests
     [Fact]
     public void DiscoveredPlanetsAppearInRegistryAtExpectedRate()
     {
-        var b = new Balance { AiBuyChance = 0, AiResaleChance = 0, AccidentChance = 0 };
+        var b = new Balance { AiBuyChance = 0, AiResaleChance = 0, AccidentChance = 0, MaxSectorPlanets = 1000 };
         var g = Game.New(b, 9);
         int before = g.AllPlanets.Count;
         for (int i = 0; i < 700; i++) g.EndTurn();
@@ -281,6 +281,16 @@ public class DiscoveryTests
         // Ожидаем ~100 открытий за 700 ходов.
         Assert.InRange(found, 70, 130);
         Assert.All(g.AllPlanets.Skip(before), p => Assert.False(p.FoundByProbe));
+    }
+
+    [Fact]
+    public void FullSectorHasNoMoreDiscoveries()
+    {
+        var b = new Balance { AiBuyChance = 0, AiResaleChance = 0, AccidentChance = 0 };
+        var g = Game.New(b, 9);
+        for (int i = 0; i < 1000; i++) g.EndTurn();
+        Assert.True(g.SectorFull);
+        Assert.Equal(b.MaxSectorPlanets, g.AllPlanets.Count);
     }
 
     [Fact]
@@ -950,7 +960,64 @@ public class DevelopmentTests
         Assert.Equal(regen, p.RegenTotal);
         for (int i = 0; i < regen - 1; i++) g.EndTurn();
         Assert.False(p.IsRegenerating);
-        Assert.Equal(p.InitialReserve, p.Reserve, 6);
+        // Месторождение восстановилось, но беднее: 90% прежней ёмкости.
+        Assert.Equal(p.InitialReserve * b.RegenCapacityShare, p.Reserve, 6);
+        Assert.Equal(p.Capacity, p.Reserve, 6);
+    }
+
+    [Fact]
+    public void EducatedResidentsEarnMoreWhenMineIsIdle()
+    {
+        var b = Quiet();
+        var g = Game.New(b, 1);
+        var p = g.PlayerPlanets.Single();
+        Assert.False(g.Educate(p.Id, Specialty.Engineers).Ok); // необитаема
+
+        Assert.True(g.SettleColony(p.Id).Ok);
+        Assert.True(p.Inhabited);
+        Assert.Equal(b.ColonyLoyalty, p.Loyalty);
+        Assert.False(g.Educate(p.Id, Specialty.Engineers).Ok); // нет школы
+        Assert.True(g.BuildSchool(p.Id).Ok);
+        g.EndTurn();
+        Assert.False(g.Educate(p.Id).Ok); // на первом уровне нужна специальность
+        Assert.True(g.Educate(p.Id, Specialty.Engineers).Ok);
+        Assert.True(p.IsStudying);
+        for (int i = 0; i < b.EducationTurns[1]; i++) g.EndTurn();
+        Assert.Equal(1, p.Education);
+        Assert.True(p.NaturalSpecialty); // лёд → технари
+
+        double mining = g.IntellectIncome(p);
+        double expected = b.IntellectIncome[1] * (1 + b.NaturalSpecialtyBonus) * b.IntellectWhileMining * (1 + (p.Loyalty - 50) * b.IntellectPerLoyalty);
+        Assert.Equal(expected, mining, 6);
+        // Месторождение выработано — умом заняты все жители.
+        p.Reserve = 0;
+        Assert.Equal(mining / b.IntellectWhileMining, g.IntellectIncome(p), 6);
+        // Бонус технарей: аварии реже.
+        Assert.Equal(b.SpecialtyBonusPerLevel[(int)Specialty.Engineers], g.SpecialtyBonus(Specialty.Engineers), 6);
+
+        double money = g.Money;
+        var report = g.EndTurn();
+        Assert.True(report.Intellect > 0);
+        Assert.Contains(g.Deeds, d => d.Kind == DeedKind.Education);
+        Assert.Contains(g.Deeds, d => d.Kind == DeedKind.Colony);
+    }
+
+    [Fact]
+    public void PhysicistsMakeResearchCheaper()
+    {
+        var b = Quiet();
+        var g = Game.New(b, 1);
+        var p = g.PlayerPlanets.Single();
+        p.Inhabited = true;
+        p.Loyalty = 80;
+        p.HasSchool = true;
+        p.Education = 2;
+        p.Specialty = Specialty.Physicists;
+        var tech = b.Technologies.First(t => t.Id == "metal");
+        Assert.Equal(System.Math.Round(tech.Cost * (1 - 2 * b.SpecialtyBonusPerLevel[(int)Specialty.Physicists])), g.ResearchCost(tech));
+        double before = g.Money;
+        Assert.True(g.StartResearch("metal").Ok);
+        Assert.Equal(g.ResearchCost(tech), before - g.Money, 6);
     }
 
     [Fact]

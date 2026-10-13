@@ -220,6 +220,7 @@ namespace PlanetTrader.Client
             string line = $"— Ход {report.Turn} завершён. Расходы {Fmt.Money(report.TotalCosts)}";
             if (report.InsurancePayout > 0) line += $", страховка выплатила {Fmt.Money(report.InsurancePayout)}";
             if (report.Taxes > 0) line += $", налоги принесли {Fmt.Money(report.Taxes)}";
+            if (report.Intellect > 0) line += $", умственный труд — {Fmt.Money(report.Intellect)}";
             Log(line + ".");
             foreach (var e in report.Events) Log(e);
             if (report.Seizures > 0) Log("Денег не хватило: недостача ушла в долг, а долг превысил кредитный лимит.");
@@ -582,8 +583,9 @@ namespace PlanetTrader.Client
                 Line("Ресурс", $"{p.Resource.RuName()}, на бирже сейчас {Fmt.Money(g.Market.Price(p.Resource))} за ед.");
                 if (exact)
                 {
-                    Line("Запас", $"{Fmt.Amount(p.Reserve)} из {Fmt.Amount(p.InitialReserve)}");
-                    DrawBar(p.InitialReserve > 0 ? (float)(p.Reserve / p.InitialReserve) : 0);
+                    string aged = p.Capacity < p.InitialReserve - 0.5 ? $" (было {Fmt.Amount(p.InitialReserve)}: месторождение стареет)" : "";
+                    Line("Запас", $"{Fmt.Amount(p.Reserve)} из {Fmt.Amount(p.Capacity)}{aged}");
+                    DrawBar(p.Capacity > 0 ? (float)(p.Reserve / p.Capacity) : 0);
                 }
                 else
                     Line("Запас", $"≈ {Fmt.Amount(p.EstimatedReserve)} по оценке реестра (может врать)");
@@ -643,8 +645,18 @@ namespace PlanetTrader.Client
                             Act(() => g.BuildMine(p.Id), $"Начата постройка шахты на {p.Type.Name} #{p.Id}.");
                     }
                     if (p.IsDepleted)
-                        GUILayout.Label("Планета выработана, но содержание за неё идёт. Продайте её, чтобы от него избавиться.", _text);
+                        GUILayout.Label(p.Inhabited && p.Education > 0
+                            ? "Основное месторождение восстанавливается. Пока шахта стоит, все жители заняты умственным трудом."
+                            : "Основное месторождение восстанавливается, а содержание идёт. Жители с образованием зарабатывали бы и сейчас.", _text);
                     if (p.Inhabited) DrawPeople(p);
+                    else
+                    {
+                        GUILayout.Label($"Планета необитаема. Колонисты будут платить налоги, а выучившись — зарабатывать умом, даже когда месторождение выработано. " +
+                                        $"Но шахта их раздражает: −{Fmt.Amount(b.LoyaltyMiningDrain)} лояльности за ход.", _small);
+                        if (ActionButton($"Заселить колонистов за {Fmt.Money(b.ColonyCost)}: лояльность {Fmt.Amount(b.ColonyLoyalty)} · 1 действие",
+                                g.ActionsLeft > 0 && g.Money >= b.ColonyCost))
+                            Act(() => g.SettleColony(p.Id), $"На {p.Type.Name} #{p.Id} прибыли колонисты.");
+                    }
                     DrawGuards(p);
                     double sale = g.SalePrice(p);
                     double hype = g.CurrentEvent?.Event.PlanetSale(p.Resource) ?? 1;
@@ -748,11 +760,62 @@ namespace PlanetTrader.Client
                     g.ActionsLeft > 0 && g.Money >= b.SchoolCost))
                 Act(() => g.BuildSchool(p.Id), $"Построена школа на {p.Type.Name} #{p.Id}.");
             if (p.HasSchool) GUILayout.Label("Школа построена.", _small);
+            DrawEducation(p);
 
             foreach (var r in g.Requests.Where(r => r.PlanetId == p.Id).ToList())
                 DrawRequest(r, p);
             foreach (var x in g.Bribes.Where(x => x.PlanetId == p.Id).ToList())
                 DrawBribe(x, p);
+        }
+
+        /// <summary>Образование жителей: специальность, уровень, доход от умственного труда.</summary>
+        void DrawEducation(Planet p)
+        {
+            var g = _game;
+            var b = g.Balance;
+            GUILayout.Space(6);
+            GUILayout.Label("Образование", _header);
+            int max = b.EducationCost.Length - 1;
+            if (p.Education > 0)
+            {
+                string natural = p.NaturalSpecialty ? $", склонны к этому: +{Fmt.Percent(b.NaturalSpecialtyBonus)} к доходу" : "";
+                Line("Специальность", $"{p.Specialty.RuName()}, уровень {p.Education} из {max}{natural}");
+                string mining = p.Mine == MineState.Working && !p.IsDepleted ? $" (пока шахта работает, умом занято {Fmt.Percent(b.IntellectWhileMining)} жителей)" : "";
+                Line("Умственный труд", $"+{Fmt.Money(g.IntellectIncome(p))} за ход{mining}");
+                Line("Бонус корпорации", p.Specialty.BonusText());
+            }
+            else
+                GUILayout.Label($"Образованные жители зарабатывают умственным трудом: меньше, чем шахта, зато всегда, даже пока месторождение восстанавливается. " +
+                                $"Каждый уровень даёт и бонус всей корпорации. Доход растёт с лояльностью.", _small);
+
+            if (p.IsStudying)
+            {
+                GUILayout.Label($"Жители учатся: уровень {p.Education + 1} через {p.EducationTurnsLeft} х.", _text);
+                return;
+            }
+            if (p.Education >= max) return;
+
+            int next = p.Education + 1;
+            double cost = b.EducationCost[next];
+            g.CanEducate(p, out string reason);
+            bool canClick = reason == null && g.ActionsLeft > 0;
+            if (reason != null && reason != "Не хватает денег")
+                GUILayout.Label(reason + ".", _small);
+            string income = $"+{Fmt.Money(b.IntellectIncome[next])} за ход при лояльности 50";
+            if (p.Education == 0)
+            {
+                var natural = Specialties.Natural(p.Resource);
+                foreach (var sp in Specialties.All)
+                {
+                    var choice = sp;
+                    string tag = sp == natural ? " · склонны" : "";
+                    if (ActionButton($"Учить: {sp.RuName()}{tag} ({sp.BonusText()}) — {Fmt.Money(cost)}, {b.EducationTurns[next]} х. · 1 действие", canClick))
+                        Act(() => g.Educate(p.Id, choice), $"Жители {p.Type.Name} #{p.Id} учатся: {choice.RuName()}.");
+                }
+                GUILayout.Label($"Первый уровень: {income}.", _small);
+            }
+            else if (ActionButton($"Уровень {next}: {income} — {Fmt.Money(cost)}, {b.EducationTurns[next]} х. · 1 действие", canClick))
+                Act(() => g.Educate(p.Id), $"Жители {p.Type.Name} #{p.Id} учатся дальше.");
         }
 
         /// <summary>Подкуп магната: предупреждение и встречный подкуп.</summary>
@@ -836,13 +899,27 @@ namespace PlanetTrader.Client
                     else
                     {
                         string id = t.Id;
-                        if (ActionButton($"Исследовать за {Fmt.Money(t.Cost)}, {t.Turns} х. · 1 действие",
-                                g.CurrentResearch == null && g.ActionsLeft > 0 && g.Money >= t.Cost))
+                        double cost = g.ResearchCost(t);
+                        if (ActionButton($"Исследовать за {Fmt.Money(cost)}, {t.Turns} х. · 1 действие",
+                                g.CurrentResearch == null && g.ActionsLeft > 0 && g.Money >= cost))
                             Act(() => g.StartResearch(id), $"Начато исследование «{t.Name}».");
                     }
                 }
                 GUILayout.EndVertical();
             }
+
+            GUILayout.Space(12);
+            GUILayout.Label("Специальности жителей", _header);
+            GUILayout.Label("Каждый уровень образования на ваших планетах усиливает бонус своей специальности. Учить жителей можно в окне планеты.", _small);
+            var b = g.Balance;
+            foreach (var sp in Specialties.All)
+            {
+                int levels = g.SpecialtyLevels(sp);
+                double bonus = g.SpecialtyBonus(sp);
+                string value = sp == Specialty.Biologists ? $"+{Fmt.Amount(bonus)} лояльности за ход" : Fmt.Percent(bonus);
+                Line(sp.RuName(), $"{sp.BonusText()}: {value} (уровней {levels}, предел {(sp == Specialty.Biologists ? "+" + Fmt.Amount(b.SpecialtyBonusMax[(int)sp]) : Fmt.Percent(b.SpecialtyBonusMax[(int)sp]))})");
+            }
+            Line("Умственный труд", $"+{Fmt.Money(g.IntellectPerTurn)} за ход");
         }
 
         /// <summary>Основное и дополнительные месторождения планеты: что добывается, что восстанавливается.</summary>
@@ -1158,6 +1235,7 @@ namespace PlanetTrader.Client
             Line("Охрана", Fmt.Money(g.GuardsPerTurn));
             Line("<b>Итого</b>", $"<b>{Fmt.Money(g.CostsPerTurn)}</b>");
             Line("Налоги с жителей", $"+{Fmt.Money(g.TaxesPerTurn)} за ход");
+            Line("Умственный труд", $"+{Fmt.Money(g.IntellectPerTurn)} за ход");
         }
 
         // ------------------------------------------------------------------

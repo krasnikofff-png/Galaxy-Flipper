@@ -33,6 +33,8 @@ namespace PlanetTrader.Core
                 case DeedKind.GenerousDeal: return "Переплатили жителям за {p}? Щедрость — болезнь, и вы больны.";
                 case DeedKind.BribedRivalResidents: return "Увели жителей у конкурента? Красиво. Почти как я.";
                 case DeedKind.CounterBribe: return "Перекупили собственных жителей на {p}? Дорого обходится любовь народа.";
+                case DeedKind.Education: return "Учите жителей {p}? Умный работник — дорогой работник. И язвительный.";
+                case DeedKind.Colony: return "Заселили {p}? Новые рты, новые налоги. Одобряю, если налоги высокие.";
                 default: return null;
             }
         }
@@ -53,6 +55,8 @@ namespace PlanetTrader.Core
                 case DeedKind.GenerousDeal: return "Честная цена за {p}. Жители вам поверили, не подведите их.";
                 case DeedKind.BribedRivalResidents: return "Подкуп жителей... Вы ничем не лучше Гуго.";
                 case DeedKind.CounterBribe: return "Вы не отдали жителей {p} без боя. Достойно.";
+                case DeedKind.Education: return "Жители {p} учатся — значит, планета переживёт свои шахты. Мудро.";
+                case DeedKind.Colony: return "Колонисты на {p}. Берегите их, первым поселенцам всегда труднее всех.";
                 default: return null;
             }
         }
@@ -73,6 +77,8 @@ namespace PlanetTrader.Core
                 case DeedKind.GenerousDeal: return "Заплатили за {p} больше, чем просили? Вы мне нравитесь. Или пугаете. Ещё не решила.";
                 case DeedKind.BribedRivalResidents: return "Подкупили чужих жителей! А меня подкупить не хотите? Я недорого.";
                 case DeedKind.CounterBribe: return "Подкуп против подкупа! Жители {p} теперь самые богатые в секторе.";
+                case DeedKind.Education: return "На {p} открыли академию? Запишите меня! Хочу на факультет чёрных дыр, там тихо.";
+                case DeedKind.Colony: return "Колонисты на {p}! Надеюсь, они взяли с собой зонтики. Там же есть дождь? Ну хоть что-нибудь?";
                 default: return null;
             }
         }

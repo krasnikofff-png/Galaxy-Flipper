@@ -104,6 +104,8 @@ namespace PlanetTrader.Core
         public int SectorPlanets = 30;
         /// <summary>Шанс за ход, что в реестре появится новая открытая планета (~1 за 7 ходов).</summary>
         public double DiscoveryChancePerTurn = 1.0 / 7;
+        /// <summary>Больше планет в секторе не бывает: открытия и находки зондов прекращаются (допущение; новые секторы — этап 8).</summary>
+        public int MaxSectorPlanets = 60;
         public double AiStartShare = 0.33;
         public double AiBuyChance = 0.35;
         /// <summary>Шанс, что ИИ выставит одну из своих планет на продажу (допущение).</summary>
@@ -279,6 +281,33 @@ namespace PlanetTrader.Core
         public double ExtraCapacityTurnsMin = 8, ExtraCapacityTurnsMax = 14;
         /// <summary>Экстрактор для доп. месторождения: доля стоимости обычной шахты этого ресурса.</summary>
         public double ExtractorCostShare = 0.4;
+        /// <summary>После каждого восстановления месторождение наполняется до этой доли прежней ёмкости: медленно стареет.</summary>
+        public double RegenCapacityShare = 0.9;
+
+        // --- Образование жителей и умственный труд (этап 7, всё — допущения) ---
+        /// <summary>Цена и срок обучения до уровня i (0 — без образования). Для первого уровня нужна школа.</summary>
+        public double[] EducationCost = { 0, 800, 1500, 2500 };
+        public int[] EducationTurns = { 0, 4, 5, 6 };
+        /// <summary>Доход за ход от умственного труда по уровням при лояльности 50. Даже на высшем уровне меньше, чем даёт шахта.</summary>
+        public double[] IntellectIncome = { 0, 60, 110, 160 };
+        /// <summary>Довольные жители работают лучше: доход × (1 + (лояльность − 50) × это).</summary>
+        public double IntellectPerLoyalty = 0.005;
+        /// <summary>Жители, склонные к своей специальности (по типу планеты), зарабатывают больше.</summary>
+        public double NaturalSpecialtyBonus = 0.25;
+        /// <summary>Пока шахта работает, умственным трудом занята только часть жителей.</summary>
+        public double IntellectWhileMining = 0.5;
+        /// <summary>Учиться жители соглашаются при лояльности от этой.</summary>
+        public double EducationMinLoyalty = 50;
+        /// <summary>Колонисты на необитаемой планете: цена и лояльность на старте.</summary>
+        public double ColonyCost = 800;
+        public double ColonyLoyalty = 60;
+        /// <summary>
+        /// Бонус корпорации за каждый уровень образования планет данной специальности и его предел,
+        /// по порядку enum Specialty: —, технари (аварии реже), химики (восстановление быстрее),
+        /// физики (исследования дешевле), биологи (лояльность за ход), экономисты (глубина рынка).
+        /// </summary>
+        public double[] SpecialtyBonusPerLevel = { 0, 0.08, 0.06, 0.08, 0.3, 0.05 };
+        public double[] SpecialtyBonusMax = { 0, 0.5, 0.4, 0.5, 2.0, 0.4 };
         public Technology[] Technologies =
         {
             new Technology("ice", "Ледоколы", 800, 3, "Добыча льда на дополнительных месторождениях.") { UnlocksResource = Resource.Ice },

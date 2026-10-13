@@ -9,7 +9,7 @@ namespace PlanetTrader.Sim
     public sealed class Strategy
     {
         public string Name;
-        /// <summary>Развивает планеты: исследует технологии, ставит экстракторы на дополнительные месторождения.</summary>
+        /// <summary>Развивает планеты: исследует технологии, ставит экстракторы, учит жителей, заселяет колонистов.</summary>
         public bool Develops;
         /// <summary>Берёт кредит, чтобы купить выгодную планету.</summary>
         public bool UsesCredit;
@@ -48,6 +48,8 @@ namespace PlanetTrader.Sim
         readonly Strategy _s;
         readonly Rng _rng;
         bool _ranOutOfActions;
+        /// <summary>Видит выгодную планету, но пока не по карману: копит на неё и не тратится на развитие.</summary>
+        bool _saving;
 
         public Bot(Strategy strategy, ulong seed = 1)
         {
@@ -64,9 +66,10 @@ namespace PlanetTrader.Sim
             FulfillOrders(g);
             if (_s.CaresForPeople) ManagePeople(g);
             SellResources(g);
-            if (_s.Develops) Develop(g);
             BuildMines(g);
             BuyPlanets(g);
+            // Развитие — на то, что осталось после покупок: новая планета обычно окупается быстрее.
+            if (_s.Develops && !_saving) Develop(g);
             if (_s.Explores) ExploreAhead(g);
             ManageDebt(g);
         }
@@ -109,7 +112,7 @@ namespace PlanetTrader.Sim
             foreach (var p in g.PlayerPlanets.Where(x => x.Inhabited).ToList())
             {
                 g.SetTax(p.Id, p.Loyalty >= 70 ? TaxLevel.High : p.Loyalty >= 50 ? TaxLevel.Low : TaxLevel.None);
-                if (!p.HasSchool && p.RemainingTurns > 15 && g.ActionsLeft > 0 && g.Money - b.SchoolCost >= Buffer(g))
+                if (!p.HasSchool && (p.RemainingTurns > 15 || _s.Develops) && g.ActionsLeft > 0 && g.Money - b.SchoolCost >= Buffer(g))
                     g.BuildSchool(p.Id);
                 if ((p.Loyalty < 45 || p.OnStrike) && g.ActionsLeft > 0 && g.Money - b.FestivalCost >= Buffer(g))
                     g.HoldFestival(p.Id);
@@ -140,12 +143,12 @@ namespace PlanetTrader.Sim
                 if (stock <= 0) continue;
 
                 // Сколько можно продать, не уронив цену ниже порога.
-                double share = stock > 2 * g.Balance.Depth(r) ? DumpPriceShare : MinSellPriceShare;
+                double share = stock > 2 * g.Market.Depth(r) ? DumpPriceShare : MinSellPriceShare;
                 double floor = share * g.Balance.BasePrice(r);
                 double price = g.Market.Price(r);
                 if (price <= floor) continue;
                 double maxDrop = 1 - floor / price;
-                double maxAmount = maxDrop / g.Balance.SalesImpact * g.Balance.Depth(r);
+                double maxAmount = maxDrop / g.Balance.SalesImpact * g.Market.Depth(r);
                 double amount = Math.Min(stock, maxAmount);
                 if (amount > 0.5) g.SellResource(r, amount);
             }
@@ -167,15 +170,62 @@ namespace PlanetTrader.Sim
                     g.BuildExtractor(p.Id, i);
                 }
 
+            EducatePeople(g);
+            SettleColonies(g);
+
             if (g.CurrentResearch != null || g.ActionsLeft == 0 || g.PlayerPlanetCount < 3) return;
             var tech = g.Balance.Technologies
                 .Where(g.CanResearch)
                 .Select(t => (tech: t, value: TechValue(g, t, 0)))
-                .Where(x => x.value >= 1.5 * x.tech.Cost)
-                .OrderByDescending(x => x.value / x.tech.Cost)
+                .Where(x => x.value >= 1.5 * g.ResearchCost(x.tech))
+                .OrderByDescending(x => x.value / g.ResearchCost(x.tech))
                 .Select(x => x.tech)
                 .FirstOrDefault();
-            if (tech != null && g.Money - tech.Cost >= Buffer(g) + 2000) g.StartResearch(tech.Id);
+            if (tech != null && g.Money - g.ResearchCost(tech) >= Buffer(g) + 2000) g.StartResearch(tech.Id);
+        }
+
+        /// <summary>
+        /// Учит жителей, если прибавка умственного труда за 40 ходов окупает обучение.
+        /// Специальность — та, к которой склонны жители.
+        /// </summary>
+        void EducatePeople(Game g)
+        {
+            var b = g.Balance;
+            const double horizon = 40;
+            foreach (var p in g.PlayerPlanets.Where(x => x.Inhabited && x.HasSchool && !x.IsStudying && x.Education < 3)
+                         .OrderByDescending(x => x.IsDepleted).ThenByDescending(x => x.Education).ToList())
+            {
+                int next = p.Education + 1;
+                double cost = b.EducationCost[next];
+                if (g.Money - cost < Buffer(g) + 1000) return;
+                if (!g.CanEducate(p, out _)) continue;
+                var specialty = p.Education > 0 ? p.Specialty : Specialties.Natural(p.Resource);
+                double natural = specialty == Specialties.Natural(p.Resource) ? 1 + b.NaturalSpecialtyBonus : 1;
+                // Пока шахта работает, трудится часть жителей; к выработке — все.
+                double working = p.Mine == MineState.Working && !p.IsDepleted && p.RemainingTurns > horizon / 2 ? b.IntellectWhileMining : 1;
+                double gain = (b.IntellectIncome[next] - b.IntellectIncome[p.Education]) * natural * working
+                              * (1 + (p.Loyalty - 50) * b.IntellectPerLoyalty) * horizon
+                              + 150 * next;  // бонус корпорации от специальности, грубо
+                // Тот же порог, что для покупки планеты: окупить с запасом за 40 ходов.
+                if (gain < MinPaybackRatio * cost) continue;
+                if (g.ActionsLeft == 0) { _ranOutOfActions = true; return; }
+                g.Educate(p.Id, specialty);
+            }
+        }
+
+        /// <summary>
+        /// Заселяет колонистов на планеты, где основное месторождение выработано или скоро кончится:
+        /// шахта жителей не раздражает, а умом они заработают и во время восстановления.
+        /// </summary>
+        void SettleColonies(Game g)
+        {
+            var b = g.Balance;
+            foreach (var p in g.PlayerPlanets.Where(x => !x.Inhabited && (x.IsDepleted || x.RemainingTurns < 10)).ToList())
+            {
+                if (g.Money - b.ColonyCost - b.SchoolCost - b.EducationCost[1] < Buffer(g)) return;
+                if (g.ActionsLeft == 0) { _ranOutOfActions = true; return; }
+                g.SettleColony(p.Id);
+            }
         }
 
         /// <summary>
@@ -187,7 +237,7 @@ namespace PlanetTrader.Sim
             const double horizon = 40;
             var b = g.Balance;
             double revenue = g.PlayerPlanets.Where(p => p.Mine == MineState.Working)
-                .Sum(p => Planet.CycleAverage(p.InitialReserve, p.Type.OutputPerTurn, b.RegenTurns[(int)p.Resource]) * b.BasePrice(p.Resource));
+                .Sum(p => Planet.CycleAverage(p.Capacity, p.Type.OutputPerTurn, b.RegenTurns[(int)p.Resource]) * b.BasePrice(p.Resource));
             double value = 0;
             if (t.UnlocksResource.HasValue)
                 value += g.PlayerPlanets.SelectMany(p => p.ExtraDeposits).Where(d => d.Resource == t.UnlocksResource.Value)
@@ -224,7 +274,7 @@ namespace PlanetTrader.Sim
             double baseUpkeep = g.PlayerPlanets.Sum(x => x.BaseUpkeep(b));
             double extraUpkeep = (baseUpkeep + p.Type.Upkeep) * b.UpkeepMultiplier(n + 1) - baseUpkeep * b.UpkeepMultiplier(n);
             // Месторождения восстанавливаются: считаем средний за цикл доход на горизонте в 40 ходов.
-            double capacity = known.Value * p.InitialReserve / Math.Max(1, p.Reserve);
+            double capacity = g.KnownCapacity(p) ?? known.Value;
             double avgOutput = Planet.CycleAverage(capacity, p.Type.OutputPerTurn, b.RegenTurns[(int)p.Resource]);
             double net = avgOutput * b.BasePrice(p.Resource) - extraUpkeep;
             double shipping = g.ShippingCost(p.Resource, avgOutput, g.DistanceToExchange(p));
@@ -241,6 +291,7 @@ namespace PlanetTrader.Sim
             // Пока планеты не окупают расходы, не расширяемся.
             if (IncomePerTurn(g) < g.CostsPerTurn) return;
 
+            _saving = false;
             var skip = new HashSet<int>();
             while (g.ActionsLeft > 0)
             {
@@ -268,6 +319,7 @@ namespace PlanetTrader.Sim
                 {
                     // Выгодного не видно — сканируем силуэты или ищем скрытые планеты. Если выгодное есть, но не по карману, копим.
                     if (!anyGood && Scan(g)) continue;
+                    _saving = anyGood;
                     return;
                 }
 
@@ -360,7 +412,8 @@ namespace PlanetTrader.Sim
 
             if (bestType == null)
             {
-                // Силуэтов в досягаемости нет: ищем скрытые планеты «Стандартом», как раньше.
+                // Силуэтов в досягаемости нет: ищем скрытые планеты «Стандартом», как раньше, если они ещё остались.
+                if (g.SectorFull) return false;
                 var t = g.Balance.ProbeTypes.FirstOrDefault(x => x.Name == "Стандарт") ?? g.Balance.ProbeTypes[0];
                 if (g.Money - t.Cost < Buffer(g) + 1500) return false;
                 for (int attempt = 0; attempt < 20 && bestType == null; attempt++)

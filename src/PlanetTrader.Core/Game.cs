@@ -34,6 +34,8 @@ namespace PlanetTrader.Core
         public double Wages;
         /// <summary>Налоги с жителей (доход).</summary>
         public double Taxes;
+        /// <summary>Умственный труд образованных жителей (доход).</summary>
+        public double Intellect;
         /// <summary>Охрана планет от подкупа.</summary>
         public double Guards;
         public int Accidents;
@@ -279,6 +281,14 @@ namespace PlanetTrader.Core
             return null;
         }
 
+        /// <summary>Ёмкость основного месторождения по тому, что знает игрок; null у силуэтов.</summary>
+        public double? KnownCapacity(Planet p)
+        {
+            if (p.Owner == Owner.Player || p.Knowledge == Knowledge.Explored) return p.Capacity;
+            if (p.Knowledge == Knowledge.Scanned) return p.EstimatedCapacity;
+            return null;
+        }
+
         /// <summary>Стоимость планеты по тому, что знает игрок; null у силуэтов.</summary>
         public double? KnownValue(Planet p)
         {
@@ -337,6 +347,9 @@ namespace PlanetTrader.Core
 
         /// <summary>Налоги за ход с небастующих планет.</summary>
         public double TaxesPerTurn => PlayerPlanets.Where(p => p.Inhabited && !p.OnStrike).Sum(p => Balance.TaxIncome[(int)p.Tax]);
+
+        /// <summary>Умственный труд образованных жителей за ход (доход).</summary>
+        public double IntellectPerTurn => PlayerPlanets.Sum(IntellectIncome);
 
         public double GuardsPerTurn => PlayerPlanets.Count(p => p.Guarded) * Balance.GuardsCost;
 
@@ -495,6 +508,83 @@ namespace PlanetTrader.Core
             return ActionResult.Success;
         }
 
+        // ------------------------------------------------------------------
+        // Образование и умственный труд
+        // ------------------------------------------------------------------
+
+        /// <summary>Сколько уровней образования у ваших планет этой специальности.</summary>
+        public int SpecialtyLevels(Specialty s) =>
+            PlayerPlanets.Where(p => p.Inhabited && p.Specialty == s).Sum(p => p.Education);
+
+        /// <summary>Бонус корпорации от специальности: растёт с каждым уровнем, но не выше предела.</summary>
+        public double SpecialtyBonus(Specialty s) =>
+            Math.Min(Balance.SpecialtyBonusMax[(int)s], Balance.SpecialtyBonusPerLevel[(int)s] * SpecialtyLevels(s));
+
+        /// <summary>
+        /// Доход от умственного труда за ход. Чем довольнее жители, тем лучше работают:
+        /// лояльность 50 — обычный доход, 100 — на четверть больше. Пока шахта работает, трудится часть жителей.
+        /// </summary>
+        public double IntellectIncome(Planet p)
+        {
+            double income = p.IntellectBase(Balance);
+            if (income <= 0 || p.OnStrike) return 0;
+            if (p.Mine == MineState.Working && !p.IsDepleted) income *= Balance.IntellectWhileMining;
+            return income * (1 + (p.Loyalty - 50) * Balance.IntellectPerLoyalty);
+        }
+
+        public bool CanEducate(Planet p, out string reason)
+        {
+            var b = Balance;
+            reason = null;
+            if (p.Owner != Owner.Player) reason = "Это не ваша планета";
+            else if (!p.Inhabited) reason = "На планете нет жителей";
+            else if (p.Education >= b.EducationCost.Length - 1) reason = "Жители уже получили высшее образование";
+            else if (p.IsStudying) reason = "Жители уже учатся";
+            else if (!p.HasSchool) reason = "Сначала нужна школа";
+            else if (p.OnStrike) reason = "Жители бастуют";
+            else if (p.Loyalty < b.EducationMinLoyalty) reason = $"Жители не станут учиться при лояльности ниже {b.EducationMinLoyalty}";
+            else if (Money < b.EducationCost[p.Education + 1]) reason = "Не хватает денег";
+            return reason == null;
+        }
+
+        /// <summary>
+        /// Обучить жителей следующему уровню. На первом уровне выбирается специальность, дальше она не меняется.
+        /// </summary>
+        public ActionResult Educate(int planetId, Specialty specialty = Specialty.None)
+        {
+            var p = GetPlanet(planetId);
+            if (p == null) return ActionResult.Fail("Нет такой планеты");
+            if (!CanEducate(p, out var reason)) return ActionResult.Fail(reason);
+            if (p.Education == 0 && specialty == Specialty.None) return ActionResult.Fail("Выберите специальность");
+            var a = SpendAction();
+            if (!a.Ok) return a;
+            int next = p.Education + 1;
+            Money -= Balance.EducationCost[next];
+            p.Invested += Balance.EducationCost[next];
+            if (p.Education == 0) p.Specialty = specialty;
+            p.EducationTurnsLeft = Balance.EducationTurns[next];
+            return ActionResult.Success;
+        }
+
+        /// <summary>Заселить колонистов на вашу необитаемую планету: у неё появятся жители со своими заботами.</summary>
+        public ActionResult SettleColony(int planetId)
+        {
+            var p = GetPlanet(planetId);
+            if (p == null || p.Owner != Owner.Player) return ActionResult.Fail("Это не ваша планета");
+            if (p.Inhabited) return ActionResult.Fail("Здесь уже живут");
+            if (Money < Balance.ColonyCost) return ActionResult.Fail("Не хватает денег");
+            var a = SpendAction();
+            if (!a.Ok) return a;
+            Money -= Balance.ColonyCost;
+            p.Invested += Balance.ColonyCost;
+            p.Inhabited = true;
+            p.Loyalty = Balance.ColonyLoyalty;
+            p.Tax = TaxLevel.None;
+            p.OnStrike = false;
+            RecordDeed(DeedKind.Colony, p);
+            return ActionResult.Success;
+        }
+
         /// <summary>Школа: навсегда добавляет лояльности каждый ход.</summary>
         public ActionResult BuildSchool(int planetId)
         {
@@ -543,7 +633,7 @@ namespace PlanetTrader.Core
             if (p.HasSchool) delta += b.SchoolLoyalty;
             if (p.PaysWages) delta += b.WagesLoyalty;
             if (Ev != null) delta -= Ev.ExtraLoyaltyDrain;
-            delta += TechLoyaltyBonus;
+            delta += TechLoyaltyBonus + SpecialtyBonus(Specialty.Biologists);
             return delta;
         }
 
@@ -564,6 +654,21 @@ namespace PlanetTrader.Core
                 {
                     report.Wages += b.WagesCost;
                     p.Earned -= b.WagesCost;
+                }
+                if (!p.OnStrike)
+                {
+                    double intellect = IntellectIncome(p);
+                    Money += intellect;
+                    p.Earned += intellect;
+                    report.Intellect += intellect;
+
+                    if (p.EducationTurnsLeft > 0 && --p.EducationTurnsLeft == 0)
+                    {
+                        p.Education++;
+                        RecordDeed(DeedKind.Education, p);
+                        report.Events.Add($"Жители {p.Type.Name} #{p.Id} выучились: {p.Specialty.RuName()}, уровень {p.Education}. " +
+                                          $"Умственный труд — {Math.Round(IntellectIncome(p))} за ход.");
+                    }
                 }
 
                 p.Loyalty = Clamp(p.Loyalty + LoyaltyChangePerTurn(p));
@@ -930,7 +1035,8 @@ namespace PlanetTrader.Core
                 scanned++;
             }
             string line = $"Зонд «{probe.Type.Name}» просканировал область: новых планет в скане — {scanned}";
-            if (_rng.Chance(probe.Type.FindChance))
+            if (SectorFull) line += ". Скрытых планет в секторе не осталось";
+            else if (_rng.Chance(probe.Type.FindChance))
             {
                 var found = GeneratePlanet(RandomType());
                 PlaceOnMap(found, probe.TargetX, probe.TargetY, probe.Type.ScanRadius);
@@ -1049,6 +1155,7 @@ namespace PlanetTrader.Core
             AdvanceResearch(report);
             DeliverShipments();
             UpdatePeople(report);
+            Market.DepthFactor = 1 + SpecialtyBonus(Specialty.Economists);
 
             // Расходы считаются по состоянию на конец хода. Доставка уже посчитана при добыче.
             report.Upkeep = UpkeepPerTurn;
@@ -1099,7 +1206,7 @@ namespace PlanetTrader.Core
                 if (!mainWorks && extras.Count == 0) continue;
 
                 // Метеорит разбивает основную шахту; страховка возмещает её стоимость.
-                if (p.Mine != MineState.None && _rng.Chance(Balance.MeteorChance * (Ev?.MeteorFactor ?? 1)))
+                if (p.Mine != MineState.None && _rng.Chance(Balance.MeteorChance * (Ev?.MeteorFactor ?? 1) * (1 - SpecialtyBonus(Specialty.Engineers))))
                 {
                     p.Mine = MineState.None;
                     p.AccidentTurnsLeft = 0;
@@ -1122,7 +1229,7 @@ namespace PlanetTrader.Core
                     report.Events.Add($"Эпидемия на {p.Type.Name} #{p.Id}: {Balance.EpidemicTurns} хода добыча вполовину, лояльность {Math.Round(p.Loyalty)}.");
                 }
 
-                if (p.AccidentTurnsLeft == 0 && _rng.Chance(Balance.AccidentChance * (Ev?.AccidentFactor ?? 1)))
+                if (p.AccidentTurnsLeft == 0 && _rng.Chance(Balance.AccidentChance * (Ev?.AccidentFactor ?? 1) * (1 - SpecialtyBonus(Specialty.Engineers))))
                 {
                     p.AccidentTurnsLeft = Balance.AccidentTurns;
                     report.Accidents++;
@@ -1203,11 +1310,13 @@ namespace PlanetTrader.Core
         // ------------------------------------------------------------------
 
         int RegenTurnsFor(Resource r, bool playerOwned) =>
-            Math.Max(1, (int)Math.Round(Balance.RegenTurns[(int)r] * (playerOwned ? RegenFactor : 1)));
+            Math.Max(1, (int)Math.Round(Balance.RegenTurns[(int)r] * (playerOwned ? RegenFactor * (1 - SpecialtyBonus(Specialty.Chemists)) : 1)));
 
+        /// <summary>Месторождение истощилось: восстановится, но немного беднее, чем было.</summary>
         void StartRegen(Planet p)
         {
             p.Reserve = 0;
+            p.Capacity *= Balance.RegenCapacityShare;
             p.RegenTotal = RegenTurnsFor(p.Resource, p.Owner == Owner.Player);
             p.RegenTurnsLeft = p.RegenTotal;
         }
@@ -1215,6 +1324,7 @@ namespace PlanetTrader.Core
         void StartRegen(Deposit d, bool playerOwned)
         {
             d.Reserve = 0;
+            d.Capacity *= Balance.RegenCapacityShare;
             d.RegenTotal = RegenTurnsFor(d.Resource, playerOwned);
             d.RegenTurnsLeft = d.RegenTotal;
         }
@@ -1226,10 +1336,10 @@ namespace PlanetTrader.Core
             {
                 if (p.RegenTurnsLeft > 0)
                 {
-                    p.Reserve += p.InitialReserve / p.RegenTotal;
+                    p.Reserve += p.Capacity / p.RegenTotal;
                     if (--p.RegenTurnsLeft == 0)
                     {
-                        p.Reserve = p.InitialReserve;
+                        p.Reserve = p.Capacity;
                         if (p.Owner == Owner.Player) report.Events.Add($"{p.Type.Name} #{p.Id}: основное месторождение восстановилось.");
                     }
                 }
@@ -1264,6 +1374,9 @@ namespace PlanetTrader.Core
         public double RegenFactor => Researched.Aggregate(1.0, (f, t) => f * t.RegenFactor);
         public double TechLoyaltyBonus => Researched.Sum(t => t.LoyaltyBonus);
 
+        /// <summary>Цена технологии: физики делают исследования дешевле.</summary>
+        public double ResearchCost(Technology t) => Math.Round(t.Cost * (1 - SpecialtyBonus(Specialty.Physicists)));
+
         public bool CanResearch(Technology t) =>
             !_researched.Contains(t.Id) && t.Requires.All(_researched.Contains) && CurrentResearch?.Technology != t;
 
@@ -1275,10 +1388,11 @@ namespace PlanetTrader.Core
             if (CurrentResearch != null) return ActionResult.Fail("Уже идёт исследование: " + CurrentResearch.Technology.Name);
             if (!CanResearch(t)) return ActionResult.Fail("Сначала нужны: " + string.Join(", ", t.Requires.Where(r => !_researched.Contains(r))
                 .Select(r => Balance.Technologies.First(x => x.Id == r).Name)));
-            if (Money < t.Cost) return ActionResult.Fail("Не хватает денег");
+            double cost = ResearchCost(t);
+            if (Money < cost) return ActionResult.Fail("Не хватает денег");
             var a = SpendAction();
             if (!a.Ok) return a;
-            Money -= t.Cost;
+            Money -= cost;
             CurrentResearch = new Research { Technology = t, TurnsLeft = t.Turns };
             return ActionResult.Success;
         }
@@ -1425,10 +1539,13 @@ namespace PlanetTrader.Core
             report.Events.Add($"{o.Customer}: нужно {o.Amount} ({r.RuName()}) за {Balance.OrderDeadlineTurns} ходов, с доставкой");
         }
 
+        /// <summary>В секторе открыты все планеты: новые не находятся ни зондами, ни случайно. Новые секторы — на этапе 8.</summary>
+        public bool SectorFull => _planets.Count >= Balance.MaxSectorPlanets;
+
         /// <summary>Случайное открытие: новая планета попадает в реестр, её видят все, в том числе ИИ.</summary>
         void Discover(TurnReport report)
         {
-            if (!_rng.Chance(Balance.DiscoveryChancePerTurn)) return;
+            if (SectorFull || !_rng.Chance(Balance.DiscoveryChancePerTurn)) return;
             var p = GeneratePlanet(RandomType());
             _planets.Add(p);
             report.Events.Add($"Открыта новая планета {p.Type.Name} #{p.Id}");
