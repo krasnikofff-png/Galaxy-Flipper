@@ -21,8 +21,10 @@ namespace PlanetTrader.Visuals
         [Tooltip("Яркость: меньше 1 — тусклая (выработанная планета).")]
         [Range(0, 1.5f)] public float Brightness = 1;
 
-        Transform _surface, _clouds, _halo;
-        Material _surfaceMat, _cloudMat, _haloMat;
+        Transform _surface, _clouds, _halo, _rings;
+        Material _surfaceMat, _cloudMat, _haloMat, _ringMat;
+        Mesh _ringMesh;
+        Texture2D _ringTex;
         PlanetTextures _tex;
         PlanetStyle _style;
         Task<PlanetPixels> _baking;
@@ -113,6 +115,25 @@ namespace PlanetTrader.Visuals
             _haloMat = new Material(Shader.Find("PlanetTrader/PlanetAtmosphere"));
             _haloMat.SetFloat("_Inner", 1f / HaloScale);
             _halo = Layer("Атмосфера", _haloMat, HaloScale);
+
+            // Кольца — не на поверхности: планета под ними вращается, а кольца нет.
+            var rings = PlanetRings.For(look, Seed);
+            if (rings != null)
+            {
+                _ringMesh = PlanetRings.BuildMesh(rings);
+                _ringTex = PlanetRings.BuildBands(rings);
+                _ringMat = new Material(Shader.Find("PlanetTrader/PlanetRing"));
+                _ringMat.SetTexture("_MainTex", _ringTex);
+                var go = new GameObject("Кольца");
+                go.transform.SetParent(transform, false);
+                go.layer = gameObject.layer;
+                go.AddComponent<MeshFilter>().sharedMesh = _ringMesh;
+                var r = go.AddComponent<MeshRenderer>();
+                r.sharedMaterial = _ringMat;
+                r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                r.receiveShadows = false;
+                _rings = go.transform;
+            }
             ApplyMood();
         }
 
@@ -134,6 +155,11 @@ namespace PlanetTrader.Visuals
             _surfaceMat.SetColor("_AtmoColor", Mood(_style.Atmosphere));
             if (_cloudMat) _cloudMat.SetColor("_Color", Mood(_style.CloudTint));
             _haloMat.SetColor("_Color", Mood(_style.Atmosphere));
+            if (_ringMat)
+            {
+                _ringMat.SetFloat("_Brightness", Brightness);
+                _ringMat.SetFloat("_Saturation", Saturation);
+            }
         }
 
         Color Mood(Color c)
@@ -185,7 +211,10 @@ namespace PlanetTrader.Visuals
             if (_surfaceMat) Kill(_surfaceMat);
             if (_cloudMat) Kill(_cloudMat);
             if (_haloMat) Kill(_haloMat);
-            _surface = _clouds = _halo = null;
+            if (_ringMat) Kill(_ringMat);
+            if (_ringMesh) Kill(_ringMesh);
+            if (_ringTex) Kill(_ringTex);
+            _surface = _clouds = _halo = _rings = null;
             _style = null;
         }
 

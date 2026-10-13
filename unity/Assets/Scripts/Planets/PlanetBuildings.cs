@@ -275,19 +275,8 @@ namespace PlanetTrader.Visuals
             t.localPosition = position;
             t.localRotation = rotation;
             t.localScale = Vector3.one * scale;
-            var model3d = Object.Instantiate(prefab, t, false);
-            model3d.name = model;
-            int layer = _parent.gameObject.layer;
-            foreach (var tr in go.GetComponentsInChildren<Transform>()) tr.gameObject.layer = layer;
-            foreach (var r in go.GetComponentsInChildren<MeshRenderer>())
-            {
-                r.sharedMaterial = Material;
-                r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-                r.receiveShadows = false;
-            }
             float offset = (float)rnd.NextDouble();
-            BuildingMotion.Attach(model3d, offset);
-            SmokeEmitter.Attach(model3d, offset, working);
+            var model3d = Instantiate(model, t, accent, offset, working);
             if (WithResidents.Contains(model))
                 Residents.Populate(model3d, _seed, _placed.Count, Material, _block, _species);
             SetLights(go, 1.3f, 0, accent);
@@ -315,6 +304,33 @@ namespace PlanetTrader.Visuals
                 if (_material == null) _material = new Material(Shader.Find("PlanetTrader/Building")) { name = "Постройки" };
                 return _material;
             }
+        }
+
+        /// <summary>
+        /// Поставить модель внутрь parent: общий материал построек, движение частей, дым и огонь, цвет владельца.
+        /// Годится не только для планет — так же на карте стоят биржа, зонды и грузовики.
+        /// </summary>
+        public static GameObject Instantiate(string model, Transform parent, Color accent, float offset, bool working = true)
+        {
+            var prefab = LoadModel(model);
+            if (prefab == null) return null;
+            var go = Object.Instantiate(prefab, parent, false);
+            go.name = model;
+            int layer = parent.gameObject.layer;
+            foreach (var tr in go.GetComponentsInChildren<Transform>()) tr.gameObject.layer = layer;
+            var block = new MaterialPropertyBlock();
+            foreach (var r in go.GetComponentsInChildren<MeshRenderer>())
+            {
+                r.sharedMaterial = Material;
+                r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                r.receiveShadows = false;
+                r.GetPropertyBlock(block);
+                block.SetColor("_Accent", accent);
+                r.SetPropertyBlock(block);
+            }
+            BuildingMotion.Attach(go, offset);
+            SmokeEmitter.Attach(go, offset, working);
+            return go;
         }
 
         /// <summary>Модель из Resources/Buildings (FBX, выгруженный tools/buildings/make_buildings.py).</summary>

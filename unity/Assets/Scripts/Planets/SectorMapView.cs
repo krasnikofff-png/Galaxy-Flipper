@@ -17,9 +17,26 @@ namespace PlanetTrader.Visuals
         public bool Silhouette;
         /// <summary>Выработана: тусклая.</summary>
         public bool Depleted;
+        /// <summary>Над планетой дым: авария на шахте или свежие обломки.</summary>
+        public bool Smoke;
 
         public float Saturation => Silhouette ? 0f : Depleted ? 0.35f : 1f;
         public float Brightness => Silhouette ? 0.7f : Depleted ? 0.55f : 1f;
+    }
+
+    /// <summary>Корабль на карте: зонд в полёте или грузовик между добывающей планетой и биржей.</summary>
+    public struct MapShip
+    {
+        /// <summary>Постоянный ключ корабля (номер зонда, номер планеты грузовика).</summary>
+        public int Key;
+        public bool Probe;
+        /// <summary>Откуда и куда, в пикселях экрана (от левого верхнего угла).</summary>
+        public Vector2 From, To;
+        /// <summary>Зонд: доля пути (корабль плавно догоняет её). Грузовик сам летает туда-обратно.</summary>
+        public float Progress;
+        /// <summary>Длина корабля в пикселях.</summary>
+        public float Size;
+        public Color Accent;
     }
 
     /// <summary>
@@ -40,7 +57,21 @@ namespace PlanetTrader.Visuals
             public PlanetLook Look;
             public int Seed;
             public bool Seen;
+            public GameObject Smoke;
         }
+
+        sealed class Ship
+        {
+            public Transform Holder;
+            public float Shown = -1;
+            public bool Seen;
+        }
+
+        readonly Dictionary<int, Ship> _ships = new Dictionary<int, Ship>();
+        readonly List<int> _goneShips = new List<int>();
+        Transform _station;
+        /// <summary>Цвет биржи: жёлтые полосы и модули станции.</summary>
+        static readonly Color ExchangeColor = new Color(0.95f, 0.8f, 0.3f);
 
         Transform _root;
         Camera _camera;
@@ -133,6 +164,18 @@ namespace PlanetTrader.Visuals
                 var t = e.View.transform.parent;
                 t.localPosition = new Vector3(p.Center.x - _box.center.x, _box.center.y - p.Center.y, 0);
                 t.localScale = Vector3.one * p.Radius;
+
+                // Дым над планетой с бедой: поднимается вверх по экрану.
+                if (p.Smoke && e.Smoke == null)
+                {
+                    e.Smoke = new GameObject("Дым");
+                    e.Smoke.transform.SetParent(t, false);
+                    var marker = new GameObject("map__smoke_map").transform;
+                    marker.SetParent(e.Smoke.transform, false);
+                    marker.localPosition = new Vector3(0.15f, 0.75f, -0.3f);
+                    SmokeEmitter.Attach(e.Smoke, (p.Id * 0.137f) % 1, true);
+                }
+                if (e.Smoke != null && e.Smoke.activeSelf != p.Smoke) e.Smoke.SetActive(p.Smoke);
             }
 
             _gone.Clear();
@@ -142,6 +185,79 @@ namespace PlanetTrader.Visuals
             {
                 Destroy(_planets[id].View.transform.parent.gameObject);
                 _planets.Remove(id);
+            }
+        }
+
+        /// <summary>Биржа в центре сектора: станция с вращающимся кольцом, повёрнутая к нам на три четверти.</summary>
+        public void ShowExchange(Vector2 center, float radius)
+        {
+            if (_station == null)
+            {
+                _station = new GameObject("Биржа").transform;
+                _station.SetParent(_root, false);
+                PlanetBuildings.Instantiate("station", _station, ExchangeColor, 0.3f);
+            }
+            _station.localPosition = new Vector3(center.x - _box.center.x, _box.center.y - center.y, -10);
+            _station.localRotation = Quaternion.Euler(-62, 0, 18);
+            _station.localScale = Vector3.one * (radius / 1.05f);
+        }
+
+        /// <summary>
+        /// Корабли на карте: зонды летят к цели (плавно догоняя ход игры), грузовики курсируют между добывающими
+        /// планетами и биржей. Звать каждый кадр; пропавшие корабли убираются.
+        /// </summary>
+        public void ShowShips(IReadOnlyList<MapShip> ships)
+        {
+            foreach (var s in _ships.Values) s.Seen = false;
+            float time = Time.time;
+            foreach (var m in ships)
+            {
+                if (!_ships.TryGetValue(m.Key, out var s))
+                {
+                    s = new Ship { Holder = new GameObject(m.Probe ? "Зонд" : "Грузовик").transform };
+                    s.Holder.SetParent(_root, false);
+                    PlanetBuildings.Instantiate(m.Probe ? "probe" : "cargo", s.Holder, m.Accent, (m.Key * 0.618f) % 1);
+                    _ships.Add(m.Key, s);
+                }
+                s.Seen = true;
+
+                Vector2 from = m.From, to = m.To, pos, dir;
+                float scale = m.Size;
+                if (m.Probe)
+                {
+                    s.Shown = s.Shown < 0 ? m.Progress : Mathf.MoveTowards(s.Shown, m.Progress, Time.deltaTime * 0.35f);
+                    pos = Vector2.Lerp(from, to, s.Shown);
+                    dir = to - from;
+                    pos += new Vector2(0, Mathf.Sin(time * 1.7f + m.Key) * 1.5f);
+                }
+                else
+                {
+                    // Туда и обратно; у причалов корабль сжимается до нуля — так не видно разворота.
+                    float length = Mathf.Max(20, (to - from).magnitude);
+                    float period = length / 22f + 3;
+                    float t = Mathf.Repeat(time / period + (m.Key * 0.37f) % 1, 1);
+                    bool outbound = t < 0.5f;
+                    float k = outbound ? t * 2 : 2 - t * 2;
+                    float u = Mathf.SmoothStep(0, 1, k);
+                    pos = Vector2.Lerp(from, to, u);
+                    dir = outbound ? to - from : from - to;
+                    float dock = Mathf.Min(k, 1 - k);
+                    scale *= Mathf.Clamp01(dock / 0.08f);
+                }
+                var dirWorld = new Vector3(dir.x, -dir.y, 0);
+                if (dirWorld.sqrMagnitude < 1e-4f) dirWorld = Vector3.right;
+                s.Holder.localPosition = new Vector3(pos.x - _box.center.x, _box.center.y - pos.y, -45);
+                // Нос — по курсу, крыша — к нам, с лёгким креном.
+                s.Holder.localRotation = Quaternion.LookRotation(dirWorld.normalized, Vector3.back) * Quaternion.Euler(-20, 0, 25);
+                s.Holder.localScale = Vector3.one * Mathf.Max(0.001f, scale);
+            }
+            _goneShips.Clear();
+            foreach (var kv in _ships)
+                if (!kv.Value.Seen) _goneShips.Add(kv.Key);
+            foreach (int key in _goneShips)
+            {
+                Destroy(_ships[key].Holder.gameObject);
+                _ships.Remove(key);
             }
         }
 

@@ -73,7 +73,8 @@ CLOTHES = [(0.25, 0.35, 0.6), (0.55, 0.3, 0.2), (0.3, 0.45, 0.3), (0.5, 0.5, 0.5
 MODELS = ["mine_rig", "mine_gas", "mine_build", "extractor", "settlement", "school", "guard_tower", "ruins",
           "accident", "wreck", "crater", "picket", "quarantine",
           "alien_grey", "alien_octo", "alien_centaur", "alien_slug", "alien_lizard",
-          "alien_shroom", "alien_robot", "alien_mantis", "alien_jelly", "alien_bird"]
+          "alien_shroom", "alien_robot", "alien_mantis", "alien_jelly", "alien_bird",
+          "station", "probe", "cargo"]
 
 # Детали текущей модели; join() собирает их в один объект.
 PARTS = []
@@ -106,7 +107,7 @@ def around(pivot, rot):
 def emitter(kind, loc, facing=0.0):
     """Точка, откуда идёт дым (smoke_dark, smoke_light) или огонь (flame), или место жителя (resident) лицом к −Y,
     повёрнутое на facing."""
-    EMITTERS.append((kind, Vector(loc), facing))
+    EMITTERS.append((kind, Vector(loc), (0, 0, facing)))
 
 
 class moving:
@@ -448,7 +449,7 @@ def join(name):
         e.empty_display_size = 0.25
         bpy.context.scene.collection.objects.link(e)
         e.location = loc
-        e.rotation_euler = (0, 0, facing)
+        e.rotation_euler = facing
         e.parent = body
     EMITTERS.clear()
     PARTS.clear()
@@ -1863,6 +1864,113 @@ def alien_bird():
 
 ALIENS = ["alien_grey", "alien_octo", "alien_centaur", "alien_slug", "alien_lizard",
           "alien_shroom", "alien_robot", "alien_mantis", "alien_jelly", "alien_bird"]
+
+
+# ----------------------------------------------------------------------
+# Космос на карте сектора: биржа-станция, зонд, грузовик
+# ----------------------------------------------------------------------
+# Корабли летят носом к −Y; огонь двигателей — источники «thruster», повёрнутые назад (+Y).
+
+def torus(R, r, loc, color, role=NORMAL, shine=0.4, segs=48, tube=12, rot=(0, 0, 0)):
+    """Тор в плоскости XY: радиус R, толщина r."""
+    bm = bmesh.new()
+    rings = []
+    for i in range(segs):
+        a = 2 * math.pi * i / segs
+        ca, sa = math.cos(a), math.sin(a)
+        rings.append([bm.verts.new(((R + r * math.cos(2 * math.pi * j / tube)) * ca, (R + r * math.cos(2 * math.pi * j / tube)) * sa,
+                                    r * math.sin(2 * math.pi * j / tube))) for j in range(tube)])
+    for i in range(segs):
+        a, b = rings[i], rings[(i + 1) % segs]
+        for j in range(tube):
+            j2 = (j + 1) % tube
+            bm.faces.new((a[j], b[j], b[j2], a[j2]))
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    return emit(bm, color, role, shine, True, mat(loc, rot))
+
+
+def thruster(loc):
+    """Огонь двигателя назад (+Y): источник «thruster», ось вверх источника повёрнута на +Y."""
+    EMITTERS.append(("thruster", Vector(loc), (-math.pi / 2, 0, 0)))
+
+
+def station():
+    """Биржа: центральный модуль с поясом окон, вращающееся жилое кольцо на спицах, причальные шпили,
+    солнечные панели, тарелка связи, пристыкованные корабли, огни; акцент — цвет биржи."""
+    sphere(0.3, (0, 0, 0), METAL, shine=0.6, u=28, v=16)
+    cyl(0.305, 0.06, (0, 0, -0.03), WHITE, ACCENT, shine=0.6, segs=28)
+    for k in range(16):
+        a = 2 * math.pi * k / 16
+        box((0.05, 0.012, 0.025), (0.305 * math.cos(a), 0.305 * math.sin(a), 0.06), WARM, LIGHT, rot=(0, 0, a + math.pi / 2), bevel=0)
+    for sz in (1, -1):
+        cyl(0.1, 0.35, (0, 0, sz * 0.25), STEEL, shine=0.6, segs=16, r2=0.06, rot=(0 if sz > 0 else math.pi, 0, 0))
+        for k in range(3):
+            cyl(0.105 - k * 0.012, 0.02, (0, 0, sz * (0.3 + k * 0.1)), DARK, segs=16)
+        sphere(0.03, (0, 0, sz * 0.62), RED if sz > 0 else GREEN_LIGHT, LIGHT, u=8, v=6)
+    # Солнечные панели на балках.
+    # Над кольцом, чтобы оно вращалось под ними.
+    zp = 0.42
+    for sx in (1, -1):
+        rod((0, 0, zp), (sx * 1.05, 0, zp), 0.025, STEEL, segs=8)
+        for k in range(3):
+            x = sx * (0.45 + k * 0.22)
+            box((0.19, 0.32, 0.012), (x, 0, zp), SOLAR, shine=0.85, bevel=0.004)
+            for g in (-0.08, 0.0, 0.08):
+                box((0.192, 0.006, 0.014), (x, g, zp), STEEL, shine=0.6, bevel=0)
+    dish(0.0, -0.18, 0.3, 0.12, tilt=0.9, yaw=0.4)
+    # Пристыкованные корабли.
+    for (a, col) in ((0.6, HAZARD), (2.4, WHITE), (4.1, FIRE_RED)):
+        d = Vector((math.cos(a), math.sin(a), 0))
+        p = d * 0.36
+        box((0.08, 0.16, 0.06), tuple(p + d * 0.06), col, shine=0.5, rot=(0, 0, a + math.pi / 2), bevel=0.012)
+        box((0.05, 0.02, 0.03), tuple(p + d * 0.15), GLASS, shine=0.9, rot=(0, 0, a + math.pi / 2), bevel=0)
+    with moving("station_ring", (0, 0, 0)):
+        torus(0.82, 0.07, (0, 0, 0), METAL, shine=0.55, segs=56, tube=14)
+        for k in range(28):
+            a = 2 * math.pi * k / 28
+            box((0.06, 0.012, 0.035), (0.893 * math.cos(a), 0.893 * math.sin(a), 0.0), WARM, LIGHT, rot=(0, 0, a + math.pi / 2), bevel=0)
+        for k in range(8):
+            a = 2 * math.pi * k / 8
+            box((0.07, 0.07, 0.16), (0.82 * math.cos(a), 0.82 * math.sin(a), 0.0), WHITE, ACCENT, shine=0.5, rot=(0, 0, a), bevel=0.01)
+        for k in range(4):
+            a = 2 * math.pi * k / 4 + math.pi / 4
+            rod((0.3 * math.cos(a), 0.3 * math.sin(a), 0), (0.76 * math.cos(a), 0.76 * math.sin(a), 0), 0.03, STEEL, shine=0.6, segs=8)
+            sphere(0.02, (0.55 * math.cos(a), 0.55 * math.sin(a), 0.035), RED, LIGHT, u=6, v=4)
+
+
+def probe():
+    """Зонд: восьмигранный корпус, тарелка антенны впереди, крылья солнечных панелей, сопло с огнём сзади."""
+    cyl(0.14, 0.5, (0, 0.25, 0), METAL, shine=0.6, segs=8, rot=(math.pi / 2, 0, 0), bevel=0.01, smooth=False)
+    cyl(0.145, 0.06, (0, 0.05, 0), WHITE, ACCENT, shine=0.5, segs=8, rot=(math.pi / 2, 0, 0), smooth=False)
+    dome(0.2, (0, -0.32, 0), METAL, shine=0.7, u=20, v=6, height=0.35, rot=(-math.pi / 2, 0, 0))
+    rod((0, -0.25, 0), (0, -0.42, 0), 0.012, DARK, segs=5)
+    sphere(0.02, (0, -0.43, 0), RED, LIGHT, u=6, v=4)
+    for sx in (1, -1):
+        rod((sx * 0.14, 0.0, 0), (sx * 0.3, 0.0, 0), 0.015, STEEL, segs=5)
+        box((0.36, 0.2, 0.01), (sx * 0.5, 0.0, 0), SOLAR, shine=0.85, bevel=0.003)
+        for g in (-0.1, 0.0, 0.1):
+            box((0.006, 0.202, 0.012), (sx * 0.5 + g, 0.0, 0), STEEL, bevel=0)
+    cyl(0.1, 0.14, (0, 0.25, 0), DARK, shine=0.5, segs=14, r2=0.13, rot=(-math.pi / 2, 0, 0))
+    thruster((0, 0.4, 0))
+
+
+def cargo():
+    """Грузовик: кабина со стеклом, рама с контейнерами в цвете владельца, два двигателя с огнём, огни."""
+    box((0.2, 0.22, 0.16), (0, -0.55, 0), METAL, shine=0.6, bevel=0.04)
+    box((0.16, 0.08, 0.06), (0, -0.66, 0.04), GLASS, shine=0.95, bevel=0.02)
+    rod((0, -0.45, 0), (0, 0.5, 0), 0.04, STEEL, segs=8)
+    for k in range(4):
+        y = -0.3 + k * 0.22
+        for sx in (1, -1):
+            box((0.17, 0.2, 0.15), (sx * 0.1, y, 0), WHITE, ACCENT if k % 2 == 0 else NORMAL, shine=0.4, bevel=0.01)
+            for r in range(3):
+                box((0.172, 0.006, 0.152), (sx * 0.1, y - 0.07 + r * 0.07, 0), DARK, bevel=0)
+    box((0.42, 0.16, 0.12), (0, 0.58, 0), METAL, shine=0.55, bevel=0.03)
+    for sx in (1, -1):
+        cyl(0.07, 0.12, (sx * 0.13, 0.66, 0), DARK, shine=0.5, segs=12, r2=0.09, rot=(-math.pi / 2, 0, 0))
+        thruster((sx * 0.13, 0.8, 0))
+        sphere(0.025, (sx * 0.22, -0.5, 0), RED if sx > 0 else GREEN_LIGHT, LIGHT, u=6, v=4)
+    sphere(0.025, (0, 0.58, 0.08), WARM, LIGHT, u=6, v=4)
 
 
 # ----------------------------------------------------------------------

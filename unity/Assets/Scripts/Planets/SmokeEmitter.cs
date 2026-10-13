@@ -16,6 +16,8 @@ namespace PlanetTrader.Visuals
             public Color Color;
             public float Life, Rise, Size0, Size1, Wind, Fire;
             public bool Additive;
+            /// <summary>Цвет огня у основания и на конце; по умолчанию жёлто-оранжевый.</summary>
+            public Color FireA = new Color(1, 0.92f, 0.55f), FireB = new Color(1, 0.35f, 0.08f);
         }
 
         static readonly Dictionary<string, Spec> Specs = new Dictionary<string, Spec>
@@ -26,10 +28,15 @@ namespace PlanetTrader.Visuals
             ["smoke_light"] = new Spec { Puffs = 12, Color = new Color(0.8f, 0.8f, 0.82f, 0.7f), Life = 2.6f, Rise = 0.7f, Size0 = 0.05f, Size1 = 0.42f, Wind = 0.35f },
             // Чёрный дым пожара: густой, высоко.
             ["smoke_black"] = new Spec { Puffs = 26, Color = new Color(0.07f, 0.07f, 0.08f, 0.95f), Life = 5f, Rise = 2f, Size0 = 0.2f, Size1 = 1.2f, Wind = 0.45f },
+            // Дым над планетой на карте сектора: светлый, иначе на чёрном космосе его не видно.
+            ["smoke_map"] = new Spec { Puffs = 24, Color = new Color(0.66f, 0.64f, 0.62f, 0.95f), Life = 4.5f, Rise = 2.8f, Size0 = 0.45f, Size1 = 1.7f, Wind = 0.7f },
             // Дымок горящей бочки и тлеющих обломков.
             ["smoke_small"] = new Spec { Puffs = 10, Color = new Color(0.35f, 0.34f, 0.34f, 0.7f), Life = 3f, Rise = 0.6f, Size0 = 0.05f, Size1 = 0.35f, Wind = 0.3f },
             // Пожар: высокие яркие языки.
             ["fire"] = new Spec { Puffs = 18, Color = new Color(1, 0.6f, 0.2f, 0.95f), Life = 0.9f, Rise = 0.45f, Size0 = 0.32f, Size1 = 0.08f, Wind = 0.15f, Fire = 1, Additive = true },
+            // Двигатели зонда и грузовика: голубой факел назад.
+            ["thruster"] = new Spec { Puffs = 10, Color = new Color(0.5f, 0.8f, 1f, 0.95f), Life = 0.35f, Rise = 0.45f, Size0 = 0.22f, Size1 = 0.04f, Wind = 0, Fire = 1, Additive = true,
+                FireA = new Color(0.8f, 0.95f, 1f), FireB = new Color(0.2f, 0.45f, 1f) },
             // Огонь в бочке: маленький, живой.
             ["fire_small"] = new Spec { Puffs = 12, Color = new Color(1, 0.6f, 0.2f, 0.95f), Life = 0.7f, Rise = 0.2f, Size0 = 0.13f, Size1 = 0.04f, Wind = 0.1f, Fire = 1, Additive = true },
             // Огонь факела: короткие яркие языки.
@@ -74,6 +81,8 @@ namespace PlanetTrader.Visuals
                 e._block.SetFloat("_Size1", spec.Size1);
                 e._block.SetVector("_Wind", new Vector4(Mathf.Cos(a) * spec.Wind, 0, Mathf.Sin(a) * spec.Wind, 0));
                 e._block.SetFloat("_Fire", spec.Fire);
+                e._block.SetColor("_FireA", spec.FireA);
+                e._block.SetColor("_FireB", spec.FireB);
                 r.SetPropertyBlock(e._block);
                 go.SetActive(working);
             }

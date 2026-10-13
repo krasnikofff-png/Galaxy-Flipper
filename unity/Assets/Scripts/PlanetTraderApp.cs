@@ -41,6 +41,9 @@ namespace PlanetTrader.Client
         PlanetPortrait _portrait;
         const float PortraitHeight = 210;
         readonly List<MapPlanet> _mapPlanets = new List<MapPlanet>();
+        readonly List<MapShip> _mapShips = new List<MapShip>();
+        /// <summary>Радиус станции-биржи на карте, в точках интерфейса.</summary>
+        const float ExchangeRadius = 30;
         /// <summary>Прямоугольник карты в виртуальных координатах интерфейса.</summary>
         Rect _mapBox;
         /// <summary>Во сколько раз интерфейс увеличен под экран.</summary>
@@ -158,6 +161,9 @@ namespace PlanetTrader.Client
                 Seed = _lookSeed ^ (p.Id * 7919),
                 Silhouette = silhouette,
                 Depleted = p.IsDepleted,
+                // Дым над картой: авария на шахте или свежие обломки (у силуэтов ничего не видно).
+                Smoke = !silhouette && ((p.Mine == MineState.Working && p.AccidentTurnsLeft > 0)
+                    || (p.Mine == MineState.None && p.MineWreckedTurn >= 0 && _game.Turn - p.MineWreckedTurn <= WreckTurns)),
             };
         }
 
@@ -224,6 +230,35 @@ namespace PlanetTrader.Client
             }
             var box = new Rect(_mapBox.x * _guiScale, _mapBox.y * _guiScale, _mapBox.width * _guiScale, _mapBox.height * _guiScale);
             _map3d.Show(box, _mapPlanets);
+
+            var b = _game.Balance;
+            var exchange = ToScreen(b.ExchangeX, b.ExchangeY) * _guiScale;
+            _map3d.ShowExchange(exchange, ExchangeRadius * _guiScale);
+
+            // Зонды игрока в полёте и грузовики добывающих планет (кроме силуэтов).
+            _mapShips.Clear();
+            foreach (var pr in _game.Probes)
+                _mapShips.Add(new MapShip
+                {
+                    Key = pr.Id,
+                    Probe = true,
+                    From = ToScreen(pr.FromX, pr.FromY) * _guiScale,
+                    To = ToScreen(pr.TargetX, pr.TargetY) * _guiScale,
+                    Progress = (float)pr.Progress(_game.Turn),
+                    Size = 15 * _guiScale,
+                    Accent = Fmt.OwnerColor(Owner.Player, false),
+                });
+            foreach (var p in _game.AllPlanets)
+                if (p.IsProducing && p.Knowledge != Knowledge.Silhouette)
+                    _mapShips.Add(new MapShip
+                    {
+                        Key = 1_000_000 + p.Id,
+                        From = ToScreen(p.MapX, p.MapY) * _guiScale,
+                        To = exchange,
+                        Size = 12 * _guiScale,
+                        Accent = RingColor(p),
+                    });
+            _map3d.ShowShips(_mapShips);
         }
 
         void NewGame()
@@ -481,21 +516,16 @@ namespace PlanetTrader.Client
                     DrawRing(new Vector2((float)own.MapX, (float)own.MapY), probe.Range, new Color(0.4f, 0.7f, 1f, 0.25f));
             }
 
-            // Биржа.
+            // Биржа — 3D-станция карты (SectorMapView); здесь только подпись.
             var ex = ToScreen(b.ExchangeX, b.ExchangeY);
-            var old = GUI.color;
-            GUI.color = new Color(0.95f, 0.85f, 0.4f);
-            GUI.DrawTexture(new Rect(ex.x - 9, ex.y - 9, 18, 18), Texture2D.whiteTexture);
-            GUI.color = old;
-            GUI.Label(new Rect(ex.x - 60, ex.y + 11, 120, 20), "Биржа", _mapLabel);
+            GUI.Label(new Rect(ex.x - 60, ex.y + ExchangeRadius * 0.8f, 120, 20), "Биржа", _mapLabel);
 
-            // Зонды в полёте: пунктир до цели и точка там, где зонд сейчас.
+            // Зонды в полёте: пунктир до цели; сам зонд — 3D-модель на карте.
             foreach (var pr in g.Probes)
             {
                 var from = ToScreen(pr.FromX, pr.FromY);
                 var to = ToScreen(pr.TargetX, pr.TargetY);
                 for (float t = 0; t <= 1; t += 0.05f) DrawCircle(Vector2.Lerp(from, to, t), 1.5f, new Color(0.6f, 0.8f, 1f, 0.5f));
-                DrawCircle(Vector2.Lerp(from, to, (float)pr.Progress(g.Turn)), 5, new Color(0.6f, 0.9f, 1f));
                 if (pr.Mission == ProbeMission.ScanArea)
                     DrawRing(new Vector2((float)pr.TargetX, (float)pr.TargetY), pr.Type.ScanRadius, new Color(0.6f, 0.9f, 1f, 0.6f));
                 int left = pr.ResolveTurn - g.Turn + 1;

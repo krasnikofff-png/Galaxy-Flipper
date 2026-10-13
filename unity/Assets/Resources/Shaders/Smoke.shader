@@ -14,6 +14,8 @@ Shader "PlanetTrader/Smoke"
         _Size1 ("Размер в конце", Float) = 0.5
         _Wind ("Ветер (x, z)", Vector) = (0.4, 0, 0.1, 0)
         _Fire ("Огонь (0 — дым)", Range(0, 1)) = 0
+        _FireA ("Огонь у основания", Color) = (1, 0.92, 0.55, 1)
+        _FireB ("Огонь на конце", Color) = (1, 0.35, 0.08, 1)
         [Enum(UnityEngine.Rendering.BlendMode)] _DstBlend ("Смешивание", Float) = 10
     }
     SubShader
@@ -32,7 +34,7 @@ Shader "PlanetTrader/Smoke"
             #include "Lighting.cginc"
 
             sampler2D _MainTex;
-            float4 _Color, _Wind;
+            float4 _Color, _Wind, _FireA, _FireB;
             float _T, _Life, _Rise, _Size0, _Size1, _Fire;
 
             struct appdata
@@ -72,7 +74,7 @@ Shader "PlanetTrader/Smoke"
                 float3 up = normalize(mul((float3x3)unity_ObjectToWorld, float3(0, 1, 0)));
                 float day = saturate(dot(up, normalize(_WorldSpaceLightPos0.xyz)) * 2.5 + 0.35);
                 float3 smoke = _Color.rgb * (0.2 + 0.8 * day) * _LightColor0.rgb;
-                float3 fire = lerp(float3(1, 0.92, 0.55), float3(1, 0.35, 0.08), saturate(age * 1.4)) * 1.6;
+                float3 fire = lerp(_FireA.rgb, _FireB.rgb, saturate(age * 1.4)) * 1.6;
                 o.color = float4(lerp(smoke, fire, _Fire), alpha);
                 return o;
             }
