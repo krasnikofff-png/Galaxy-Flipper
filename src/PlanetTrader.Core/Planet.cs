@@ -48,6 +48,9 @@ namespace PlanetTrader.Core
         public bool IsDepleted => Reserve <= 1e-9;
         public bool IsProducing => Mine == MineState.Working && AccidentTurnsLeft == 0 && !IsDepleted;
 
+        /// <summary>Содержание без множителя за число планет. Выработанная планета обходится дешевле.</summary>
+        public double BaseUpkeep(Balance b) => IsDepleted ? Type.Upkeep * b.DepletedUpkeepShare : Type.Upkeep;
+
         /// <summary>Сколько ходов ещё можно добывать.</summary>
         public double RemainingTurns => Reserve / Type.OutputPerTurn;
 
@@ -57,6 +60,8 @@ namespace PlanetTrader.Core
             double price = Type.Price * InitialReserve / Type.AverageReserve;
             // Частично выработанную планету реестр продаёт пропорционально остатку.
             price *= Reserve / InitialReserve;
+            // Готовая шахта продаётся вместе с планетой.
+            if (Mine != MineState.None) price += Type.MineCost;
             if (!FoundByProbe) price *= 1 + b.AuctionMarkup;
             return Math.Round(price);
         }

@@ -34,6 +34,7 @@ namespace PlanetTrader.Sim
             ulong seed = 1;
             string outDir = "docs/sim";
             bool brakes = false;
+            string trace = null;
             var overrides = new List<string>();
 
             for (int i = 0; i < args.Length; i++)
@@ -46,6 +47,7 @@ namespace PlanetTrader.Sim
                     case "--out": outDir = args[++i]; break;
                     case "--set": overrides.Add(args[++i]); break;
                     case "--brakes": brakes = true; break;
+                    case "--trace": trace = args[++i]; break;
                     default:
                         Console.Error.WriteLine("Использование: sim [--runs 60] [--turns 120] [--seed 1] [--out docs/sim] [--set Param=value]... [--brakes]");
                         return 1;
@@ -53,8 +55,15 @@ namespace PlanetTrader.Sim
             }
 
             turns = Math.Max(turns, Checkpoints.Max());
-            Directory.CreateDirectory(outDir);
             var balance = MakeBalance(overrides);
+
+            if (trace != null)
+            {
+                Trace(balance, Strategy.All.First(s => s.Name == trace), turns, seed);
+                return 0;
+            }
+
+            Directory.CreateDirectory(outDir);
 
             var results = Strategy.All.ToDictionary(s => s, s => RunMany(balance, s, runs, turns, seed));
             var report = new StringBuilder();
@@ -86,8 +95,8 @@ namespace PlanetTrader.Sim
             if (parts.Length != 2) throw new ArgumentException("Ожидается Param=value: " + assignment);
             var f = typeof(Balance).GetField(parts[0], BindingFlags.Public | BindingFlags.Instance)
                     ?? throw new ArgumentException("Нет параметра " + parts[0]);
-            object value = f.FieldType == typeof(int)
-                ? int.Parse(parts[1], Inv)
+            object value = f.FieldType == typeof(int) ? int.Parse(parts[1], Inv)
+                : f.FieldType == typeof(bool) ? bool.Parse(parts[1])
                 : (object)double.Parse(parts[1], Inv);
             f.SetValue(b, value);
         }
@@ -97,6 +106,22 @@ namespace PlanetTrader.Sim
             var list = new List<RunResult>();
             for (int i = 0; i < runs; i++) list.Add(RunOne(b, s, turns, seed + (ulong)i * 7919));
             return list;
+        }
+
+        /// <summary>--trace "Активный": одна партия, состояние каждые 5 ходов.</summary>
+        static void Trace(Balance b, Strategy s, int turns, ulong seed)
+        {
+            var g = Game.New(b, seed);
+            var bot = new Bot(s);
+            Console.WriteLine("ход | капитал | деньги | долг | планет (выраб.) | стоим. планет | склад | расходы/ход | менеджеры");
+            for (int t = 1; t <= turns; t++)
+            {
+                bot.PlayTurn(g);
+                g.EndTurn();
+                if (t % 5 != 0) continue;
+                int depleted = g.PlayerPlanets.Count(p => p.IsDepleted);
+                Console.WriteLine($"{t} | {N(g.Capital)} | {N(g.Money)} | {N(g.Debt)} | {g.PlayerPlanetCount} ({depleted}) | {N(g.PlanetsValue)} | {N(g.StockValue)} | {N(g.CostsPerTurn)} | {g.Managers}");
+            }
         }
 
         static RunResult RunOne(Balance b, Strategy s, int turns, ulong seed)
@@ -207,7 +232,8 @@ namespace PlanetTrader.Sim
             sb.AppendLine($"| Капитал к 30-му ходу | ×3–4 от старта | ×{F(growth30)} | {Check(growth30 >= 3 && growth30 <= 4)} |");
             sb.AppendLine($"| Активная обгоняет пассивную к 90 | на 20%+ | ×{F(lead90, "0.00")} | {Check(lead90 >= 1.2)} |");
             sb.AppendLine($"| Активная обгоняет пассивную к 120 | в 1,5–2 раза | ×{F(lead120, "0.00")} | {Check(lead120 >= 1.5 && lead120 <= 2)} |");
-            sb.AppendLine($"| Рост замедляется после 60-го хода | прирост 90→120 < 30→60 | {N(g30to60)} → {N(g60to90)} → {N(g90to120)} | {Check(g90to120 < g30to60)} |");
+            sb.AppendLine($"| Рост замедляется после 60-го хода | прирост 90→120 < 60→90 | {N(g30to60)} → {N(g60to90)} → {N(g90to120)} | {Check(g90to120 < g60to90)} |");
+            sb.AppendLine($"| то же, строже | прирост 90→120 < 30→60 | | {Check(g90to120 < g30to60)} |");
             sb.AppendLine($"| Кредит — осознанный риск («Активный + кредит») | есть и выигрыши, и потери планет | обогнали активного: {F(creditWinShare * 100, "0")}%, коллекторы: {F(seizedShare * 100, "0")}% | {Check(creditWinShare > 0 && seizedShare > 0)} |");
             sb.AppendLine($"| Решения важны уже в первой сессии | разброс капитала t30 ≥30% | {F(spread30 * 100, "0")}% (p90/p10) | {Check(spread30 >= 0.3)} |");
             sb.AppendLine($"| Менеджеры нужны | упор в лимит действий к 40-му ходу | первый раз на ходу {F(firstLimit, "0")} | {Check(firstLimit <= 40)} |");

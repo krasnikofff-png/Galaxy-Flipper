@@ -30,20 +30,23 @@ namespace PlanetTrader.Core
     }
 
     /// <summary>
-    /// Все числа экономики. Значения по умолчанию взяты из таблицы
+    /// Все числа экономики. Исходные значения взяты из таблицы
     /// «Planet Trader — баланс экономики прототипа» (вкладки «Параметры», «Типы планет»,
-    /// «Кривая с полкой»). Параметры, которых в таблице нет, помечены «допущение».
+    /// «Кривая с полкой») и подогнаны симулятором под «План проверки» — см. docs/BALANCE.md.
+    /// Параметры, которых в таблице не было, помечены «допущение».
     /// </summary>
     public sealed class Balance
     {
         // --- Старт ---
-        public double StartMoney = 1500;
+        public double StartMoney = 1300;
         public double StartDebt = 1000;
+        /// <summary>Есть ли на стартовой планете готовая шахта (допущение).</summary>
+        public bool StartPlanetHasMine = true;
 
         // --- Кредит ---
         public double InterestPerTurn = 0.02;
         /// <summary>Сколько можно занять: доля рыночной стоимости планет.</summary>
-        public double CreditLimitShare = 0.60;
+        public double CreditLimitShare = 0.80;
 
         // --- Ход и менеджеры ---
         /// <summary>Действий за ход у самого игрока.</summary>
@@ -58,16 +61,20 @@ namespace PlanetTrader.Core
         public double UpkeepCurveK = 1.336;
         public double UpkeepCurveP = 5;
         public int UpkeepShelfStart = 8;
-        public int UpkeepShelfEnd = 16;
+        public int UpkeepShelfEnd = 13;
+        /// <summary>Содержание выработанной планеты как доля обычного.</summary>
+        public double DepletedUpkeepShare = 0.7;
+        /// <summary>Считаются ли выработанные планеты в множителе содержания.</summary>
+        public bool DepletedCountsInUpkeepCurve = false;
 
         // --- Сделки с планетами ---
         public double ResaleCommission = 0.10;
-        public double AuctionMarkup = 0.15;
+        public double AuctionMarkup = 0.25;
         /// <summary>Ставка дисконтирования при оценке планеты.</summary>
         public double DiscountRate = 0.10;
         /// <summary>Запас планеты случайный ±20% от среднего.</summary>
         public double ReserveSpread = 0.20;
-        public int MineBuildTurns = 2;
+        public int MineBuildTurns = 3;
 
         // --- Биржа ---
         /// <summary>Цена падает на SalesImpact × (продано / глубина рынка).</summary>
@@ -122,7 +129,7 @@ namespace PlanetTrader.Core
 
         /// <summary>
         /// Множитель содержания всех планет при числе планет L. Растёт до L1 (×1,5),
-        /// держится до L2, потом растёт снова: ×2,38 на 24, ×3,38 на 30.
+        /// держится до L2, потом растёт снова.
         /// </summary>
         public double UpkeepMultiplier(int planetCount)
         {

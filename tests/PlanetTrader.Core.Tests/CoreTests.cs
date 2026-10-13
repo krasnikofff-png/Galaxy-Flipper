@@ -14,7 +14,16 @@ public class BalanceTests
     [InlineData(30, 3.38)]
     public void UpkeepCurveMatchesSpreadsheet(int planets, double expected)
     {
-        Assert.Equal(expected, new Balance().UpkeepMultiplier(planets), 2);
+        // Форма кривой из вкладки «Кривая с полкой» (полка 8–16).
+        Assert.Equal(expected, new Balance { UpkeepShelfEnd = 16 }.UpkeepMultiplier(planets), 2);
+    }
+
+    [Fact]
+    public void ShelfEndsWhereBalanceSays()
+    {
+        var b = new Balance();
+        Assert.Equal(b.UpkeepMultiplier(b.UpkeepShelfStart), b.UpkeepMultiplier(b.UpkeepShelfEnd), 6);
+        Assert.True(b.UpkeepMultiplier(b.UpkeepShelfEnd + 1) > b.UpkeepMultiplier(b.UpkeepShelfEnd));
     }
 }
 
@@ -80,8 +89,9 @@ public class GameTests
     [Fact]
     public void StartStateMatchesBalance()
     {
-        var g = Game.New(new Balance(), 1);
-        Assert.Equal(1500, g.Money);
+        var b = new Balance();
+        var g = Game.New(b, 1);
+        Assert.Equal(b.StartMoney, g.Money);
         Assert.Equal(1000, g.Debt);
         Assert.Equal(1, g.PlayerPlanetCount);
         Assert.Equal(3, g.ActionsLeft);
@@ -142,8 +152,7 @@ public class GameTests
         Assert.True(g.BuildMine(p.Id).Ok);
 
         double reserve = p.Reserve;
-        g.EndTurn();
-        g.EndTurn();
+        for (int i = 0; i < b.MineBuildTurns; i++) g.EndTurn();
         Assert.Equal(reserve, p.Reserve);
         g.EndTurn();
         Assert.True(p.Reserve < reserve);
@@ -155,7 +164,7 @@ public class GameTests
         var b = new Balance();
         var auction = new Planet(1, b.PlanetTypes[0], b.PlanetTypes[0].AverageReserve);
         var probed = new Planet(2, b.PlanetTypes[0], b.PlanetTypes[0].AverageReserve) { FoundByProbe = true };
-        Assert.Equal(1600 * 1.15, auction.ListPrice(b), 0);
+        Assert.Equal(1600 * (1 + b.AuctionMarkup), auction.ListPrice(b), 0);
         Assert.Equal(1600, probed.ListPrice(b), 0);
     }
 
@@ -221,5 +230,27 @@ public class GameTests
             g.EndTurn();
         }
         Assert.Fail("Не дождались выполнимого заказа");
+    }
+}
+
+public class ListingTests
+{
+    [Fact]
+    public void PlanetWithMineIsListedWithMineCost()
+    {
+        var b = new Balance();
+        var type = b.PlanetTypes[0];
+        var bare = new Planet(1, type, type.AverageReserve) { FoundByProbe = true };
+        var mined = new Planet(2, type, type.AverageReserve) { FoundByProbe = true, Mine = MineState.Working };
+        Assert.Equal(bare.ListPrice(b) + type.MineCost, mined.ListPrice(b), 0);
+    }
+
+    [Fact]
+    public void DepletedPlanetIsCheaperToKeep()
+    {
+        var b = new Balance();
+        var type = b.PlanetTypes[0];
+        var p = new Planet(1, type, 0);
+        Assert.Equal(type.Upkeep * b.DepletedUpkeepShare, p.BaseUpkeep(b), 6);
     }
 }

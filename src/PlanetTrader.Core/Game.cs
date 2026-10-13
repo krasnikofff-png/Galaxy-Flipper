@@ -109,7 +109,7 @@ namespace PlanetTrader.Core
             var start = new Planet(g._nextPlanetId++, balance.TypeOf(Resource.Ice), balance.TypeOf(Resource.Ice).AverageReserve)
             {
                 Owner = Owner.Player,
-                Mine = MineState.Working,
+                Mine = balance.StartPlanetHasMine ? MineState.Working : MineState.None,
                 BoughtOnTurn = 0,
             };
             g._planets.Add(start);
@@ -144,7 +144,8 @@ namespace PlanetTrader.Core
         // ------------------------------------------------------------------
 
         public double PlanetsValue => PlayerPlanets.Sum(p => p.MarketValue(Balance));
-        public double StockValue => Resources.All.Sum(r => _stock[(int)r] * Market.Price(r));
+        /// <summary>Склад по выручке, если продать всё разом, — с учётом падения цены.</summary>
+        public double StockValue => Resources.All.Sum(r => Market.Quote(r, _stock[(int)r]));
 
         /// <summary>Капитал = деньги − долг + стоимость планет + стоимость склада.</summary>
         public double Capital => Money - Debt + PlanetsValue + StockValue;
@@ -152,14 +153,12 @@ namespace PlanetTrader.Core
         public double CreditLimit => Balance.CreditLimitShare * PlanetsValue;
         public double AvailableCredit => Math.Max(0, CreditLimit - Debt);
 
-        public double UpkeepPerTurn
-        {
-            get
-            {
-                var owned = PlayerPlanets.ToList();
-                return owned.Sum(p => p.Type.Upkeep) * Balance.UpkeepMultiplier(owned.Count);
-            }
-        }
+        /// <summary>Сколько планет учитывается в множителе содержания.</summary>
+        public int UpkeepCurvePlanets =>
+            PlayerPlanets.Count(p => Balance.DepletedCountsInUpkeepCurve || !p.IsDepleted);
+
+        public double UpkeepPerTurn =>
+            PlayerPlanets.Sum(p => p.BaseUpkeep(Balance)) * Balance.UpkeepMultiplier(UpkeepCurvePlanets);
 
         public double InsurancePerTurn => Insured ? Balance.InsuranceRate * PlanetsValue : 0;
 
@@ -331,9 +330,9 @@ namespace PlanetTrader.Core
             report.Salaries = Managers * Balance.ManagerSalary;
             report.Interest = Debt * Balance.InterestPerTurn;
             report.Insurance = InsurancePerTurn;
-            int count = PlayerPlanetCount;
+            double multiplier = Balance.UpkeepMultiplier(UpkeepCurvePlanets);
             foreach (var p in PlayerPlanets)
-                p.Earned -= p.Type.Upkeep * Balance.UpkeepMultiplier(count);
+                p.Earned -= p.BaseUpkeep(Balance) * multiplier;
             Money -= report.TotalCosts;
 
             if (Money < 0) CallCollectors(report);

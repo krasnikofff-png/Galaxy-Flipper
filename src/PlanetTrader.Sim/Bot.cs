@@ -32,6 +32,8 @@ namespace PlanetTrader.Sim
         const double CashBufferTurns = 3;
         /// <summary>Продаём на бирже, пока цена не упадёт ниже этой доли базовой.</summary>
         const double MinSellPriceShare = 0.85;
+        /// <summary>Если на складе больше двух глубин рынка, продаём и дешевле.</summary>
+        const double DumpPriceShare = 0.6;
 
         readonly Strategy _s;
         bool _ranOutOfActions;
@@ -80,7 +82,8 @@ namespace PlanetTrader.Sim
                 if (stock <= 0) continue;
 
                 // Сколько можно продать, не уронив цену ниже порога.
-                double floor = MinSellPriceShare * g.Balance.BasePrice(r);
+                double share = stock > 2 * g.Balance.Depth(r) ? DumpPriceShare : MinSellPriceShare;
+                double floor = share * g.Balance.BasePrice(r);
                 double price = g.Market.Price(r);
                 if (price <= floor) continue;
                 double maxDrop = 1 - floor / price;
@@ -114,8 +117,8 @@ namespace PlanetTrader.Sim
         static double PaybackRatio(Game g, Planet p)
         {
             var b = g.Balance;
-            int n = g.PlayerPlanetCount;
-            double baseUpkeep = g.PlayerPlanets.Sum(x => x.Type.Upkeep);
+            int n = g.UpkeepCurvePlanets;
+            double baseUpkeep = g.PlayerPlanets.Sum(x => x.BaseUpkeep(b));
             double extraUpkeep = (baseUpkeep + p.Type.Upkeep) * b.UpkeepMultiplier(n + 1) - baseUpkeep * b.UpkeepMultiplier(n);
             double net = p.Type.OutputPerTurn * b.BasePrice(p.Resource) - extraUpkeep;
             double cost = p.ListPrice(b) + (p.Mine == MineState.None ? p.Type.MineCost : 0);
@@ -124,52 +127,60 @@ namespace PlanetTrader.Sim
 
         void BuyPlanets(Game g)
         {
+            // Пока планеты не окупают расходы, не расширяемся.
+            if (IncomePerTurn(g) < g.CostsPerTurn) return;
+
             while (g.ActionsLeft > 0)
             {
-                var best = g.PlanetsForSale
-                    .Select(p => (planet: p, ratio: PaybackRatio(g, p)))
-                    .Where(x => x.ratio >= MinPaybackRatio)
-                    .OrderByDescending(x => x.ratio)
-                    .FirstOrDefault();
-
-                if (best.planet == null)
+                // Сколько можно потратить: деньги сверх запаса, а с кредитной стратегией — ещё и свободный кредит.
+                // Занимаем только в пределах полки содержания: дальше кредит не окупается.
+                bool borrow = _s.UsesCredit && g.UpkeepCurvePlanets < g.Balance.UpkeepShelfEnd;
+                double budget = g.Money - Buffer(g) + (borrow ? g.AvailableCredit : 0);
+                bool anyGood = false;
+                Planet pick = null;
+                double pickRatio = 0;
+                foreach (var p in g.PlanetsForSale)
                 {
-                    // В реестре нет ничего выгодного — ищем зондом.
-                    if (g.Money - g.Balance.ProbeCost >= Buffer(g) + 1500)
+                    double ratio = PaybackRatio(g, p);
+                    if (ratio < MinPaybackRatio) continue;
+                    anyGood = true;
+                    if (FullCost(g, p) <= budget && ratio > pickRatio)
+                    {
+                        pick = p;
+                        pickRatio = ratio;
+                    }
+                }
+
+                if (pick == null)
+                {
+                    // В реестре нет ничего выгодного — ищем зондом. Если выгодное есть, но не по карману, копим.
+                    if (!anyGood && g.Money - g.Balance.ProbeCost >= Buffer(g) + 1500)
                     {
                         g.LaunchProbe(out _);
-                        if (g.ActionsLeft == 0) _ranOutOfActions = true;
                         continue;
                     }
                     return;
                 }
 
-                var p = best.planet;
-                double need = p.ListPrice(g.Balance) + (p.Mine == MineState.None ? p.Type.MineCost : 0) + Buffer(g);
-                if (g.Money < need && _s.UsesCredit)
-                {
-                    // Под залог купленной планеты лимит вырастет, поэтому учитываем и её.
-                    double shortfall = need - g.Money;
-                    if (shortfall <= g.AvailableCredit) g.TakeLoan(shortfall);
-                }
-                if (g.Money < need) return;
+                double shortfall = FullCost(g, pick) + Buffer(g) - g.Money;
+                if (shortfall > 0) g.TakeLoan(Math.Min(shortfall, g.AvailableCredit));
 
-                g.BuyPlanet(p.Id);
-                if (g.ActionsLeft == 0)
-                {
-                    _ranOutOfActions = true;
-                    return;
-                }
-                if (p.Mine == MineState.None) g.BuildMine(p.Id);
+                g.BuyPlanet(pick.Id);
+                if (g.ActionsLeft == 0) break;
+                if (pick.Mine == MineState.None) g.BuildMine(pick.Id);
             }
             _ranOutOfActions = true;
         }
 
+        static double FullCost(Game g, Planet p) =>
+            p.ListPrice(g.Balance) + (p.Mine == MineState.None ? p.Type.MineCost : 0);
+
         void ManageDebt(Game g)
         {
             if (g.Debt <= 0) return;
-            // Без кредитной стратегии гасим долг всем лишним; с ней — только крупным излишком.
-            double keep = Buffer(g) + (_s.UsesCredit ? 4000 : 1500);
+            // Без кредитной стратегии держим запас на покупку планеты. Заёмщик гасит всё лишнее
+            // и при нужде займёт снова.
+            double keep = Buffer(g) + (_s.UsesCredit ? 0 : 4000);
             double spare = g.Money - keep;
             if (spare > 0) g.RepayLoan(Math.Min(spare, g.Debt));
         }
