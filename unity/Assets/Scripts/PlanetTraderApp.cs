@@ -14,7 +14,7 @@ namespace PlanetTrader.Client
     {
         // Интерфейс рисуется в виртуальных координатах и масштабируется под экран.
         const float RefWidth = 1600, RefHeight = 900;
-        const float SidePanelWidth = 560, Gap = 10, TopBarHeight = 52, LogHeight = 190;
+        const float SidePanelWidth = 560, Gap = 10, TopBarHeight = 52, EventBarHeight = 30, LogHeight = 190;
         const int MaxLogLines = 200;
 
         enum Tab { Planet, Market, Orders, Finance, Magnates }
@@ -133,11 +133,12 @@ namespace PlanetTrader.Client
             else
                 HandleKeys();
 
-            float bodyTop = TopBarHeight + Gap;
+            float bodyTop = TopBarHeight + EventBarHeight + Gap;
             float bodyHeight = height - bodyTop - LogHeight - 2 * Gap;
             float mapWidth = width - SidePanelWidth - 3 * Gap;
 
             DrawTopBar(new Rect(0, 0, width, TopBarHeight));
+            DrawEventBar(new Rect(0, TopBarHeight, width, EventBarHeight));
             DrawMap(new Rect(Gap, bodyTop, mapWidth, bodyHeight));
             DrawSidePanel(new Rect(2 * Gap + mapWidth, bodyTop, SidePanelWidth, bodyHeight));
             DrawLog(new Rect(Gap, height - LogHeight - Gap, width - 2 * Gap, LogHeight));
@@ -225,6 +226,40 @@ namespace PlanetTrader.Client
         // ------------------------------------------------------------------
         // Верхняя панель
         // ------------------------------------------------------------------
+
+        /// <summary>Полоса сезонного события: что идёт, сколько ещё и чем грозит; в затишье — когда ждать следующего.</summary>
+        void DrawEventBar(Rect r)
+        {
+            var g = _game;
+            var ev = g.CurrentEvent;
+            var old = GUI.color;
+            GUI.color = ev == null ? new Color(1, 1, 1, 0.06f) : new Color(0.95f, 0.75f, 0.3f, 0.25f);
+            GUI.DrawTexture(r, Texture2D.whiteTexture);
+            GUI.color = old;
+            string text = ev == null
+                ? $"<color=#8a93a6>Затишье. Следующее галактическое событие — не раньше хода {Mathf.Max(g.NextEventTurn, g.Turn + 1)}.</color>"
+                : $"<b>{ev.Event.Name}</b> (ещё {ev.EndTurn - g.Turn + 1} х.): {ev.Event.Description} <color=#ffd27a>{EventEffects(ev.Event)}</color>";
+            GUI.Label(new Rect(r.x + 14, r.y + 5, r.width - 28, r.height - 6), text, _small);
+        }
+
+        /// <summary>Коротко, что событие меняет.</summary>
+        static string EventEffects(GalacticEvent e)
+        {
+            var parts = new List<string>();
+            foreach (var r in ResourceTypes.All)
+            {
+                if (e.Price(r) != 1) parts.Add($"{r.RuName()} на бирже ×{e.Price(r):0.##}");
+                if (e.PlanetSale(r) != 1) parts.Add($"планеты с ресурсом «{r.RuName()}» продаются ×{e.PlanetSale(r):0.##}");
+            }
+            if (e.UpkeepFactor != 1)
+                parts.Add($"содержание ×{e.UpkeepFactor:0.##}" + (e.UpkeepFactorFromPlanets > 0 ? $" у корпораций от {e.UpkeepFactorFromPlanets} планет" : ""));
+            if (e.AccidentFactor != 1) parts.Add($"аварии ×{e.AccidentFactor:0.##}");
+            if (e.MeteorFactor != 1) parts.Add($"метеориты ×{e.MeteorFactor:0.##}");
+            if (e.EpidemicFactor != 1) parts.Add($"эпидемии ×{e.EpidemicFactor:0.##}");
+            if (e.OrderChanceFactor != 1) parts.Add($"заказов ×{e.OrderChanceFactor:0.##}");
+            if (e.ExtraLoyaltyDrain != 0) parts.Add($"лояльность жителей −{e.ExtraLoyaltyDrain:0.##} за ход");
+            return string.Join(", ", parts);
+        }
 
         void DrawTopBar(Rect r)
         {
@@ -549,7 +584,7 @@ namespace PlanetTrader.Client
                     Line("Запас", $"≈ {Fmt.Amount(p.EstimatedReserve)} по оценке реестра (может врать)");
                 double known = g.KnownReserve(p) ?? 0;
                 Line("Добыча", $"{Fmt.Amount(p.Type.OutputPerTurn)} за ход, хватит на {(exact ? "" : "≈ ")}{Fmt.Amount(known / p.Type.OutputPerTurn)} х.");
-                Line("Шахта", Fmt.MineName(p));
+                Line("Шахта", Fmt.MineName(p) + (p.EpidemicTurnsLeft > 0 ? $", эпидемия ещё {p.EpidemicTurnsLeft} х.: добыча вполовину" : ""));
                 if (p.Owner == Owner.Player)
                     Line("Содержание", $"{Fmt.Money(g.PlanetUpkeep(p))} за ход ({Fmt.Multiplier(g.UpkeepMultiplierNow)} за число планет)");
                 else
@@ -606,6 +641,9 @@ namespace PlanetTrader.Client
                     if (p.Inhabited) DrawPeople(p);
                     DrawGuards(p);
                     double sale = g.SalePrice(p);
+                    double hype = g.CurrentEvent?.Event.PlanetSale(p.Resource) ?? 1;
+                    if (hype != 1)
+                        GUILayout.Label($"<color=#ffd27a>Событие «{g.CurrentEvent.Event.Name}»: такие планеты сейчас продаются ×{hype:0.##}.</color>", _text);
                     if (ActionButton($"Продать за {Fmt.Money(sale)} (комиссия {Fmt.Percent(b.ResaleCommission)}) · 1 действие", g.ActionsLeft > 0))
                         Act(() => g.SellPlanet(p.Id), $"Продана планета {p.Type.Name} #{p.Id} за {Fmt.Money(sale)}.");
                     break;
@@ -994,7 +1032,7 @@ namespace PlanetTrader.Client
             GUILayout.Label("Страховка", _header);
             double insurance = b.InsuranceRate * g.PlanetsValue;
             bool insured = GUILayout.Toggle(g.Insured,
-                $" Страховать планеты: {Fmt.Money(insurance)} за ход ({Fmt.Percent(b.InsuranceRate)} стоимости). Возмещает добычу во время аварий.", _text);
+                $" Страховать планеты: {Fmt.Money(insurance)} за ход ({Fmt.Percent(b.InsuranceRate)} стоимости). Возмещает добычу при авариях и эпидемиях и шахту, разбитую метеоритом. Бунты не покрывает.", _text);
             if (insured != g.Insured)
                 Later(() =>
                 {

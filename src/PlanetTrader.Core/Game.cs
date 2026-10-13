@@ -64,6 +64,10 @@ namespace PlanetTrader.Core
         readonly Rng _mapRng;
         /// <summary>Отдельный генератор для оценок реестра и сюрпризов.</summary>
         readonly Rng _surveyRng;
+        /// <summary>Отдельный генератор для сезонных событий.</summary>
+        readonly Rng _eventRng;
+        int _nextEventTurn;
+        GalacticEvent _lastEvent;
         readonly List<Planet> _planets = new List<Planet>();
         readonly List<Order> _orders = new List<Order>();
         readonly List<Probe> _probes = new List<Probe>();
@@ -92,6 +96,10 @@ namespace PlanetTrader.Core
         public bool Insured { get; private set; }
         /// <summary>Репутация 0–100: грязные дела её портят, выполненные заказы чинят.</summary>
         public double Reputation { get; private set; }
+        /// <summary>Сезонное событие, которое идёт сейчас; null — затишье.</summary>
+        public ActiveEvent CurrentEvent { get; private set; }
+        /// <summary>С какого хода может начаться следующее событие.</summary>
+        public int NextEventTurn => _nextEventTurn;
 
         // Статистика для симулятора и плейтестов.
         public int TotalSeizures { get; private set; }
@@ -132,6 +140,8 @@ namespace PlanetTrader.Core
             _rng = new Rng(seed);
             _mapRng = new Rng(seed ^ 0x5EC7_0A11UL);
             _surveyRng = new Rng(seed ^ 0x50_17E5UL);
+            _eventRng = new Rng(seed ^ 0xE7E47UL);
+            _nextEventTurn = _eventRng.Range(balance.FirstEventMinTurn, balance.FirstEventMaxTurn + 1);
             Market = new Market(balance);
             _magnates = balance.Magnates.Select(m => m.Clone()).ToList();
             Reputation = balance.StartReputation;
@@ -299,10 +309,16 @@ namespace PlanetTrader.Core
         public double UpkeepMultiplierNow => Balance.UpkeepMultiplier(UpkeepCurvePlanets);
 
         /// <summary>Сколько планета игрока стоит в содержании прямо сейчас, с множителем.</summary>
-        public double PlanetUpkeep(Planet p) => p.BaseUpkeep(Balance) * UpkeepMultiplierNow;
+        public double PlanetUpkeep(Planet p) => p.BaseUpkeep(Balance) * UpkeepMultiplierNow * EventUpkeepFactor;
 
         public double UpkeepPerTurn =>
-            PlayerPlanets.Sum(p => p.BaseUpkeep(Balance)) * Balance.UpkeepMultiplier(UpkeepCurvePlanets);
+            PlayerPlanets.Sum(p => p.BaseUpkeep(Balance)) * Balance.UpkeepMultiplier(UpkeepCurvePlanets) * EventUpkeepFactor;
+
+        GalacticEvent Ev => CurrentEvent?.Event;
+
+        /// <summary>Множитель содержания от события: амнистия — у всех, лицензионный сбор — только у крупных.</summary>
+        public double EventUpkeepFactor =>
+            Ev == null || PlayerPlanetCount < Ev.UpkeepFactorFromPlanets ? 1 : Ev.UpkeepFactor;
 
         public double InsurancePerTurn => Insured ? Balance.InsuranceRate * PlanetsValue : 0;
 
@@ -508,6 +524,7 @@ namespace PlanetTrader.Core
             if (p.Mine == MineState.Working && !p.IsDepleted && !p.OnStrike) delta -= b.LoyaltyMiningDrain;
             if (p.HasSchool) delta += b.SchoolLoyalty;
             if (p.PaysWages) delta += b.WagesLoyalty;
+            if (Ev != null) delta -= Ev.ExtraLoyaltyDrain;
             return delta;
         }
 
@@ -541,6 +558,14 @@ namespace PlanetTrader.Core
                 {
                     p.OnStrike = false;
                     report.Events.Add($"Забастовка на {p.Type.Name} #{p.Id} закончилась.");
+                }
+
+                // Бунт: доведённые до отчаяния жители громят шахту. Страховка не платит.
+                if (p.OnStrike && p.Loyalty < b.RiotBelowLoyalty && p.Mine != MineState.None && _rng.Chance(b.RiotChance))
+                {
+                    p.Mine = MineState.None;
+                    p.BuildTurnsLeft = 0;
+                    report.Events.Add($"Бунт на {p.Type.Name} #{p.Id}: жители разнесли шахту. Страховка бунты не покрывает.");
                 }
             }
 
@@ -605,7 +630,9 @@ namespace PlanetTrader.Core
             return ActionResult.Success;
         }
 
-        public double SalePrice(Planet p) => p.MarketValue(Balance) * (1 - Balance.ResaleCommission);
+        /// <summary>Сколько дадут за планету: рыночная стоимость, множитель события, минус комиссия.</summary>
+        public double SalePrice(Planet p) =>
+            p.MarketValue(Balance) * (Ev?.PlanetSale(p.Resource) ?? 1) * (1 - Balance.ResaleCommission);
 
         void ReleaseToRegistry(Planet p)
         {
@@ -1020,6 +1047,7 @@ namespace PlanetTrader.Core
             if (Reputation < 50) ChangeReputation(Math.Min(Balance.ReputationRecovery, 50 - Reputation));
             else if (Reputation > 50) ChangeReputation(-Math.Min(Balance.ReputationRecovery, Reputation - 50));
             Market.Tick(_rng);
+            UpdateEvent(report);
 
             Turn++;
             ActionsLeft = ActionsPerTurn;
@@ -1037,7 +1065,31 @@ namespace PlanetTrader.Core
                 }
                 if (p.Mine != MineState.Working || p.IsDepleted || p.OnStrike) continue;
 
-                if (p.AccidentTurnsLeft == 0 && _rng.Chance(Balance.AccidentChance))
+                // Метеорит разбивает шахту; страховка возмещает её стоимость.
+                if (_rng.Chance(Balance.MeteorChance * (Ev?.MeteorFactor ?? 1)))
+                {
+                    p.Mine = MineState.None;
+                    p.AccidentTurnsLeft = 0;
+                    string line = $"Метеорит разбил шахту на {p.Type.Name} #{p.Id}";
+                    if (Insured)
+                    {
+                        Money += p.Type.MineCost;
+                        report.InsurancePayout += p.Type.MineCost;
+                        line += $", страховка выплатила {Math.Round(p.Type.MineCost)}";
+                    }
+                    report.Events.Add(line + ".");
+                    continue;
+                }
+
+                // Эпидемия на обитаемой планете: добыча вполовину, жители недовольны.
+                if (p.Inhabited && p.EpidemicTurnsLeft == 0 && _rng.Chance(Balance.EpidemicChance * (Ev?.EpidemicFactor ?? 1)))
+                {
+                    p.EpidemicTurnsLeft = Balance.EpidemicTurns;
+                    p.Loyalty = Clamp(p.Loyalty + Balance.EpidemicLoyalty);
+                    report.Events.Add($"Эпидемия на {p.Type.Name} #{p.Id}: {Balance.EpidemicTurns} хода добыча вполовину, лояльность {Math.Round(p.Loyalty)}.");
+                }
+
+                if (p.AccidentTurnsLeft == 0 && _rng.Chance(Balance.AccidentChance * (Ev?.AccidentFactor ?? 1)))
                 {
                     p.AccidentTurnsLeft = Balance.AccidentTurns;
                     report.Accidents++;
@@ -1055,6 +1107,19 @@ namespace PlanetTrader.Core
                         report.InsurancePayout += payout;
                     }
                     continue;
+                }
+
+                if (p.EpidemicTurnsLeft > 0)
+                {
+                    p.EpidemicTurnsLeft--;
+                    double lost = amount * (1 - Balance.EpidemicOutputShare);
+                    amount -= lost;
+                    if (Insured)
+                    {
+                        double payout = lost * Market.Price(p.Resource);
+                        Money += payout;
+                        report.InsurancePayout += payout;
+                    }
                 }
 
                 p.Reserve -= amount;
@@ -1124,7 +1189,7 @@ namespace PlanetTrader.Core
             // Заказ снимается, когда груз уже не успеет даже при отправке в следующем ходу.
             _orders.RemoveAll(o => Turn + 1 + DeliveryTurns(o) > o.DeadlineTurn);
             // Репутация: при 0 заказов вдвое меньше, при 100 — в полтора раза больше.
-            if (!_rng.Chance(Balance.OrderChancePerTurn * (0.5 + Reputation / 100))) return;
+            if (!_rng.Chance(Balance.OrderChancePerTurn * (0.5 + Reputation / 100) * (Ev?.OrderChanceFactor ?? 1))) return;
 
             var r = ResourceTypes.All[_rng.Range(0, ResourceTypes.Count)];
             var type = Balance.TypeOf(r);
@@ -1167,6 +1232,27 @@ namespace PlanetTrader.Core
                 else
                     report.Events.Add($"Жители {p.Type.Name} #{p.Id} отказали {m.Name}: лояльность {Math.Round(p.Loyalty)}.");
             }
+        }
+
+        /// <summary>Конец хода: событие кончается или, после затишья, начинается новое — со следующего хода.</summary>
+        void UpdateEvent(TurnReport report)
+        {
+            if (CurrentEvent != null && CurrentEvent.EndTurn <= Turn)
+            {
+                report.Events.Add($"Событие «{CurrentEvent.Event.Name}» закончилось.");
+                Market.SetEvent(null);
+                CurrentEvent = null;
+                _nextEventTurn = Turn + 1 + _eventRng.Range(Balance.EventGapMin, Balance.EventGapMax + 1);
+            }
+            if (CurrentEvent != null || Balance.Events.Length == 0 || Turn + 1 < _nextEventTurn) return;
+
+            GalacticEvent ev;
+            do ev = Balance.Events[_eventRng.Range(0, Balance.Events.Length)];
+            while (ev == _lastEvent && Balance.Events.Length > 1);
+            _lastEvent = ev;
+            CurrentEvent = new ActiveEvent { Event = ev, StartTurn = Turn + 1, EndTurn = Turn + ev.Duration };
+            Market.SetEvent(ev.PriceFactor);
+            report.Events.Add($"Событие «{ev.Name}» на {ev.Duration} ходов: {ev.Description}");
         }
 
         /// <summary>Магнаты покупают планеты, иногда перепродают свои и пакостят игроку.</summary>

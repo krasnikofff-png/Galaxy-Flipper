@@ -156,7 +156,9 @@ namespace PlanetTrader.Sim
             foreach (var p in g.PlayerPlanets.ToList())
             {
                 if (g.ActionsLeft == 0) { _ranOutOfActions = true; return; }
-                if (p.Mine == MineState.Working && p.RemainingTurns < 2)
+                // Продаём выработанные и — на пике ажиотажа — те, что событие сделало дорогими.
+                double hype = g.CurrentEvent?.Event.PlanetSale(p.Resource) ?? 1;
+                if ((p.Mine == MineState.Working && p.RemainingTurns < 2) || (hype >= 1.3 && !p.IsDepleted))
                     g.SellPlanet(p.Id);
             }
         }

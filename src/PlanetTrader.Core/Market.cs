@@ -7,6 +7,8 @@ namespace PlanetTrader.Core
     {
         readonly Balance _b;
         readonly double[] _price = new double[ResourceTypes.Count];
+        /// <summary>Множитель события: к какой цене тянется рынок, пока событие идёт.</summary>
+        readonly double[] _eventFactor = { 1, 1, 1, 1, 1, 1 };
 
         public Market(Balance balance)
         {
@@ -15,6 +17,21 @@ namespace PlanetTrader.Core
         }
 
         public double Price(Resource r) => _price[(int)r];
+
+        /// <summary>К какой цене возвращается рынок: базовая, а во время события — с его множителем.</summary>
+        public double TargetPrice(Resource r) => _b.BasePrice(r) * _eventFactor[(int)r];
+
+        /// <summary>Событие началось (factors) или кончилось (null). Цена сразу прыгает, а после события плавно возвращается.</summary>
+        public void SetEvent(double[] factors)
+        {
+            foreach (var r in ResourceTypes.All)
+            {
+                int i = (int)r;
+                double f = factors?[i] ?? 1;
+                if (factors != null && f != 1) Shock(r, f);
+                _eventFactor[i] = f;
+            }
+        }
 
         /// <summary>Во сколько раз упадёт цена, если продать amount.</summary>
         double DropFactor(Resource r, double amount) =>
@@ -53,7 +70,7 @@ namespace PlanetTrader.Core
             {
                 int i = (int)r;
                 double baseP = _b.BasePrice(r);
-                double p = _price[i] + _b.PriceRecovery * (baseP - _price[i]);
+                double p = _price[i] + _b.PriceRecovery * (TargetPrice(r) - _price[i]);
                 p *= 1 + rng.Range(-_b.MarketNoise, _b.MarketNoise);
                 _price[i] = Math.Max(_b.MinPriceShare * baseP, p);
             }

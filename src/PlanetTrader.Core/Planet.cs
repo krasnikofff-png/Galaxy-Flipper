@@ -59,6 +59,8 @@ namespace PlanetTrader.Core
         public int MagnateId = -1;
         /// <summary>Охрана против подкупа жителей.</summary>
         public bool Guarded;
+        /// <summary>Сколько ещё ходов идёт эпидемия: добыча вполовину.</summary>
+        public int EpidemicTurnsLeft;
 
         public Planet(int id, PlanetType type, double reserve)
         {

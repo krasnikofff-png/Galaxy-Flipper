@@ -209,6 +209,49 @@ namespace PlanetTrader.Core
         public double FineAmount = 800;
         public double FineReputation = -10;
 
+        // --- Сезонные события и риски (этап 7, всё — допущения) ---
+        public int FirstEventMinTurn = 6, FirstEventMaxTurn = 10;
+        /// <summary>Затишье между событиями, ходов.</summary>
+        public int EventGapMin = 5, EventGapMax = 10;
+        public GalacticEvent[] Events =
+        {
+            new GalacticEvent("Ледниковая мода", "На столичных планетах в моде коктейли со льдом из хвоста кометы.", 5)
+                { PriceFactor = GalacticEvent.Only((Resource.Ice, 1.6)), PlanetSaleFactor = GalacticEvent.Only((Resource.Ice, 1.5)) },
+            new GalacticEvent("Газовая лихорадка", "Инвесторы уверены, что газ — это новый газ.", 5)
+                { PriceFactor = GalacticEvent.Only((Resource.Gas, 1.3)), PlanetSaleFactor = GalacticEvent.Only((Resource.Gas, 1.6)) },
+            new GalacticEvent("Биржевая паника", "Кто-то чихнул в зале торгов. Все продают всё.", 4)
+                { PriceFactor = GalacticEvent.All(0.7) },
+            new GalacticEvent("Метеоритный сезон", "Астрономы обещают красивое зрелище. Страховщики нервничают.", 4)
+                { AccidentFactor = 2.5, MeteorFactor = 5 },
+            new GalacticEvent("Налоговая амнистия", "Реестр празднует юбилей и прощает всем всё. Почти.", 4)
+                { UpkeepFactor = 0.6 },
+            new GalacticEvent("Лицензионный сбор", "Реестр решил, что крупным корпорациям живётся слишком весело.", 6)
+                { UpkeepFactor = 1.6, UpkeepFactorFromPlanets = 10 },
+            new GalacticEvent("Кристальная лихорадка", "Кристаллы признаны лучшим подарком к любому празднику, включая похороны.", 5)
+                { PriceFactor = GalacticEvent.Only((Resource.Crystals, 1.5), (Resource.Quantium, 1.5)),
+                  PlanetSaleFactor = GalacticEvent.Only((Resource.Crystals, 1.5), (Resource.Quantium, 1.5)) },
+            new GalacticEvent("Профсоюзная весна", "Жители всех планет одновременно прочитали одну и ту же брошюру.", 5)
+                { ExtraLoyaltyDrain = 2 },
+            new GalacticEvent("Ярмарка заказов", "Вся галактика затеяла ремонт.", 5)
+                { OrderChanceFactor = 2.5 },
+            new GalacticEvent("Космический насморк", "Чихают все, даже роботы. Особенно роботы.", 4)
+                { EpidemicFactor = 6 },
+            new GalacticEvent("Биомассовый бум", "Диетологи галактики открыли, что биомасса полезна. Опять.", 5)
+                { PriceFactor = GalacticEvent.Only((Resource.Biomass, 1.6)), PlanetSaleFactor = GalacticEvent.Only((Resource.Biomass, 1.4)) },
+            new GalacticEvent("Металлический голод", "Все строят всё, и всем не хватает гвоздей.", 5)
+                { PriceFactor = GalacticEvent.Only((Resource.Metal, 1.5)), PlanetSaleFactor = GalacticEvent.Only((Resource.Metal, 1.4)) },
+        };
+        /// <summary>Метеорит разбивает шахту: шанс за ход на планету с шахтой. Страховка платит за шахту.</summary>
+        public double MeteorChance = 0.01;
+        /// <summary>Эпидемия на обитаемой планете: шанс за ход, длительность, лояльность, доля добычи.</summary>
+        public double EpidemicChance = 0.015;
+        public int EpidemicTurns = 4;
+        public double EpidemicLoyalty = -10;
+        public double EpidemicOutputShare = 0.5;
+        /// <summary>Бунт: бастующие жители с лояльностью ниже этой громят шахту. Страховка не платит.</summary>
+        public double RiotBelowLoyalty = 15;
+        public double RiotChance = 0.2;
+
         // --- Карта и доставка (допущения) ---
         /// <summary>Где на карте галактическая биржа.</summary>
         public double ExchangeX = 0.5, ExchangeY = 0.5;
@@ -217,14 +260,15 @@ namespace PlanetTrader.Core
         /// <summary>Стоимость доставки: доля базовой цены груза за единицу расстояния (вся карта — 1).</summary>
         public double ShippingCostPerDistance = 0.08;
 
+        /// <summary>Средний запас — втрое больше, чем в таблице: планеты живут 60–100 ходов, а не 20–34.</summary>
         public PlanetType[] PlanetTypes =
         {
-            new PlanetType("Ледяной карлик", Resource.Ice, 1600, 40, 600, 28, 840, 6),
-            new PlanetType("Скалистая", Resource.Metal, 1800, 45, 700, 23, 644, 6),
-            new PlanetType("Газовый гигант", Resource.Gas, 2400, 60, 900, 33, 1122, 5),
-            new PlanetType("Джунгли", Resource.Biomass, 2200, 55, 800, 15, 390, 5),
-            new PlanetType("Кристальная", Resource.Crystals, 2600, 60, 1000, 13, 312, 4),
-            new PlanetType("Аномалия", Resource.Quantium, 4200, 90, 1600, 8, 160, 2),
+            new PlanetType("Ледяной карлик", Resource.Ice, 1600, 40, 600, 28, 2520, 6),
+            new PlanetType("Скалистая", Resource.Metal, 1800, 45, 700, 23, 1932, 6),
+            new PlanetType("Газовый гигант", Resource.Gas, 2400, 60, 900, 33, 3366, 5),
+            new PlanetType("Джунгли", Resource.Biomass, 2200, 55, 800, 15, 1170, 5),
+            new PlanetType("Кристальная", Resource.Crystals, 2600, 60, 1000, 13, 936, 4),
+            new PlanetType("Аномалия", Resource.Quantium, 4200, 90, 1600, 8, 480, 2),
         };
 
         /// <summary>Базовые цены ресурсов, в порядке enum Resource.</summary>

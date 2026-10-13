@@ -71,6 +71,9 @@ public class GameTests
         AiResaleChance = 0,
         OrderChancePerTurn = 0,
         MarketNoise = 0,
+        Events = new GalacticEvent[0],
+        MeteorChance = 0,
+        EpidemicChance = 0,
         DiscoveryChancePerTurn = 0,
         // Доставка мгновенная и бесплатная, чтобы проверять экономику отдельно от карты.
         ShipSpeed = 100,
@@ -114,7 +117,7 @@ public class GameTests
         var report = g.EndTurn();
 
         Assert.Equal(28, g.Stock(Resource.Ice));
-        Assert.Equal(840 - 28, start.Reserve);
+        Assert.Equal(g.Balance.TypeOf(Resource.Ice).AverageReserve - 28, start.Reserve);
         Assert.Equal(40, report.Upkeep);
         Assert.Equal(1000 * 0.02, report.Interest);
         Assert.Equal(money - 60, g.Money, 6);
@@ -323,6 +326,9 @@ public class ExplorationTests
         OrderChancePerTurn = 0,
         DiscoveryChancePerTurn = 0,
         MarketNoise = 0,
+        Events = new GalacticEvent[0],
+        MeteorChance = 0,
+        EpidemicChance = 0,
         StartMoney = 100_000,
     };
 
@@ -485,6 +491,9 @@ public class PeopleTests
         OrderChancePerTurn = 0,
         DiscoveryChancePerTurn = 0,
         MarketNoise = 0,
+        Events = new GalacticEvent[0],
+        MeteorChance = 0,
+        EpidemicChance = 0,
         StartMoney = 100_000,
         RequestChancePerPlanet = 0,
         ShipSpeed = 100,
@@ -655,6 +664,9 @@ public class MagnateTests
         OrderChancePerTurn = 0,
         DiscoveryChancePerTurn = 0,
         MarketNoise = 0,
+        Events = new GalacticEvent[0],
+        MeteorChance = 0,
+        EpidemicChance = 0,
         StartMoney = 100_000,
         RequestChancePerPlanet = 0,
         ShipSpeed = 100,
@@ -799,5 +811,103 @@ public class MagnateTests
         Assert.True(g.SpreadRumor(g.Magnates[0].Id).Ok);
         Assert.Equal(b.StartReputation + b.PlayerRumorReputation, g.Reputation, 6);
         Assert.True(g.OfferChance(p, new Offer(1.0)) < chance);
+    }
+}
+
+public class EventTests
+{
+    static Balance Quiet() => new Balance
+    {
+        AccidentChance = 0,
+        AiBuyChance = 0,
+        AiResaleChance = 0,
+        OrderChancePerTurn = 0,
+        DiscoveryChancePerTurn = 0,
+        MarketNoise = 0,
+        StartMoney = 100_000,
+        RequestChancePerPlanet = 0,
+        ShipSpeed = 100,
+        ShippingCostPerDistance = 0,
+        MeteorChance = 0,
+        EpidemicChance = 0,
+        FirstEventMinTurn = 2,
+        FirstEventMaxTurn = 2,
+    };
+
+    static Balance WithOnly(GalacticEvent ev)
+    {
+        var b = Quiet();
+        b.Events = new[] { ev };
+        foreach (var m in b.Magnates) m.TrickChance = 0;
+        return b;
+    }
+
+    [Fact]
+    public void EventStartsLastsAndEnds()
+    {
+        var ev = new GalacticEvent("Тест", "", 3) { PriceFactor = GalacticEvent.Only((Resource.Ice, 2.0)) };
+        var g = Game.New(WithOnly(ev), 1);
+        Assert.Null(g.CurrentEvent);
+        g.EndTurn();
+        Assert.NotNull(g.CurrentEvent);
+        Assert.Equal(2, g.CurrentEvent.StartTurn);
+        Assert.Equal(20, g.Market.Price(Resource.Ice), 6);
+        for (int i = 0; i < 3; i++) g.EndTurn();
+        Assert.Null(g.CurrentEvent);
+        // После события цена плавно возвращается к базовой.
+        Assert.True(g.Market.Price(Resource.Ice) > 10);
+    }
+
+    [Fact]
+    public void PlanetSalePeaksDuringHype()
+    {
+        var ev = new GalacticEvent("Ажиотаж", "", 3) { PlanetSaleFactor = GalacticEvent.Only((Resource.Ice, 1.5)) };
+        var g = Game.New(WithOnly(ev), 1);
+        var p = g.PlayerPlanets.Single();
+        double before = g.SalePrice(p);
+        g.EndTurn();
+        Assert.Equal(before * 1.5, g.SalePrice(p), 0);
+    }
+
+    [Fact]
+    public void LicenseFeeHitsOnlyBigCorporations()
+    {
+        var ev = new GalacticEvent("Сбор", "", 3) { UpkeepFactor = 2, UpkeepFactorFromPlanets = 2 };
+        var g = Game.New(WithOnly(ev), 1);
+        g.EndTurn();
+        Assert.Equal(1, g.EventUpkeepFactor);
+        var p = g.PlanetsForSale.First(x => !x.Inhabited);
+        p.FoundByProbe = true;
+        Assert.True(g.BuyPlanet(p.Id).Ok);
+        Assert.Equal(2, g.EventUpkeepFactor);
+    }
+
+    [Fact]
+    public void MeteorDestroysMineAndInsurancePays()
+    {
+        var b = Quiet();
+        b.Events = new GalacticEvent[0];
+        b.MeteorChance = 1;
+        var g = Game.New(b, 1);
+        var p = g.PlayerPlanets.Single();
+        g.SetInsurance(true);
+        var report = g.EndTurn();
+        Assert.Equal(MineState.None, p.Mine);
+        Assert.Equal(p.Type.MineCost, report.InsurancePayout, 6);
+    }
+
+    [Fact]
+    public void EpidemicHalvesOutput()
+    {
+        var b = Quiet();
+        b.Events = new GalacticEvent[0];
+        b.EpidemicChance = 1;
+        var g = Game.New(b, 1);
+        var p = g.PlayerPlanets.Single();
+        p.Inhabited = true;
+        double reserve = p.Reserve;
+        g.EndTurn();
+        Assert.Equal(reserve - p.Type.OutputPerTurn * b.EpidemicOutputShare, p.Reserve, 6);
+        Assert.Equal(b.EpidemicTurns - 1, p.EpidemicTurnsLeft);
     }
 }
