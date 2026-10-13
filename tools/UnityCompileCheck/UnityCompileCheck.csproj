@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Проверка, что скрипты Unity компилируются, без установленного Unity:
+    собирает unity/Assets/Scripts против справочных сборок UnityEngine из NuGet.
+    Запуск: dotnet build tools/UnityCompileCheck
+  -->
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <LangVersion>9.0</LangVersion>
+    <Nullable>disable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <UnityRefs>$(NuGetPackageRoot)unityengine.modules/2021.3.33/lib/net45/</UnityRefs>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageDownload Include="UnityEngine.Modules" Version="[2021.3.33]" />
+    <ProjectReference Include="..\..\src\PlanetTrader.Core\PlanetTrader.Core.csproj" />
+    <Compile Include="..\..\unity\Assets\Scripts\**\*.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="UnityEngine.CoreModule" HintPath="$(UnityRefs)UnityEngine.CoreModule.dll" Private="false" />
+    <Reference Include="UnityEngine.IMGUIModule" HintPath="$(UnityRefs)UnityEngine.IMGUIModule.dll" Private="false" />
+    <Reference Include="UnityEngine.TextRenderingModule" HintPath="$(UnityRefs)UnityEngine.TextRenderingModule.dll" Private="false" />
+    <Reference Include="UnityEngine.InputLegacyModule" HintPath="$(UnityRefs)UnityEngine.InputLegacyModule.dll" Private="false" />
+  </ItemGroup>
+
+</Project>

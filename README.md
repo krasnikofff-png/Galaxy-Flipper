@@ -10,14 +10,25 @@
   - `Planet.cs`, `Market.cs`, `Order.cs`, `Rng.cs`.
 - `src/PlanetTrader.Sim` — симулятор: боты трёх стилей («Пассивный», «Активный», «Активный + кредит») играют много партий и сверяются с целями из вкладки «План проверки».
 - `tests/PlanetTrader.Core.Tests` — тесты правил.
+- `unity/` — проект Unity с прототипом: карта сектора, окно планеты, биржа, заказы, финансы, журнал. Ядро подключено как локальный пакет (`unity/Packages/manifest.json` → `src/PlanetTrader.Core`).
+- `tools/UnityCompileCheck` — проверяет, что скрипты Unity компилируются, без установленного Unity.
 - `docs/BALANCE.md` — что поменялось в балансе и почему.
 
-## Запуск
+## Игра в Unity
+
+1. Unity Hub → Add → Add project from disk → папка `unity/`. Подойдёт Unity 2021.3 или новее, проверял на справочных сборках 2021.3, рассчитано на Unity 6.
+2. Открыть любую сцену (подойдёт пустая) и нажать Play. Сцена не нужна: `Bootstrap.cs` сам создаёт камеру и интерфейс.
+3. Клик по планете — её окно справа. Пробел или Enter — конец хода.
+
+Интерфейс сделан на IMGUI (`OnGUI`) как заглушка для прототипа. Настоящий интерфейс — на этапе 7.
+
+## Запуск ядра и симулятора
 
 Нужен .NET 8 SDK.
 
 ```bash
 dotnet test                                                    # тесты
+dotnet build tools/UnityCompileCheck                           # компилируются ли скрипты Unity
 dotnet run --project src/PlanetTrader.Sim -c Release           # отчёт в docs/sim/report.md, кривые в docs/sim/curves.csv
 dotnet run --project src/PlanetTrader.Sim -c Release -- --brakes          # + таблица «Тормоза»
 dotnet run --project src/PlanetTrader.Sim -c Release -- --set OrderChancePerTurn=0.3 --set InterestPerTurn=0.03

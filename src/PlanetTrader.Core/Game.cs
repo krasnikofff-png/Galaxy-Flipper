@@ -52,9 +52,11 @@ namespace PlanetTrader.Core
         public readonly Balance Balance;
         public readonly Market Market;
         readonly Rng _rng;
+        /// <summary>Отдельный генератор для карты, чтобы раскладка планет не меняла ход партии.</summary>
+        readonly Rng _mapRng;
         readonly List<Planet> _planets = new List<Planet>();
         readonly List<Order> _orders = new List<Order>();
-        readonly double[] _stock = new double[Resources.Count];
+        readonly double[] _stock = new double[ResourceTypes.Count];
         int _nextPlanetId;
         int _nextOrderId;
 
@@ -86,6 +88,7 @@ namespace PlanetTrader.Core
         {
             Balance = balance;
             _rng = new Rng(seed);
+            _mapRng = new Rng(seed ^ 0x5EC7_0A11UL);
             Market = new Market(balance);
         }
 
@@ -112,6 +115,7 @@ namespace PlanetTrader.Core
                 Mine = balance.StartPlanetHasMine ? MineState.Working : MineState.None,
                 BoughtOnTurn = 0,
             };
+            g.PlaceOnMap(start);
             g._planets.Add(start);
 
             g.ActionsLeft = g.ActionsPerTurn;
@@ -134,7 +138,35 @@ namespace PlanetTrader.Core
         {
             double spread = Balance.ReserveSpread;
             double reserve = Math.Round(type.AverageReserve * _rng.Range(1 - spread, 1 + spread));
-            return new Planet(_nextPlanetId++, type, reserve);
+            var p = new Planet(_nextPlanetId++, type, reserve);
+            PlaceOnMap(p);
+            return p;
+        }
+
+        /// <summary>Случайное место на карте, не слишком близко к другим планетам.</summary>
+        void PlaceOnMap(Planet p)
+        {
+            const double minDistance = 0.09;
+            double bestX = 0.5, bestY = 0.5, bestGap = -1;
+            for (int attempt = 0; attempt < 40; attempt++)
+            {
+                double x = _mapRng.Range(0.05, 0.95), y = _mapRng.Range(0.05, 0.95);
+                double gap = double.MaxValue;
+                foreach (var other in _planets)
+                {
+                    double dx = other.MapX - x, dy = other.MapY - y;
+                    gap = Math.Min(gap, Math.Sqrt(dx * dx + dy * dy));
+                }
+                if (gap > bestGap)
+                {
+                    bestX = x;
+                    bestY = y;
+                    bestGap = gap;
+                }
+                if (gap >= minDistance) break;
+            }
+            p.MapX = bestX;
+            p.MapY = bestY;
         }
 
         public Planet GetPlanet(int id) => _planets.FirstOrDefault(p => p.Id == id);
@@ -145,7 +177,7 @@ namespace PlanetTrader.Core
 
         public double PlanetsValue => PlayerPlanets.Sum(p => p.MarketValue(Balance));
         /// <summary>Склад по выручке, если продать всё разом, — с учётом падения цены.</summary>
-        public double StockValue => Resources.All.Sum(r => Market.Quote(r, _stock[(int)r]));
+        public double StockValue => ResourceTypes.All.Sum(r => Market.Quote(r, _stock[(int)r]));
 
         /// <summary>Капитал = деньги − долг + стоимость планет + стоимость склада.</summary>
         public double Capital => Money - Debt + PlanetsValue + StockValue;
@@ -156,6 +188,11 @@ namespace PlanetTrader.Core
         /// <summary>Сколько планет учитывается в множителе содержания.</summary>
         public int UpkeepCurvePlanets =>
             PlayerPlanets.Count(p => Balance.DepletedCountsInUpkeepCurve || !p.IsDepleted);
+
+        public double UpkeepMultiplierNow => Balance.UpkeepMultiplier(UpkeepCurvePlanets);
+
+        /// <summary>Сколько планета игрока стоит в содержании прямо сейчас, с множителем.</summary>
+        public double PlanetUpkeep(Planet p) => p.BaseUpkeep(Balance) * UpkeepMultiplierNow;
 
         public double UpkeepPerTurn =>
             PlayerPlanets.Sum(p => p.BaseUpkeep(Balance)) * Balance.UpkeepMultiplier(UpkeepCurvePlanets);
@@ -425,7 +462,7 @@ namespace PlanetTrader.Core
             _orders.RemoveAll(o => o.DeadlineTurn <= Turn);
             if (!_rng.Chance(Balance.OrderChancePerTurn)) return;
 
-            var r = Resources.All[_rng.Range(0, Resources.Count)];
+            var r = ResourceTypes.All[_rng.Range(0, ResourceTypes.Count)];
             var type = Balance.TypeOf(r);
             double amount = type.OutputPerTurn * _rng.Range(Balance.OrderMinTurnsOfOutput, Balance.OrderMaxTurnsOfOutput + 1);
             amount = Math.Max(1, Math.Round(amount / 5) * 5);

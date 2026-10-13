@@ -72,7 +72,7 @@ namespace PlanetTrader.Sim
 
         static void SellResources(Game g)
         {
-            foreach (var r in Resources.All)
+            foreach (var r in ResourceTypes.All)
             {
                 double stock = g.Stock(r);
                 // Придерживаем ресурс под открытый заказ, если сами его добываем.

@@ -482,3 +482,10 @@ $RECYCLE.BIN/
 
 # Vim temporary swap files
 *.swp
+
+# Сборка .NET
+.build/
+
+# Пакеты Unity — часть проекта, их нужно хранить
+!unity/Packages/
+!unity/Packages/manifest.json

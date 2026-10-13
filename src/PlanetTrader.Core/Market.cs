@@ -6,12 +6,12 @@ namespace PlanetTrader.Core
     public sealed class Market
     {
         readonly Balance _b;
-        readonly double[] _price = new double[Resources.Count];
+        readonly double[] _price = new double[ResourceTypes.Count];
 
         public Market(Balance balance)
         {
             _b = balance;
-            foreach (var r in Resources.All) _price[(int)r] = balance.BasePrice(r);
+            foreach (var r in ResourceTypes.All) _price[(int)r] = balance.BasePrice(r);
         }
 
         public double Price(Resource r) => _price[(int)r];
@@ -43,7 +43,7 @@ namespace PlanetTrader.Core
         /// <summary>Конец хода: цена возвращается к базовой и немного шумит.</summary>
         public void Tick(Rng rng)
         {
-            foreach (var r in Resources.All)
+            foreach (var r in ResourceTypes.All)
             {
                 int i = (int)r;
                 double baseP = _b.BasePrice(r);

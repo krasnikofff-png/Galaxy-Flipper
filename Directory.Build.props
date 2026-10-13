@@ -1,0 +1,8 @@
+<Project>
+  <!-- Служебные папки сборки — в корне репозитория, а не рядом с кодом:
+       src/PlanetTrader.Core подключается в Unity как пакет, и чужие .cs из obj/ там не нужны. -->
+  <PropertyGroup>
+    <BaseIntermediateOutputPath>$(MSBuildThisFileDirectory).build/obj/$(MSBuildProjectName)/</BaseIntermediateOutputPath>
+    <BaseOutputPath>$(MSBuildThisFileDirectory).build/bin/$(MSBuildProjectName)/</BaseOutputPath>
+  </PropertyGroup>
+</Project>

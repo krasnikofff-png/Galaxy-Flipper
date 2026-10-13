@@ -10,7 +10,7 @@ namespace PlanetTrader.Core
         Quantium,
     }
 
-    public static class Resources
+    public static class ResourceTypes
     {
         public const int Count = 6;
 

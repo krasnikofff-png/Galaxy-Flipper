@@ -279,3 +279,26 @@ public class DiscoveryTests
         Assert.Equal(before, g.AllPlanets.Count);
     }
 }
+
+public class MapTests
+{
+    [Fact]
+    public void PlanetsAreSpreadOverTheMap()
+    {
+        var g = Game.New(new Balance(), 4);
+        foreach (var p in g.AllPlanets)
+        {
+            Assert.InRange(p.MapX, 0.0, 1.0);
+            Assert.InRange(p.MapY, 0.0, 1.0);
+        }
+        var points = g.AllPlanets.ToList();
+        int tooClose = 0;
+        for (int i = 0; i < points.Count; i++)
+        for (int j = i + 1; j < points.Count; j++)
+        {
+            double dx = points[i].MapX - points[j].MapX, dy = points[i].MapY - points[j].MapY;
+            if (Math.Sqrt(dx * dx + dy * dy) < 0.05) tooClose++;
+        }
+        Assert.Equal(0, tooClose);
+    }
+}

@@ -1,0 +1,7 @@
+{
+  "name": "com.planettrader.core",
+  "version": "0.1.0",
+  "displayName": "Planet Trader Core",
+  "description": "Экономика Planet Trader на чистом C#: планеты, биржа, заказы, кредит, ИИ.",
+  "unity": "2021.3"
+}
