@@ -142,10 +142,70 @@ public class GameTests
     public void ManagerAddsActionNextTurnAndCostsSalary()
     {
         var g = Game.New(Calm(), 1);
-        Assert.True(g.HireManager().Ok);
+        Assert.Equal(3, g.ActionsLeft);
+        Assert.Equal(3, g.Candidates.Count);
+        var candidate = g.Candidates[1];
+        Assert.True(g.HireManager(1).Ok);
+        Assert.Equal(2, g.Candidates.Count);
+        Assert.Equal(2, g.ActionsLeft); // новичок работает со следующего хода
         var report = g.EndTurn();
-        Assert.Equal(60, report.Salaries);
+        Assert.Equal(candidate.Salary, report.Salaries);
         Assert.Equal(4, g.ActionsLeft);
+        Assert.Contains(candidate, g.Staff);
+    }
+
+    [Fact]
+    public void BestManagerForTheJobActsAndSkillsMatter()
+    {
+        var b = Calm();
+        b.StartMoney = 100_000;
+        var g = Game.New(b, 3);
+        var p = g.PlanetsForSale.First(x => !x.Inhabited);
+        p.FoundByProbe = true;
+        p.RuinsValue = 0;
+        double listPrice = p.ListPrice(b);
+        Assert.Equal(listPrice, g.PurchasePrice(p)); // директор — средний переговорщик
+
+        // Переговорщик с навыком 5 выбивает скидку 2 × 4%.
+        var c = g.Candidates[0];
+        c.SkillLevels[(int)Skill.Negotiation] = 5;
+        c.SkillLevels[(int)Skill.Geology] = 1;
+        Assert.True(g.HireManager(0).Ok);
+        g.EndTurn();
+        Assert.Same(c, g.WhoActs(Skill.Negotiation));
+        Assert.Equal(System.Math.Round(listPrice * (1 - 2 * b.NegotiationPriceStep)), g.PurchasePrice(p));
+        // Для шахты он плох — шахту строит директор.
+        Assert.True(g.WhoActs(Skill.Geology).IsDirector);
+
+        // Ручной выбор: геологию поручили переговорщику — шахта дороже.
+        Assert.True(g.SetPerformer(c.Id).Ok);
+        Assert.Same(c, g.WhoActs(Skill.Geology));
+        Assert.Equal(System.Math.Round(p.Type.MineCost * (1 + 2 * b.GeologyCostStep)), g.MineCost(p));
+        double money = g.Money;
+        double price = g.PurchasePrice(p);
+        Assert.True(g.BuyPlanet(p.Id).Ok);
+        Assert.Equal(money - price, g.Money, 6);
+        Assert.Equal(0, c.ActionsLeft);
+        // Когда у выбранного действий нет, берётся лучший из свободных.
+        Assert.True(g.WhoActs(Skill.Geology).IsDirector);
+    }
+
+    [Fact]
+    public void FiringFreesSalaryAndCandidatesRefresh()
+    {
+        var b = Calm();
+        b.CandidateRefreshTurns = 2;
+        var g = Game.New(b, 3);
+        Assert.True(g.HireManager().Ok);
+        Assert.Equal(1, g.Managers);
+        Assert.True(g.FireManager().Ok);
+        Assert.Equal(0, g.Managers);
+        Assert.Equal(0, g.SalariesPerTurn);
+        var before = g.Candidates.ToList();
+        g.EndTurn();
+        g.EndTurn();
+        Assert.Equal(b.ManagerCandidates, g.Candidates.Count);
+        Assert.DoesNotContain(before[0], g.Candidates);
     }
 
     [Fact]

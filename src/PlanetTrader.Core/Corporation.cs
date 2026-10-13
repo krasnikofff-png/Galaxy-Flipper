@@ -17,8 +17,13 @@ namespace PlanetTrader.Core
 
         public double Money;
         public double Debt;
-        public int Managers;
-        public int ActionsLeft;
+        /// <summary>Команда: первым — директор (несколько действий за ход), дальше нанятые менеджеры.</summary>
+        public readonly List<Manager> Staff = new List<Manager>();
+        /// <summary>Кандидаты на работу; обновляются раз в несколько ходов.</summary>
+        public readonly List<Manager> Candidates = new List<Manager>();
+        public int NextCandidatesTurn;
+        /// <summary>Кто выполняет следующие действия; −1 — подбирать лучшего под дело.</summary>
+        public int PerformerId = -1;
         public bool Insured;
         /// <summary>Репутация 0–100: грязные дела её портят, выполненные заказы чинят.</summary>
         public double Reputation;

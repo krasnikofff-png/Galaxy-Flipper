@@ -53,8 +53,28 @@ namespace PlanetTrader.Core
         public int BaseActionsPerTurn = 3;
         /// <summary>Каждый нанятый менеджер даёт +1 действие (допущение: в таблице только зарплата и максимум).</summary>
         public int ActionsPerManager = 1;
+        /// <summary>Зарплата менеджера со средними навыками; за каждое очко навыков выше или ниже среднего — ± эта доля.</summary>
         public double ManagerSalary = 60;
+        public double ManagerSalaryPerSkill = 0.12;
         public int MaxManagers = 3;
+        /// <summary>Сколько кандидатов на выбор и раз во сколько ходов они меняются.</summary>
+        public int ManagerCandidates = 3;
+        public int CandidateRefreshTurns = 8;
+        /// <summary>
+        /// Что даёт каждое очко навыка выше среднего (ниже — наоборот): переговоры — скидка при покупке и сила ставки,
+        /// прибавка к шансу согласия жителей и к цене продажи планеты; геология — скидка на шахты и экстракторы,
+        /// прибавка к шансу найти скрытую планету; грязные дела — реже штраф, чаще удаётся подкуп, дольше действует слух;
+        /// работа с людьми — сильнее праздник, дешевле школы, учёба и колонисты.
+        /// </summary>
+        public double NegotiationPriceStep = 0.08;
+        public double NegotiationChanceStep = 0.08;
+        public double NegotiationSaleStep = 0.05;
+        public double GeologyCostStep = 0.1;
+        public double GeologyFindStep = 0.08;
+        public double ShadyFineStep = 0.3;
+        public double ShadyChanceStep = 0.12;
+        public double PeopleFestivalStep = 0.25;
+        public double PeopleCostStep = 0.1;
 
         // --- Содержание: кривая с полкой ---
         public double UpkeepCurveA = 1.0;

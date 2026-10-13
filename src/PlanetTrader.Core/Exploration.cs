@@ -50,6 +50,8 @@ namespace PlanetTrader.Core
         public int Id;
         /// <summary>Чей зонд: находки и руины достаются этой корпорации.</summary>
         public int CorporationId;
+        /// <summary>Прибавка к шансу найти скрытую планету: зонд запускал геолог.</summary>
+        public double FindBonus;
         public ProbeType Type;
         public ProbeMission Mission;
         public double FromX, FromY, TargetX, TargetY;

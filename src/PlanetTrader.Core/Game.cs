@@ -92,6 +92,9 @@ namespace PlanetTrader.Core
         int _nextProbeId;
         int _nextRequestId;
         int _nextBribeId;
+        int _nextManagerId;
+        /// <summary>Отдельный генератор для кандидатов на работу.</summary>
+        readonly Rng _staffRng;
 
         /// <summary>
         /// Сообщения о том, что случилось во время действий игрока (например, нашлись руины при покупке).
@@ -121,8 +124,12 @@ namespace PlanetTrader.Core
 
         public double Money { get => _current.Money; private set => _current.Money = value; }
         public double Debt { get => _current.Debt; private set => _current.Debt = value; }
-        public int Managers { get => _current.Managers; private set => _current.Managers = value; }
-        public int ActionsLeft { get => _current.ActionsLeft; private set => _current.ActionsLeft = value; }
+        /// <summary>Сколько нанято менеджеров (без директора).</summary>
+        public int Managers => _current.Staff.Count(m => !m.IsDirector);
+        /// <summary>Сколько действий осталось у всей команды.</summary>
+        public int ActionsLeft => _current.Staff.Sum(m => m.ActionsLeft);
+        public IReadOnlyList<Manager> Staff => _current.Staff;
+        public IReadOnlyList<Manager> Candidates => _current.Candidates;
         public bool Insured { get => _current.Insured; private set => _current.Insured = value; }
         /// <summary>Репутация 0–100: грязные дела её портят, выполненные заказы чинят.</summary>
         public double Reputation { get => _current.Reputation; private set => _current.Reputation = value; }
@@ -169,7 +176,15 @@ namespace PlanetTrader.Core
 
         public double InTransit(Resource r) => _shipments.Where(x => x.Resource == r).Sum(x => x.Amount);
 
-        public int ActionsPerTurn => Balance.BaseActionsPerTurn + Managers * Balance.ActionsPerManager;
+        public int ActionsPerTurn => _current.Staff.Sum(m => m.ActionsPerTurn);
+
+        void ResetActions()
+        {
+            foreach (var m in _current.Staff) m.ActionsLeft = m.ActionsPerTurn;
+        }
+
+        /// <summary>Зарплаты команды за ход.</summary>
+        public double SalariesPerTurn => _current.Staff.Sum(m => m.Salary);
 
         Game(Balance balance, ulong seed)
         {
@@ -178,6 +193,7 @@ namespace PlanetTrader.Core
             _mapRng = new Rng(seed ^ 0x5EC7_0A11UL);
             _surveyRng = new Rng(seed ^ 0x50_17E5UL);
             _eventRng = new Rng(seed ^ 0xE7E47UL);
+            _staffRng = new Rng(seed ^ 0x57AFFUL);
             _nextEventTurn = _eventRng.Range(balance.FirstEventMinTurn, balance.FirstEventMaxTurn + 1);
             Market = new Market(balance);
             _magnates = balance.Magnates.Select(m => m.Clone()).ToList();
@@ -196,15 +212,20 @@ namespace PlanetTrader.Core
         {
             var g = new Game(balance, seed);
             for (int i = 0; i < Math.Max(1, players); i++)
-                g._corps.Add(new Corporation(i, i == 0 ? "Вы" : $"Игрок {i + 1}")
+            {
+                var corp = new Corporation(i, i == 0 ? "Вы" : $"Игрок {i + 1}")
                 {
                     Money = balance.StartMoney,
                     Debt = balance.StartDebt,
                     Reputation = balance.StartReputation,
-                });
+                };
+                corp.Staff.Add(Manager.Director(g._nextManagerId++, "Вы (директор)", balance.BaseActionsPerTurn));
+                g._corps.Add(corp);
+            }
             foreach (var m in g._magnates)
             {
                 m.Corp = new Corporation(g._corps.Count, m.Name) { Magnate = m, Money = balance.MagnateStartMoney, Reputation = balance.StartReputation };
+                m.Corp.Staff.Add(Manager.Director(g._nextManagerId++, m.Name, balance.BaseActionsPerTurn));
                 g._corps.Add(m.Corp);
             }
             g._current = g._corps[0];
@@ -240,7 +261,7 @@ namespace PlanetTrader.Core
                     if (p != start && p.Knowledge == Knowledge.Silhouette && Geometry.Distance(p.MapX, p.MapY, start.MapX, start.MapY) <= balance.StartScanRadius)
                         p.Knowledge = Knowledge.Scanned;
                 g._current = corp;
-                g.ActionsLeft = g.ActionsPerTurn;
+                g.RefreshCandidates();
             }
             g._current = g._corps[0];
             g.Market.SectorFactor = Math.Pow(Math.Max(1, players), balance.MarketGrowthPower);
@@ -420,19 +441,57 @@ namespace PlanetTrader.Core
         public double GuardsPerTurn => PlayerPlanets.Count(p => p.Guarded) * Balance.GuardsCost;
 
         public double CostsPerTurn =>
-            UpkeepPerTurn + Managers * Balance.ManagerSalary + Debt * Balance.InterestPerTurn + InsurancePerTurn + ShippingPerTurn + WagesPerTurn + GuardsPerTurn;
+            UpkeepPerTurn + SalariesPerTurn + Debt * Balance.InterestPerTurn + InsurancePerTurn + ShippingPerTurn + WagesPerTurn + GuardsPerTurn;
 
         // ------------------------------------------------------------------
         // Действия, которые тратят очки действий
         // ------------------------------------------------------------------
 
-        ActionResult SpendAction()
+        /// <summary>Действие выполняет конкретный сотрудник: выбранный вручную или лучший в этом деле.</summary>
+        ActionResult SpendAction(Skill? skill = null)
         {
-            if (ActionsLeft <= 0) return ActionResult.Fail("Действия на этот ход закончились");
-            ActionsLeft--;
+            var who = WhoActs(skill);
+            if (who == null) return ActionResult.Fail("Действия на этот ход закончились");
+            who.ActionsLeft--;
             if (ActionsLeft == 0) TurnsActionsExhausted++;
             return ActionResult.Success;
         }
+
+        /// <summary>
+        /// Кто выполнит следующее действие: выбранный сотрудник, если у него остались действия, иначе лучший в этом деле.
+        /// Для дел без навыка — тот, чьи навыки нужнее меньше всего. null — действий не осталось.
+        /// </summary>
+        public Manager WhoActs(Skill? skill = null)
+        {
+            var free = _current.Staff.Where(m => m.ActionsLeft > 0).ToList();
+            if (free.Count == 0) return null;
+            var chosen = free.FirstOrDefault(m => m.Id == _current.PerformerId);
+            if (chosen != null) return chosen;
+            if (skill == null) return free.OrderBy(m => m.SkillLevels.Max()).ThenByDescending(m => m.IsDirector).First();
+            return free.OrderByDescending(m => m.Level(skill.Value)).ThenBy(m => m.IsDirector).First();
+        }
+
+        /// <summary>Насколько тот, кто возьмётся за дело, лучше среднего: от −2 до +2.</summary>
+        public int Edge(Skill skill) => WhoActs(skill)?.Edge(skill) ?? 0;
+
+        /// <summary>Кто будет выполнять действия; −1 — подбирать лучшего под каждое дело.</summary>
+        public ActionResult SetPerformer(int managerId)
+        {
+            if (managerId >= 0 && _current.Staff.All(m => m.Id != managerId)) return ActionResult.Fail("Нет такого сотрудника");
+            _current.PerformerId = managerId;
+            return ActionResult.Success;
+        }
+
+        /// <summary>Цена покупки у реестра: переговорщик выбивает скидку.</summary>
+        public double PurchasePrice(Planet p) => Math.Round(p.ListPrice(Balance) * (1 - Balance.NegotiationPriceStep * Edge(Skill.Negotiation)));
+        public double MineCost(Planet p) => Math.Round(p.Type.MineCost * (1 - Balance.GeologyCostStep * Edge(Skill.Geology)));
+        public double SchoolCost => Math.Round(Balance.SchoolCost * (1 - Balance.PeopleCostStep * Edge(Skill.People)));
+        public double ColonyCost => Math.Round(Balance.ColonyCost * (1 - Balance.PeopleCostStep * Edge(Skill.People)));
+        public double EducationCost(Planet p) =>
+            p.Education + 1 >= Balance.EducationCost.Length ? 0 : Math.Round(Balance.EducationCost[p.Education + 1] * (1 - Balance.PeopleCostStep * Edge(Skill.People)));
+        public double FestivalLoyalty => Balance.FestivalLoyalty * (1 + Balance.PeopleFestivalStep * Edge(Skill.People));
+        /// <summary>Сколько дадут за планету при продаже действием: переговорщик выторгует больше.</summary>
+        public double SellPlanetPrice(Planet p) => SalePrice(p) * (1 + Balance.NegotiationSaleStep * Edge(Skill.Negotiation));
 
         public ActionResult BuyPlanet(int planetId)
         {
@@ -445,9 +504,9 @@ namespace PlanetTrader.Core
                 return ActionResult.Fail("Планета обитаема: её продают сами жители, сделайте им предложение");
             }
             if (p.SoldAtAuction) return ActionResult.Fail("Планета продаётся с аукциона: сделайте ставку");
-            double price = p.ListPrice(Balance);
+            double price = PurchasePrice(p);
             if (Money < price) return ActionResult.Fail("Не хватает денег");
-            var a = SpendAction();
+            var a = SpendAction(Skill.Negotiation);
             if (!a.Ok) return a;
 
             Acquire(p, price);
@@ -486,6 +545,7 @@ namespace PlanetTrader.Core
                 ? Balance.SchoolDealChance
                 : Balance.OfferChanceAtFullPrice + (o.PriceShare - 1) * Balance.OfferChancePerShare;
             chance += (Reputation - 50) / 250;
+            chance += Balance.NegotiationChanceStep * Edge(Skill.Negotiation);
             return Math.Min(0.95, Math.Max(0.05, chance));
         }
 
@@ -502,7 +562,7 @@ namespace PlanetTrader.Core
             if (p.IsDepleted) return ActionResult.Fail("Планета выработана");
             if (Turn < p.NoTalksUntilTurn) return ActionResult.Fail($"Жители обиделись и не разговаривают до хода {p.NoTalksUntilTurn}");
             if (Money < OfferCost(p, offer)) return ActionResult.Fail("Не хватает денег");
-            var a = SpendAction();
+            var a = SpendAction(Skill.Negotiation);
             if (!a.Ok) return a;
 
             if (!_rng.Chance(OfferChance(p, offer)))
@@ -565,11 +625,12 @@ namespace PlanetTrader.Core
             var p = OwnInhabited(planetId, out var error);
             if (p == null) return error;
             if (Money < Balance.FestivalCost) return ActionResult.Fail("Не хватает денег");
-            var a = SpendAction();
+            double festival = FestivalLoyalty;
+            var a = SpendAction(Skill.People);
             if (!a.Ok) return a;
             Money -= Balance.FestivalCost;
             p.Earned -= Balance.FestivalCost;
-            p.Loyalty = Clamp(p.Loyalty + Balance.FestivalLoyalty);
+            p.Loyalty = Clamp(p.Loyalty + festival);
             RecordDeed(DeedKind.Festival, p);
             return ActionResult.Success;
         }
@@ -611,7 +672,7 @@ namespace PlanetTrader.Core
             else if (!p.HasSchool) reason = "Сначала нужна школа";
             else if (p.OnStrike) reason = "Жители бастуют";
             else if (p.Loyalty < b.EducationMinLoyalty) reason = $"Жители не станут учиться при лояльности ниже {b.EducationMinLoyalty}";
-            else if (Money < b.EducationCost[p.Education + 1]) reason = "Не хватает денег";
+            else if (Money < EducationCost(p)) reason = "Не хватает денег";
             return reason == null;
         }
 
@@ -624,11 +685,12 @@ namespace PlanetTrader.Core
             if (p == null) return ActionResult.Fail("Нет такой планеты");
             if (!CanEducate(p, out var reason)) return ActionResult.Fail(reason);
             if (p.Education == 0 && specialty == Specialty.None) return ActionResult.Fail("Выберите специальность");
-            var a = SpendAction();
+            double cost = EducationCost(p);
+            var a = SpendAction(Skill.People);
             if (!a.Ok) return a;
             int next = p.Education + 1;
-            Money -= Balance.EducationCost[next];
-            p.Invested += Balance.EducationCost[next];
+            Money -= cost;
+            p.Invested += cost;
             if (p.Education == 0) p.Specialty = specialty;
             p.EducationTurnsLeft = Balance.EducationTurns[next];
             return ActionResult.Success;
@@ -640,11 +702,12 @@ namespace PlanetTrader.Core
             var p = GetPlanet(planetId);
             if (!IsMine(p)) return ActionResult.Fail("Это не ваша планета");
             if (p.Inhabited) return ActionResult.Fail("Здесь уже живут");
-            if (Money < Balance.ColonyCost) return ActionResult.Fail("Не хватает денег");
-            var a = SpendAction();
+            double cost = ColonyCost;
+            if (Money < cost) return ActionResult.Fail("Не хватает денег");
+            var a = SpendAction(Skill.People);
             if (!a.Ok) return a;
-            Money -= Balance.ColonyCost;
-            p.Invested += Balance.ColonyCost;
+            Money -= cost;
+            p.Invested += cost;
             p.Inhabited = true;
             p.Loyalty = Balance.ColonyLoyalty;
             p.Tax = TaxLevel.None;
@@ -659,11 +722,12 @@ namespace PlanetTrader.Core
             var p = OwnInhabited(planetId, out var error);
             if (p == null) return error;
             if (p.HasSchool) return ActionResult.Fail("Школа уже есть");
-            if (Money < Balance.SchoolCost) return ActionResult.Fail("Не хватает денег");
-            var a = SpendAction();
+            double cost = SchoolCost;
+            if (Money < cost) return ActionResult.Fail("Не хватает денег");
+            var a = SpendAction(Skill.People);
             if (!a.Ok) return a;
-            Money -= Balance.SchoolCost;
-            p.Invested += Balance.SchoolCost;
+            Money -= cost;
+            p.Invested += cost;
             p.HasSchool = true;
             RecordDeed(DeedKind.School, p);
             foreach (var r in _requests.Where(r => r.PlanetId == p.Id && r.Kind == RequestKind.School).ToList())
@@ -799,12 +863,13 @@ namespace PlanetTrader.Core
             var p = GetPlanet(planetId);
             if (!IsMine(p)) return ActionResult.Fail("Это не ваша планета");
             if (p.Mine != MineState.None) return ActionResult.Fail("Шахта уже есть");
-            if (Money < p.Type.MineCost) return ActionResult.Fail("Не хватает денег");
-            var a = SpendAction();
+            double cost = MineCost(p);
+            if (Money < cost) return ActionResult.Fail("Не хватает денег");
+            var a = SpendAction(Skill.Geology);
             if (!a.Ok) return a;
 
-            Money -= p.Type.MineCost;
-            p.Invested += p.Type.MineCost;
+            Money -= cost;
+            p.Invested += cost;
             p.Mine = MineState.Building;
             p.BuildTurnsLeft = Balance.MineBuildTurns;
             return ActionResult.Success;
@@ -815,10 +880,10 @@ namespace PlanetTrader.Core
         {
             var p = GetPlanet(planetId);
             if (!IsMine(p)) return ActionResult.Fail("Это не ваша планета");
-            var a = SpendAction();
+            double proceeds = SellPlanetPrice(p);
+            var a = SpendAction(Skill.Negotiation);
             if (!a.Ok) return a;
 
-            double proceeds = SalePrice(p);
             Money += proceeds;
             p.Earned += proceeds;
             ReleaseToRegistry(p);
@@ -857,6 +922,7 @@ namespace PlanetTrader.Core
         public double AuctionWinChance(Planet p, double factor)
         {
             double chance = 1;
+            factor *= 1 + Balance.NegotiationPriceStep * Edge(Skill.Negotiation);
             double basePrice = Math.Max(1, p.BasePrice());
             foreach (var m in ActiveMagnates)
             {
@@ -878,7 +944,8 @@ namespace PlanetTrader.Core
             if (p.IsDepleted) return ActionResult.Fail("Планета выработана");
             double bid = BidPrice(p, factor);
             if (Money < bid) return ActionResult.Fail("Не хватает денег");
-            var a = SpendAction();
+            double strength = bid * (1 + Balance.NegotiationPriceStep * Edge(Skill.Negotiation));
+            var a = SpendAction(Skill.Negotiation);
             if (!a.Ok) return a;
 
             Magnate rival = null;
@@ -896,7 +963,8 @@ namespace PlanetTrader.Core
                 }
             }
 
-            if (bid > rivalBid)
+            // Переговорщик убедительнее: его ставка весит больше, хотя платит он названную сумму.
+            if (strength > rivalBid)
             {
                 won = true;
                 AuctionsWon++;
@@ -988,13 +1056,14 @@ namespace PlanetTrader.Core
             var m = GetMagnate(magnateId);
             if (m == null) return ActionResult.Fail("Нет такого магната");
             if (Money < Balance.PlayerRumorCost) return ActionResult.Fail("Не хватает денег");
-            var a = SpendAction();
+            int shady = Edge(Skill.Shady);
+            var a = SpendAction(Skill.Shady);
             if (!a.Ok) return a;
             Money -= Balance.PlayerRumorCost;
-            m.QuietUntilTurn = Math.Max(m.QuietUntilTurn, Turn + 1) + Balance.PlayerRumorQuietTurns - 1;
+            m.QuietUntilTurn = Math.Max(m.QuietUntilTurn, Turn + 1) + Math.Max(1, Balance.PlayerRumorQuietTurns + shady) - 1;
             ChangeReputation(Balance.PlayerRumorReputation);
             Notices.Add($"Слух сработал: {m.Name} до хода {m.QuietUntilTurn} отбивается и не мешает вам.");
-            MaybeFine();
+            MaybeFine(shady);
             return ActionResult.Success;
         }
 
@@ -1010,12 +1079,13 @@ namespace PlanetTrader.Core
             if (p.IsDepleted) return ActionResult.Fail("Планета выработана");
             double cost = MagnateBribeCost(p);
             if (Money < cost) return ActionResult.Fail("Не хватает денег");
-            var a = SpendAction();
+            int shadyEdge = Edge(Skill.Shady);
+            var a = SpendAction(Skill.Shady);
             if (!a.Ok) return a;
             Money -= cost;
             ChangeReputation(Balance.PlayerBribeReputation);
             RecordDeed(DeedKind.BribedRivalResidents, p);
-            if (_rng.Chance(Balance.PlayerBribeChance))
+            if (_rng.Chance(Balance.PlayerBribeChance + Balance.ShadyChanceStep * shadyEdge))
             {
                 success = true;
                 var m = GetMagnate(p.MagnateId);
@@ -1033,15 +1103,16 @@ namespace PlanetTrader.Core
             }
             else
                 Notices.Add($"Жители {p.Type.Name} #{p.Id} взяли деньги и остались у магната.");
-            MaybeFine();
+            MaybeFine(shadyEdge);
             return ActionResult.Success;
         }
 
         void ChangeReputation(double delta) => Reputation = Math.Min(100, Math.Max(0, Reputation + delta));
 
-        void MaybeFine()
+        /// <summary>Реестр ловит грязное дело; мастер грязных дел попадается реже.</summary>
+        void MaybeFine(int shadyEdge)
         {
-            if (!_rng.Chance(Balance.FineChance)) return;
+            if (!_rng.Chance(Balance.FineChance * Math.Max(0, 1 - Balance.ShadyFineStep * shadyEdge))) return;
             Money -= Balance.FineAmount;
             FinesPaid += Balance.FineAmount;
             ChangeReputation(Balance.FineReputation);
@@ -1103,7 +1174,8 @@ namespace PlanetTrader.Core
         ActionResult Launch(ProbeType t, ProbeMission mission, double x, double y, int planetId)
         {
             if (Money < t.Cost) return ActionResult.Fail("Не хватает денег");
-            var a = SpendAction();
+            double findBonus = Balance.GeologyFindStep * Edge(Skill.Geology);
+            var a = SpendAction(Skill.Geology);
             if (!a.Ok) return a;
 
             Money -= t.Cost;
@@ -1111,6 +1183,7 @@ namespace PlanetTrader.Core
             _probes.Add(new Probe
             {
                 CorporationId = _current.Id,
+                FindBonus = findBonus,
                 Id = _nextProbeId++,
                 Type = t,
                 Mission = mission,
@@ -1147,7 +1220,7 @@ namespace PlanetTrader.Core
             }
             string line = $"Зонд «{probe.Type.Name}» просканировал область: новых планет в скане — {scanned}";
             if (SectorFull) line += ". Скрытых планет в секторе не осталось";
-            else if (_rng.Chance(probe.Type.FindChance))
+            else if (_rng.Chance(probe.Type.FindChance + probe.FindBonus))
             {
                 var found = GeneratePlanet(RandomType());
                 PlaceOnMap(found, probe.TargetX, probe.TargetY, probe.Type.ScanRadius);
@@ -1188,20 +1261,37 @@ namespace PlanetTrader.Core
         }
 
         /// <summary>Нанять менеджера. Даёт действие со следующего хода.</summary>
-        public ActionResult HireManager()
+        /// <summary>Нанять кандидата: работает со следующего хода, зарплата — каждый ход. Тратит действие.</summary>
+        public ActionResult HireManager(int candidateIndex = 0)
         {
             if (Managers >= Balance.MaxManagers) return ActionResult.Fail("Больше менеджеров нанять нельзя");
+            if (candidateIndex < 0 || candidateIndex >= _current.Candidates.Count) return ActionResult.Fail("Нет такого кандидата");
             var a = SpendAction();
             if (!a.Ok) return a;
-            Managers++;
+            var m = _current.Candidates[candidateIndex];
+            _current.Candidates.RemoveAt(candidateIndex);
+            m.ActionsLeft = 0;
+            _current.Staff.Add(m);
             return ActionResult.Success;
         }
 
-        public ActionResult FireManager()
+        /// <summary>Уволить менеджера; −1 — последнего нанятого. Действия не тратит.</summary>
+        public ActionResult FireManager(int managerId = -1)
         {
-            if (Managers == 0) return ActionResult.Fail("Менеджеров нет");
-            Managers--;
+            var m = managerId < 0 ? _current.Staff.LastOrDefault(x => !x.IsDirector) : _current.Staff.FirstOrDefault(x => x.Id == managerId && !x.IsDirector);
+            if (m == null) return ActionResult.Fail("Такого менеджера нет");
+            _current.Staff.Remove(m);
+            if (_current.PerformerId == m.Id) _current.PerformerId = -1;
             return ActionResult.Success;
+        }
+
+        /// <summary>Новые кандидаты на работу.</summary>
+        void RefreshCandidates()
+        {
+            _current.Candidates.Clear();
+            for (int i = 0; i < Balance.ManagerCandidates; i++)
+                _current.Candidates.Add(Manager.Candidate(_nextManagerId++, _staffRng, Balance.ManagerSalary, Balance.ManagerSalaryPerSkill));
+            _current.NextCandidatesTurn = Turn + Balance.CandidateRefreshTurns;
         }
 
         // ------------------------------------------------------------------
@@ -1325,7 +1415,8 @@ namespace PlanetTrader.Core
             UpdateEvent(shared);
 
             Turn++;
-            EachCorp(_ => ActionsLeft = ActionsPerTurn);
+            EachCorp(_ => ResetActions());
+            Each(_ => { if (Turn >= _current.NextCandidatesTurn) RefreshCandidates(); });
             _lastReports = reports;
             return shared;
         }
@@ -1334,7 +1425,7 @@ namespace PlanetTrader.Core
         void PayCosts(TurnReport report)
         {
             report.Upkeep = UpkeepPerTurn;
-            report.Salaries = Managers * Balance.ManagerSalary;
+            report.Salaries = SalariesPerTurn;
             report.Interest = Debt * Balance.InterestPerTurn;
             report.Insurance = InsurancePerTurn;
             report.Guards = GuardsPerTurn;
@@ -1563,7 +1654,8 @@ namespace PlanetTrader.Core
             CurrentResearch = null;
         }
 
-        public double ExtractorCost(Deposit d) => Math.Round(Balance.TypeOf(d.Resource).MineCost * Balance.ExtractorCostShare);
+        public double ExtractorCost(Deposit d) =>
+            Math.Round(Balance.TypeOf(d.Resource).MineCost * Balance.ExtractorCostShare * (1 - Balance.GeologyCostStep * Edge(Skill.Geology)));
 
         /// <summary>Экстрактор на дополнительном месторождении: нужна технология для ресурса. Работает со следующего хода.</summary>
         public ActionResult BuildExtractor(int planetId, int depositIndex)
@@ -1576,7 +1668,7 @@ namespace PlanetTrader.Core
             if (!IsUnlocked(d.Resource)) return ActionResult.Fail($"Нужна технология добычи ресурса «{d.Resource.RuName()}»");
             double cost = ExtractorCost(d);
             if (Money < cost) return ActionResult.Fail("Не хватает денег");
-            var a = SpendAction();
+            var a = SpendAction(Skill.Geology);
             if (!a.Ok) return a;
             Money -= cost;
             p.Invested += cost;
@@ -1790,7 +1882,7 @@ namespace PlanetTrader.Core
             if (Debt > 0 && Money > MagnateReserve(m)) RepayLoan(Math.Min(Debt, Money - MagnateReserve(m)));
 
             foreach (var p in PlayerPlanets.Where(x => x.Mine == MineState.None && !x.IsDepleted).ToList())
-                if (Money - p.Type.MineCost >= MagnateReserve(m)) BuildMine(p.Id);
+                if (Money - MineCost(p) >= MagnateReserve(m)) BuildMine(p.Id);
 
             // Жители: налог по настроению, праздник, если дело идёт к забастовке, школа и учёба, когда есть деньги.
             double highTax = m.Personality == Personality.Greedy ? 55 : m.Personality == Personality.Cautious ? 75 : 65;
@@ -1801,7 +1893,7 @@ namespace PlanetTrader.Core
                 if ((p.Loyalty < 40 || p.OnStrike) && Money - b.FestivalCost >= MagnateReserve(m)) HoldFestival(p.Id);
                 bool caring = m.Personality == Personality.Cautious || _rng.Chance(0.3);
                 if (!p.HasSchool && caring && Money - b.SchoolCost >= MagnateReserve(m) + 1000) BuildSchool(p.Id);
-                if (_rng.Chance(b.MagnateEducateChance) && CanEducate(p, out _) && Money - b.EducationCost[p.Education + 1] >= MagnateReserve(m))
+                if (_rng.Chance(b.MagnateEducateChance) && CanEducate(p, out _) && Money - EducationCost(p) >= MagnateReserve(m))
                     Educate(p.Id, p.Education > 0 ? p.Specialty : Specialties.Natural(p.Resource));
             }
 
@@ -1852,7 +1944,7 @@ namespace PlanetTrader.Core
                 var pattern = Balance.Magnates.FirstOrDefault(x => x.Personality == old.Personality) ?? old;
                 var fresh = Magnate.Generate(_magnates.Max(x => x.Id) + 1, pattern, _rng);
                 fresh.Corp = new Corporation(_corps.Max(x => x.Id) + 1, fresh.Name) { Magnate = fresh, Money = Balance.MagnateStartMoney, Reputation = Balance.StartReputation };
-                fresh.Corp.ActionsLeft = Balance.BaseActionsPerTurn;
+                fresh.Corp.Staff.Add(Manager.Director(_nextManagerId++, fresh.Name, Balance.BaseActionsPerTurn));
                 _corps.Add(fresh.Corp);
                 _magnates[i] = fresh;
                 report.Events.Add($"{old.Name} разорился(ась) и покидает сектор. На его место приходит {fresh.Name} ({fresh.PersonalityName}).");
@@ -2028,9 +2120,11 @@ namespace PlanetTrader.Core
                 }
                 case TrickKind.PoachManager:
                 {
-                    if (Managers == 0) return;
-                    Managers--;
-                    report.Events.Add($"{m.Name} переманил(а) вашего менеджера. Действий на ход станет меньше.");
+                    var best = _current.Staff.Where(x => !x.IsDirector).OrderByDescending(x => x.TotalSkill).FirstOrDefault();
+                    if (best == null) return;
+                    _current.Staff.Remove(best);
+                    if (_current.PerformerId == best.Id) _current.PerformerId = -1;
+                    report.Events.Add($"{m.Name} переманил(а) вашего лучшего менеджера — {best.Name}. Действий на ход станет меньше.");
                     return;
                 }
             }

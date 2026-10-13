@@ -17,8 +17,8 @@ namespace PlanetTrader.Client
         const float SidePanelWidth = 560, Gap = 10, TopBarHeight = 52, EventBarHeight = 30, LogHeight = 190;
         const int MaxLogLines = 200;
 
-        enum Tab { Planet, Market, Orders, Finance, Development, Magnates }
-        static readonly string[] TabNames = { "Планета", "Биржа", "Заказы", "Финансы", "Развитие", "Магнаты" };
+        enum Tab { Planet, Market, Orders, Finance, Team, Development, Magnates }
+        static readonly string[] TabNames = { "Планета", "Биржа", "Заказы", "Финансы", "Команда", "Развитие", "Магнаты" };
 
         /// <summary>Сколько секунд длится «ход соперников» после нажатия «Конец хода».</summary>
         const float RivalsTurnSeconds = 1.2f;
@@ -539,6 +539,7 @@ namespace PlanetTrader.Client
                 case Tab.Market: DrawMarketTab(); break;
                 case Tab.Orders: DrawOrdersTab(); break;
                 case Tab.Finance: DrawFinanceTab(); break;
+                case Tab.Team: DrawTeamTab(); break;
                 case Tab.Development: DrawDevelopmentTab(); break;
                 case Tab.Magnates: DrawMagnatesTab(); break;
             }
@@ -621,12 +622,12 @@ namespace PlanetTrader.Client
                         GUILayout.Label("Планета выработана, покупать её незачем.", _text);
                         break;
                     }
-                    double price = p.ListPrice(b);
+                    double price = g.PurchasePrice(p);
                     string note = p.FoundByProbe ? "без надбавки: её нашёл ваш зонд" : $"с надбавкой аукциона {Fmt.Percent(b.AuctionMarkup)}";
                     if (p.Mine == MineState.Working) note += ", шахта уже стоит";
                     GUILayout.Label($"Цена {Fmt.Money(price)} ({note}). Реестр считает цену по своей оценке запаса.", _text);
                     if (p.Mine == MineState.None)
-                        GUILayout.Label($"Потом шахта: {Fmt.Money(p.Type.MineCost)} и {b.MineBuildTurns} хода постройки.", _small);
+                        GUILayout.Label($"Потом шахта: {Fmt.Money(g.MineCost(p))} и {b.MineBuildTurns} хода постройки.", _small);
                     if (p.Inhabited && !silhouette)
                         DrawNegotiation(p);
                     else if (p.SoldAtAuction)
@@ -634,7 +635,7 @@ namespace PlanetTrader.Client
                     else
                     {
                         string blind = silhouette ? " вслепую" : exact ? "" : " по оценке";
-                        if (ActionButton($"Купить{blind} за {Fmt.Money(price)} · 1 действие", g.ActionsLeft > 0 && g.Money >= price))
+                        if (ActionButton($"Купить{blind} за {Fmt.Money(price)} · {Doer(Skill.Negotiation)}", g.ActionsLeft > 0 && g.Money >= price))
                             Act(() => g.BuyPlanet(p.Id), $"Куплена планета {p.Type.Name} #{p.Id} за {Fmt.Money(price)}.");
                     }
                     DrawExploreButtons(p);
@@ -643,8 +644,9 @@ namespace PlanetTrader.Client
                 case Owner.Player:
                     if (p.Mine == MineState.None && !p.IsDepleted)
                     {
-                        if (ActionButton($"Построить шахту за {Fmt.Money(p.Type.MineCost)} · 1 действие, {b.MineBuildTurns} хода",
-                                g.ActionsLeft > 0 && g.Money >= p.Type.MineCost))
+                        double mine = g.MineCost(p);
+                        if (ActionButton($"Построить шахту за {Fmt.Money(mine)}, {b.MineBuildTurns} хода · {Doer(Skill.Geology)}",
+                                g.ActionsLeft > 0 && g.Money >= mine))
                             Act(() => g.BuildMine(p.Id), $"Начата постройка шахты на {p.Type.Name} #{p.Id}.");
                     }
                     if (p.IsDepleted)
@@ -658,16 +660,16 @@ namespace PlanetTrader.Client
                     {
                         GUILayout.Label($"Планета необитаема. Колонисты будут платить налоги, а выучившись — зарабатывать умом, даже когда месторождение выработано. " +
                                         $"Но шахта их раздражает: −{Fmt.Amount(b.LoyaltyMiningDrain)} лояльности за ход.", _small);
-                        if (ActionButton($"Заселить колонистов за {Fmt.Money(b.ColonyCost)}: лояльность {Fmt.Amount(b.ColonyLoyalty)} · 1 действие",
-                                g.ActionsLeft > 0 && g.Money >= b.ColonyCost))
+                        if (ActionButton($"Заселить колонистов за {Fmt.Money(g.ColonyCost)}: лояльность {Fmt.Amount(b.ColonyLoyalty)} · {Doer(Skill.People)}",
+                                g.ActionsLeft > 0 && g.Money >= g.ColonyCost))
                             Act(() => g.SettleColony(p.Id), $"На {p.Type.Name} #{p.Id} прибыли колонисты.");
                     }
                     DrawGuards(p);
-                    double sale = g.SalePrice(p);
+                    double sale = g.SellPlanetPrice(p);
                     double hype = g.CurrentEvent?.Event.PlanetSale(p.Resource) ?? 1;
                     if (hype != 1)
                         GUILayout.Label($"<color=#ffd27a>Событие «{g.CurrentEvent.Event.Name}»: такие планеты сейчас продаются ×{hype:0.##}.</color>", _text);
-                    if (ActionButton($"Продать за {Fmt.Money(sale)} (комиссия {Fmt.Percent(b.ResaleCommission)}) · 1 действие", g.ActionsLeft > 0))
+                    if (ActionButton($"Продать за {Fmt.Money(sale)} (комиссия {Fmt.Percent(b.ResaleCommission)}) · {Doer(Skill.Negotiation)}", g.ActionsLeft > 0))
                         Act(() => g.SellPlanet(p.Id), $"Продана планета {p.Type.Name} #{p.Id} за {Fmt.Money(sale)}.");
                     break;
 
@@ -759,10 +761,10 @@ namespace PlanetTrader.Client
                 Later(() => Do(g.SetWages(id, wages)));
             }
 
-            if (ActionButton($"Праздник за {Fmt.Money(b.FestivalCost)}: лояльность +{Fmt.Amount(b.FestivalLoyalty)} · 1 действие", g.ActionsLeft > 0 && g.Money >= b.FestivalCost))
+            if (ActionButton($"Праздник за {Fmt.Money(b.FestivalCost)}: лояльность +{Fmt.Amount(g.FestivalLoyalty)} · {Doer(Skill.People)}", g.ActionsLeft > 0 && g.Money >= b.FestivalCost))
                 Act(() => g.HoldFestival(p.Id), $"Праздник на {p.Type.Name} #{p.Id}.");
-            if (!p.HasSchool && ActionButton($"Построить школу за {Fmt.Money(b.SchoolCost)}: +{Fmt.Amount(b.SchoolLoyalty)} лояльности каждый ход · 1 действие",
-                    g.ActionsLeft > 0 && g.Money >= b.SchoolCost))
+            if (!p.HasSchool && ActionButton($"Построить школу за {Fmt.Money(g.SchoolCost)}: +{Fmt.Amount(b.SchoolLoyalty)} лояльности каждый ход · {Doer(Skill.People)}",
+                    g.ActionsLeft > 0 && g.Money >= g.SchoolCost))
                 Act(() => g.BuildSchool(p.Id), $"Построена школа на {p.Type.Name} #{p.Id}.");
             if (p.HasSchool) GUILayout.Label("Школа построена.", _small);
             DrawEducation(p);
@@ -801,7 +803,7 @@ namespace PlanetTrader.Client
             if (p.Education >= max) return;
 
             int next = p.Education + 1;
-            double cost = b.EducationCost[next];
+            double cost = g.EducationCost(p);
             g.CanEducate(p, out string reason);
             bool canClick = reason == null && g.ActionsLeft > 0;
             if (reason != null && reason != "Не хватает денег")
@@ -887,6 +889,65 @@ namespace PlanetTrader.Client
                         if (Do(g.PlaceBid(id, factor, out bool won)) && won)
                             Log($"Аукцион выигран: планета #{id} ваша за {Fmt.Money(bid)}.");
                     });
+            }
+        }
+
+        /// <summary>Кто возьмётся за дело: имя и навык. Для кнопок действий.</summary>
+        string Doer(Skill skill)
+        {
+            var m = _game.WhoActs(skill);
+            if (m == null) return "действий нет";
+            string who = m.IsDirector ? "вы" : m.Name.Split(' ')[0];
+            return $"{who}, {skill.RuName()} {m.Level(skill)}";
+        }
+
+        static string SkillsLine(Manager m) =>
+            string.Join(", ", Skills.All.Select(s => $"{s.RuName()} {m.Level(s)}"));
+
+        /// <summary>Команда: директор и менеджеры, кто действует, кандидаты на работу.</summary>
+        void DrawTeamTab()
+        {
+            var g = _game;
+            var b = g.Balance;
+            GUILayout.Label("Команда", _header);
+            GUILayout.Label("Каждое действие выполняет конкретный человек. Любого можно отправить на любое дело, но результат зависит от навыка (1–5, средний 3): " +
+                            "переговоры — покупка, ставки, сделки с жителями, продажа планет; геология — шахты, экстракторы, зонды; " +
+                            "грязные дела — слухи и подкуп; работа с людьми — праздники, школы, учёба, колонисты.", _small);
+            var performer = g.Staff.FirstOrDefault(m => m.Id == g.Current.PerformerId);
+            Line("Действует", performer == null ? "лучший под каждое дело (авто)" : performer.Name);
+            if (performer != null && ActionButton("Подбирать лучшего под дело", true))
+                Later(() => Do(g.SetPerformer(-1)));
+            GUILayout.Space(6);
+
+            foreach (var m in g.Staff.ToList())
+            {
+                GUILayout.BeginVertical(GUI.skin.box);
+                string salary = m.IsDirector ? "" : $", зарплата {Fmt.Money(m.Salary)}";
+                GUILayout.Label($"<b>{m.Name}</b> — действий {m.ActionsLeft}/{m.ActionsPerTurn}{salary}", _text);
+                GUILayout.Label(SkillsLine(m), _small);
+                GUILayout.BeginHorizontal();
+                int id = m.Id;
+                if (performer != m && ActionButton("Поручать дела ему", m.ActionsLeft > 0))
+                    Later(() => Do(g.SetPerformer(id)));
+                if (!m.IsDirector && ActionButton("Уволить", true))
+                    Act(() => g.FireManager(id), $"{m.Name} уволен(а).");
+                GUILayout.EndHorizontal();
+                GUILayout.EndVertical();
+            }
+
+            GUILayout.Space(10);
+            GUILayout.Label($"Кандидаты (нанято {g.Managers} из {b.MaxManagers})", _header);
+            GUILayout.Label($"Новые кандидаты — раз в {b.CandidateRefreshTurns} ходов. Нанятый работает со следующего хода. Магнаты переманивают лучших.", _small);
+            for (int i = 0; i < g.Candidates.Count; i++)
+            {
+                var c = g.Candidates[i];
+                GUILayout.BeginVertical(GUI.skin.box);
+                GUILayout.Label($"<b>{c.Name}</b> — зарплата {Fmt.Money(c.Salary)} за ход, сильная сторона: {c.BestSkill.RuName()}", _text);
+                GUILayout.Label(SkillsLine(c), _small);
+                int index = i;
+                if (ActionButton("Нанять · 1 действие", g.ActionsLeft > 0 && g.Managers < b.MaxManagers))
+                    Act(() => g.HireManager(index), $"Нанят(а) {c.Name}.");
+                GUILayout.EndVertical();
             }
         }
 
@@ -1063,7 +1124,7 @@ namespace PlanetTrader.Client
             {
                 GUILayout.Label($"<b>{p.Type.Name} #{p.Id}</b>: жители просят школу. Осталось ходов: {left}. " +
                                 $"Выполните — лояльность +{Fmt.Amount(b.RequestLoyaltyReward)}, нет — −{Fmt.Amount(b.RequestLoyaltyPenalty)}.", _small);
-                if (ActionButton($"Построить школу за {Fmt.Money(b.SchoolCost)} · 1 действие", g.ActionsLeft > 0 && g.Money >= b.SchoolCost))
+                if (ActionButton($"Построить школу за {Fmt.Money(g.SchoolCost)} · {Doer(Skill.People)}", g.ActionsLeft > 0 && g.Money >= g.SchoolCost))
                     Act(() => g.BuildSchool(p.Id), $"Построена школа на {p.Type.Name} #{p.Id}.");
             }
             else
@@ -1261,19 +1322,12 @@ namespace PlanetTrader.Client
 
             GUILayout.Space(14);
             GUILayout.Label("Менеджеры", _header);
-            Line("Нанято", $"{g.Managers} из {b.MaxManagers}, по {Fmt.Money(b.ManagerSalary)} за ход");
-            GUILayout.Label($"Каждый менеджер даёт +{b.ActionsPerManager} действие со следующего хода.", _small);
-            GUILayout.BeginHorizontal();
-            if (ActionButton("Нанять · 1 действие", g.ActionsLeft > 0 && g.Managers < b.MaxManagers))
-                Act(() => g.HireManager(), "Нанят менеджер.");
-            if (ActionButton("Уволить", g.Managers > 0))
-                Act(() => g.FireManager(), "Менеджер уволен.");
-            GUILayout.EndHorizontal();
+            Line("Нанято", $"{g.Managers} из {b.MaxManagers}, зарплаты {Fmt.Money(g.SalariesPerTurn)} за ход — подробнее во вкладке «Команда»");
 
             GUILayout.Space(14);
             GUILayout.Label("Расходы за ход", _header);
             Line("Содержание планет", $"{Fmt.Money(g.UpkeepPerTurn)} ({Fmt.Multiplier(g.UpkeepMultiplierNow)} за {g.UpkeepCurvePlanets} раб. планет)");
-            Line("Зарплаты", Fmt.Money(g.Managers * b.ManagerSalary));
+            Line("Зарплаты", Fmt.Money(g.SalariesPerTurn));
             Line("Проценты", Fmt.Money(g.Debt * b.InterestPerTurn));
             Line("Страховка", Fmt.Money(g.InsurancePerTurn));
             Line("Доставка на биржу", Fmt.Money(g.ShippingPerTurn));

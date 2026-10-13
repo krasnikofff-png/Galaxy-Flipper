@@ -436,6 +436,7 @@ namespace PlanetTrader.Sim
                 ("Без влияния продаж на рынок", b => b.SalesImpact = 0),
                 ("Без ИИ-конкурентов", b => { b.AiBuyChance = 0; b.AiStartShare = 0; b.AuctionMarkup = 0; b.CartelChance = 0; b.MergerChance = 0; foreach (var m in b.Magnates) { m.TrickChance = 0; m.AuctionInterest = 0; } }),
                 ("Без крупных ходов магнатов (картель, иски, слияния)", b => { b.CartelChance = 0; b.MergerChance = 0; foreach (var m in b.Magnates) m.TrickWeights[5] = 0; }),
+                ("Без навыков менеджеров (все средние)", b => { b.NegotiationPriceStep = b.NegotiationChanceStep = b.NegotiationSaleStep = 0; b.GeologyCostStep = b.GeologyFindStep = 0; b.ShadyFineStep = b.ShadyChanceStep = 0; b.PeopleFestivalStep = b.PeopleCostStep = 0; }),
                 ("Без зарплат", b => b.ManagerSalary = 0),
                 ("Без процентов", b => b.InterestPerTurn = 0),
                 ("Без аварий", b => b.AccidentChance = 0),

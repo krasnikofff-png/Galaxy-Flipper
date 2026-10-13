@@ -60,7 +60,7 @@ namespace PlanetTrader.Sim
         public void PlayTurn(Game g)
         {
             if (_ranOutOfActions && g.Managers < g.Balance.MaxManagers && IncomePerTurn(g) > 3 * g.Balance.ManagerSalary)
-                g.HireManager();
+                g.HireManager(BestCandidate(g));
             _ranOutOfActions = false;
 
             FulfillOrders(g);
@@ -75,6 +75,24 @@ namespace PlanetTrader.Sim
         }
 
         static double Buffer(Game g) => CashBufferTurns * g.CostsPerTurn;
+
+        /// <summary>Кандидат, у которого сильная сторона лучше всего окупает зарплату.</summary>
+        static int BestCandidate(Game g)
+        {
+            int best = 0;
+            double bestScore = double.MinValue;
+            for (int i = 0; i < g.Candidates.Count; i++)
+            {
+                var c = g.Candidates[i];
+                double score = c.SkillLevels.Max() * 2 + c.TotalSkill - c.Salary / 20;
+                if (score > bestScore)
+                {
+                    bestScore = score;
+                    best = i;
+                }
+            }
+            return best;
+        }
 
         /// <summary>Что бот предлагает жителям: заботливый — сделку за школу, если хватает денег, иначе 90% цены.</summary>
         Offer OfferFor(Game g, Planet p)
@@ -262,7 +280,7 @@ namespace PlanetTrader.Sim
             foreach (var p in g.PlayerPlanets.Where(p => p.Mine == MineState.None && !p.IsDepleted).ToList())
             {
                 if (g.ActionsLeft == 0) { _ranOutOfActions = true; return; }
-                if (g.Money - p.Type.MineCost < Buffer(g)) return;
+                if (g.Money - g.MineCost(p) < Buffer(g)) return;
                 g.BuildMine(p.Id);
             }
         }
@@ -285,7 +303,7 @@ namespace PlanetTrader.Sim
             double net = avgOutput * b.BasePrice(p.Resource) - extraUpkeep;
             double shipping = g.ShippingCost(p.Resource, avgOutput, g.DistanceToExchange(p));
             double bonus = p.Knowledge == Knowledge.Explored && p.HasUnlootedRuins ? p.RuinsValue : 0;
-            double cost = p.ListPrice(b) + (p.Mine == MineState.None ? p.Type.MineCost : 0);
+            double cost = g.PurchasePrice(p) + (p.Mine == MineState.None ? g.MineCost(p) : 0);
             // У обитаемых планет ещё и налог; заботливый бот рассчитывает на низкий.
             if (p.Inhabited) net += b.TaxIncome[(int)TaxLevel.Low];
             const double horizon = 40;
@@ -435,12 +453,12 @@ namespace PlanetTrader.Sim
             return g.LaunchScan(bestType, bestX, bestY).Ok;
         }
 
-        double FullCost(Game g, Planet p) => PurchasePrice(g, p) + (p.Mine == MineState.None ? p.Type.MineCost : 0);
+        double FullCost(Game g, Planet p) => PurchasePrice(g, p) + (p.Mine == MineState.None ? g.MineCost(p) : 0);
 
         double PurchasePrice(Game g, Planet p) =>
             p.Inhabited ? g.OfferCost(p, OfferFor(g, p))
             : p.SoldAtAuction ? g.BidPrice(p, BidFactor(g, p))
-            : p.ListPrice(g.Balance);
+            : g.PurchasePrice(p);
 
         void ManageDebt(Game g)
         {
