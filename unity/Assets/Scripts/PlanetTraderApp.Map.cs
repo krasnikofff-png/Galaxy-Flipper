@@ -1,0 +1,339 @@
+using System.Collections.Generic;
+using System.Linq;
+using PlanetTrader.Core;
+using UnityEngine;
+using UnityEngine.UIElements;
+
+namespace PlanetTrader.Client
+{
+    /// <summary>
+    /// Карта сектора. Планеты, станцию и корабли рисует 3D-камера (SectorMapView) в прямоугольнике карты;
+    /// интерфейс поверх рисует кольца владельцев, пунктир зондов и круг скана (Painter2D), подписи и легенду,
+    /// и ловит клики по планетам.
+    /// </summary>
+    public sealed partial class PlanetTraderApp
+    {
+        VisualElement _map, _mapCanvas, _mapLabels, _legend, _probeBar, _probeTypes, _probeMissions;
+        readonly List<Label> _mapLabelPool = new List<Label>();
+        /// <summary>Курсор над картой, в точках относительно карты; null — курсор не над картой.</summary>
+        Vector2? _mapPointer;
+        /// <summary>Квадрат с планетами в точках относительно карты: координаты 0..1 планет растягиваются на него.</summary>
+        Rect _mapArea;
+
+        static readonly string[] MissionNames = { "Скан области", "Разведка планеты" };
+
+        void CreateMap(VisualElement root)
+        {
+            _map = root.Q("map");
+            _mapCanvas = root.Q("mapCanvas");
+            _mapLabels = root.Q("mapLabels");
+            _legend = root.Q("legend");
+            _probeBar = root.Q("probeBar");
+            _probeTypes = root.Q("probeTypes");
+            _probeMissions = root.Q("probeMissions");
+            root.Q<Button>("probeDone").clicked += () => Later(() => _probeMode = false);
+
+            _mapCanvas.generateVisualContent += PaintMap;
+            _mapCanvas.RegisterCallback<PointerMoveEvent>(e => OnMapPointer(e.localPosition, e.position));
+            _mapCanvas.RegisterCallback<PointerLeaveEvent>(_ =>
+            {
+                _mapPointer = null;
+                HideTooltip();
+            });
+            _mapCanvas.RegisterCallback<PointerDownEvent>(e =>
+            {
+                if (e.button == 0) OnMapClick(e.localPosition);
+            });
+            // Карта сменила размер — подписи на новые места.
+            _map.RegisterCallback<GeometryChangedEvent>(_ => MarkDirty());
+        }
+
+        /// <summary>Новая партия: другие магнаты в легенде, свои типы зондов.</summary>
+        void ResetMap()
+        {
+            _probeTypeIndex = 1;
+            _probeMission = ProbeMission.ScanArea;
+            var types = _game.Balance.ProbeTypes;
+            PanelBuilder.MakeChoice(types.Select(t => $"{t.Name} · {Fmt.Money(t.Cost)}").ToList(), _probeTypeIndex,
+                i => Later(() => _probeTypeIndex = i), _probeTypes);
+            PanelBuilder.MakeChoice(MissionNames, (int)_probeMission, i => Later(() => _probeMission = (ProbeMission)i), _probeMissions);
+
+            _legend.Clear();
+            LegendItem(Fmt.OwnerColor(Owner.Player, false), "ваши");
+            foreach (var m in _game.Magnates)
+                LegendItem(RingColor(Owner.Ai, m.Id, false), m.Name.Split(' ')[0]);
+            LegendItem(Fmt.OwnerColor(Owner.Registry, false), "свободна (цена)");
+            LegendItem(Fmt.OwnerColor(Owner.Registry, true), "нашёл ваш зонд");
+            LegendItem(new Color(0.35f, 0.37f, 0.42f), "силуэт");
+            var gap = new VisualElement();
+            gap.AddToClassList("legend-gap");
+            _legend.Add(gap);
+            foreach (var res in ResourceTypes.All)
+                LegendItem(Fmt.ResourceColor(res), res.RuName());
+        }
+
+        void LegendItem(Color color, string text)
+        {
+            var item = new VisualElement();
+            item.AddToClassList("legend-item");
+            var dot = new VisualElement();
+            dot.AddToClassList("dot");
+            dot.style.backgroundColor = color;
+            item.Add(dot);
+            item.Add(new Label(text));
+            _legend.Add(item);
+        }
+
+        /// <summary>Квадрат карты внутри её прямоугольника. false — карта ещё не размечена.</summary>
+        bool LayoutMap()
+        {
+            var r = _map.contentRect;
+            if (float.IsNaN(r.width) || r.width < 100 || r.height < 100) return false;
+            // Карта квадратная, чтобы расстояния и радиусы на экране не искажались.
+            float top = _probeMode ? 48 : 16;
+            float side = Mathf.Min(r.width - 60, r.height - top - 46);
+            _mapArea = new Rect((r.width - side) / 2, top + 6, side, side);
+            return true;
+        }
+
+        Vector2 ToMap(double x, double y) => new Vector2(_mapArea.x + (float)x * _mapArea.width, _mapArea.y + (float)y * _mapArea.height);
+
+        Vector2 FromMap(Vector2 local) => new Vector2((local.x - _mapArea.x) / _mapArea.width, (local.y - _mapArea.y) / _mapArea.height);
+
+        /// <summary>Точка карты → пиксели экрана от левого верхнего угла (так считает 3D-карта).</summary>
+        Vector2 ToPixels(Vector2 local) => (_map.worldBound.position + local) * _pixelScale;
+
+        Rect MapPixels
+        {
+            get
+            {
+                var w = _map.worldBound;
+                return new Rect(w.x * _pixelScale, w.y * _pixelScale, w.width * _pixelScale, w.height * _pixelScale);
+            }
+        }
+
+        ProbeType SelectedProbe => _game.Balance.ProbeTypes[Mathf.Clamp(_probeTypeIndex, 0, _game.Balance.ProbeTypes.Length - 1)];
+
+        void RefreshMap()
+        {
+            _probeBar.EnableInClassList("hidden", !_probeMode);
+            PanelBuilder.Select(_probeTypes, _probeTypeIndex);
+            PanelBuilder.Select(_probeMissions, (int)_probeMission);
+            if (!LayoutMap()) return;
+
+            int used = 0;
+            var b = _game.Balance;
+            // Биржа — 3D-станция карты; здесь только подпись.
+            var ex = ToMap(b.ExchangeX, b.ExchangeY);
+            MapLabel(ref used, "Биржа", ex + new Vector2(0, ExchangeRadius * 0.8f));
+            foreach (var pr in _game.Probes)
+                MapLabel(ref used, $"зонд: {pr.ResolveTurn - _game.Turn + 1} х.", ToMap(pr.TargetX, pr.TargetY) - new Vector2(0, 26));
+            foreach (var p in _game.AllPlanets)
+            {
+                string label = MapLabel(p);
+                if (label != null) MapLabel(ref used, label, ToMap(p.MapX, p.MapY) + new Vector2(0, PlanetRadius(p) + 5));
+            }
+            for (int i = used; i < _mapLabelPool.Count; i++) _mapLabelPool[i].AddToClassList("hidden");
+        }
+
+        /// <summary>Подпись на карте с центром по x в точке at.</summary>
+        void MapLabel(ref int used, string text, Vector2 at)
+        {
+            if (used == _mapLabelPool.Count)
+            {
+                var l = new Label { pickingMode = PickingMode.Ignore };
+                l.AddToClassList("map-label");
+                _mapLabels.Add(l);
+                _mapLabelPool.Add(l);
+            }
+            var label = _mapLabelPool[used++];
+            label.text = text;
+            label.RemoveFromClassList("hidden");
+            label.style.left = at.x - 70;
+            label.style.top = at.y;
+        }
+
+        string MapLabel(Planet p)
+        {
+            string marks = "";
+            if (p.Knowledge == Knowledge.Explored && p.HasUnlootedRuins) marks += " · руины";
+            if (p.Knowledge != Knowledge.Silhouette && p.Inhabited) marks += " · жители";
+            switch (p.Owner)
+            {
+                case Owner.Player when p.IsRegenerating:
+                    return $"ВЫ · восст. {p.RegenTurnsLeft} х.";
+                case Owner.Player:
+                    string people = p.Inhabited ? (p.OnStrike ? " · забастовка" : $" · лоял. {Mathf.RoundToInt((float)p.Loyalty)}") : "";
+                    return (p.IsDepleted ? "ВЫ · пусто" : "ВЫ") + people + marks.Replace(" · жители", "");
+                case Owner.Ai: return _game.GetMagnate(p.MagnateId)?.Name.Split(' ')[0] ?? "ИИ";
+                default: return p.IsDepleted ? null : Fmt.Money(p.ListPrice(_game.Balance)) + marks;
+            }
+        }
+
+        // ------------------------------------------------------------------
+        // Рисование поверх 3D-карты
+        // ------------------------------------------------------------------
+
+        void PaintMap(MeshGenerationContext ctx)
+        {
+            if (_game == null || !LayoutMap()) return;
+            var paint = ctx.painter2D;
+            var g = _game;
+            var b = g.Balance;
+
+            if (_probeMode)
+            {
+                // Дальность выбранного зонда от каждой точки запуска.
+                var range = new Color(0.4f, 0.7f, 1f, 0.25f);
+                MapRing(paint, b.ExchangeX, b.ExchangeY, SelectedProbe.Range, range);
+                foreach (var own in g.PlayerPlanets)
+                    MapRing(paint, own.MapX, own.MapY, SelectedProbe.Range, range);
+            }
+
+            // Зонды в полёте: пунктир до цели; сам зонд — 3D-модель на карте.
+            foreach (var pr in g.Probes)
+            {
+                var from = ToMap(pr.FromX, pr.FromY);
+                var to = ToMap(pr.TargetX, pr.TargetY);
+                for (float t = 0; t <= 1; t += 0.05f) Disc(paint, Vector2.Lerp(from, to, t), 1.5f, new Color(0.6f, 0.8f, 1f, 0.5f));
+                if (pr.Mission == ProbeMission.ScanArea)
+                    MapRing(paint, pr.TargetX, pr.TargetY, pr.Type.ScanRadius, new Color(0.6f, 0.9f, 1f, 0.6f));
+            }
+
+            foreach (var p in g.AllPlanets)
+            {
+                var center = ToMap(p.MapX, p.MapY);
+                float radius = PlanetRadius(p);
+                // Сама планета — 3D-сфера под интерфейсом; здесь только кольца вокруг неё.
+                if (p.Id == _selectedId) Ring(paint, center, radius + 11, Color.white, 2);
+                Ring(paint, center, radius + 6, RingColor(p), 2.5f);
+                if (p.Knowledge == Knowledge.Explored && p.Owner != Owner.Player)
+                    Disc(paint, center + new Vector2(radius + 2, -radius - 2), 3.5f, Color.white);
+            }
+
+            // Режим скана: круг скана под курсором — зелёный, если зонд долетит.
+            if (_probeMode && _probeMission == ProbeMission.ScanArea && _mapPointer is Vector2 at && _mapArea.Contains(at) && HitPlanet(at) == null)
+            {
+                var point = FromMap(at);
+                bool reach = g.InRange(SelectedProbe, point.x, point.y);
+                MapRing(paint, point.x, point.y, SelectedProbe.ScanRadius, reach ? new Color(0.5f, 1f, 0.6f, 0.8f) : new Color(1f, 0.4f, 0.4f, 0.8f));
+            }
+        }
+
+        /// <summary>Кольцо радиусом radius в координатах карты (0..1).</summary>
+        void MapRing(Painter2D paint, double x, double y, double radius, Color color) =>
+            Ring(paint, ToMap(x, y), (float)radius * _mapArea.width, color, 2);
+
+        static void Ring(Painter2D paint, Vector2 center, float radius, Color color, float width)
+        {
+            paint.strokeColor = color;
+            paint.lineWidth = width;
+            paint.BeginPath();
+            paint.Arc(center, radius, Angle.Degrees(0), Angle.Degrees(360));
+            paint.ClosePath();
+            paint.Stroke();
+        }
+
+        static void Disc(Painter2D paint, Vector2 center, float radius, Color color)
+        {
+            paint.fillColor = color;
+            paint.BeginPath();
+            paint.Arc(center, radius, Angle.Degrees(0), Angle.Degrees(360));
+            paint.ClosePath();
+            paint.Fill();
+        }
+
+        // ------------------------------------------------------------------
+        // Мышь над картой
+        // ------------------------------------------------------------------
+
+        /// <summary>Планета под точкой карты (с запасом на кольцо) или null.</summary>
+        Planet HitPlanet(Vector2 local)
+        {
+            Planet best = null;
+            float bestDistance = float.MaxValue;
+            foreach (var p in _game.AllPlanets)
+            {
+                float d = Vector2.Distance(local, ToMap(p.MapX, p.MapY));
+                if (d <= PlanetRadius(p) + 6 && d < bestDistance)
+                {
+                    best = p;
+                    bestDistance = d;
+                }
+            }
+            return best;
+        }
+
+        void OnMapPointer(Vector2 local, Vector2 screenPoint)
+        {
+            _mapPointer = local;
+            if (!LayoutMap()) return;
+            var p = HitPlanet(local);
+            if (p != null)
+                ShowTooltip(PlanetTooltip(p), screenPoint);
+            else if (_probeMode && _probeMission == ProbeMission.ScanArea && _mapArea.Contains(local))
+            {
+                var point = FromMap(local);
+                ShowTooltip(ProbeHint(point.x, point.y, ProbeMission.ScanArea), screenPoint);
+            }
+            else
+                HideTooltip();
+        }
+
+        void OnMapClick(Vector2 local)
+        {
+            if (RivalsTurn || !LayoutMap()) return;
+            var p = HitPlanet(local);
+            if (p != null)
+            {
+                int id = p.Id;
+                double x = p.MapX, y = p.MapY;
+                if (_probeMode && _probeMission == ProbeMission.Explore)
+                    Later(() => LaunchExplore(id));
+                else if (_probeMode)
+                    Later(() => LaunchScan(x, y));
+                else
+                    Later(() =>
+                    {
+                        _selectedId = id;
+                        _tab = Tab.Planet;
+                    });
+            }
+            else if (_probeMode && _probeMission == ProbeMission.ScanArea && _mapArea.Contains(local))
+            {
+                var point = FromMap(local);
+                Later(() => LaunchScan(point.x, point.y));
+            }
+        }
+
+        string PlanetTooltip(Planet p)
+        {
+            string name = p.Knowledge == Knowledge.Silhouette ? $"Силуэт #{p.Id}" : $"{p.Type.Name} #{p.Id}, {p.Resource.RuName()}";
+            string tip = $"{name}\n{Fmt.OwnerName(p.Owner, p.FoundByProbe)}";
+            if (_probeMode && _probeMission == ProbeMission.Explore && p.Knowledge != Knowledge.Explored && p.Owner != Owner.Player)
+                tip += "\n" + ProbeHint(p.MapX, p.MapY, ProbeMission.Explore);
+            return tip;
+        }
+
+        /// <summary>Строка о зонде к точке: долетит ли, за сколько ходов и за сколько денег.</summary>
+        string ProbeHint(double x, double y, ProbeMission mission)
+        {
+            var probe = SelectedProbe;
+            if (!_game.InRange(probe, x, y)) return $"«{probe.Name}» не долетит";
+            int turns = _game.ProbeTurns(probe, x, y, mission);
+            return $"«{probe.Name}»: {Fmt.Money(probe.Cost)}, результат через {turns} х.";
+        }
+
+        void LaunchScan(double x, double y)
+        {
+            var probe = SelectedProbe;
+            Act(() => _game.LaunchScan(probe, x, y), $"Зонд «{probe.Name}» отправлен сканировать область.");
+        }
+
+        void LaunchExplore(int planetId)
+        {
+            var probe = SelectedProbe;
+            Act(() => _game.LaunchExplore(probe, planetId), $"Зонд «{probe.Name}» отправлен на разведку планеты #{planetId}.");
+        }
+    }
+}

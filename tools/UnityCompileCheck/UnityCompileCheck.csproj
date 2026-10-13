@@ -25,6 +25,7 @@
     <Reference Include="UnityEngine.IMGUIModule" HintPath="$(UnityRefs)UnityEngine.IMGUIModule.dll" Private="false" />
     <Reference Include="UnityEngine.TextRenderingModule" HintPath="$(UnityRefs)UnityEngine.TextRenderingModule.dll" Private="false" />
     <Reference Include="UnityEngine.InputLegacyModule" HintPath="$(UnityRefs)UnityEngine.InputLegacyModule.dll" Private="false" />
+    <Reference Include="UnityEngine.UIElementsModule" HintPath="$(UnityRefs)UnityEngine.UIElementsModule.dll" Private="false" />
     <Reference Include="UnityEngine.ScreenCaptureModule" HintPath="$(UnityRefs)UnityEngine.ScreenCaptureModule.dll" Private="false" />
   </ItemGroup>
 

@@ -1,0 +1,43 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements">
+    <ui:Style src="Game.uss" />
+    <ui:VisualElement name="screen" class="screen">
+        <ui:VisualElement name="topBar" class="top-bar">
+            <ui:VisualElement name="stats" class="stats" picking-mode="Ignore" />
+            <ui:Button name="probesButton" text="Зонды" focusable="false" class="button top-button" />
+            <ui:Button name="endTurnButton" text="Конец хода →" focusable="false" class="button top-button end-turn" />
+            <ui:Button name="showcaseButton" text="Планеты (F2)" focusable="false" class="button top-button" />
+            <ui:Button name="newGameButton" text="Новая игра" focusable="false" class="button top-button" />
+        </ui:VisualElement>
+        <ui:Label name="eventBar" class="event-bar" />
+        <ui:VisualElement name="body" class="body">
+            <ui:VisualElement name="map" class="map">
+                <ui:VisualElement name="mapCanvas" class="map-canvas" />
+                <ui:VisualElement name="mapLabels" class="map-labels" picking-mode="Ignore" />
+                <ui:VisualElement name="probeBar" class="probe-bar hidden">
+                    <ui:VisualElement name="probeTypes" class="segmented probe-types" />
+                    <ui:VisualElement name="probeMissions" class="segmented probe-missions" />
+                    <ui:VisualElement class="spacer" picking-mode="Ignore" />
+                    <ui:Button name="probeDone" text="Готово" focusable="false" class="button probe-done" />
+                </ui:VisualElement>
+                <ui:VisualElement name="legend" class="legend" picking-mode="Ignore" />
+            </ui:VisualElement>
+            <ui:VisualElement name="side" class="side panel">
+                <ui:VisualElement name="tabs" class="segmented tabs" />
+                <ui:ScrollView name="sideScroll" mode="Vertical" horizontal-scroller-visibility="Hidden" touch-scroll-type="Clamped" class="side-scroll" />
+            </ui:VisualElement>
+        </ui:VisualElement>
+        <ui:ScrollView name="log" mode="Vertical" horizontal-scroller-visibility="Hidden" touch-scroll-type="Clamped" class="log panel" />
+        <ui:VisualElement name="rivals" class="rivals hidden">
+            <ui:VisualElement class="rivals-card panel">
+                <ui:Label name="rivalsTitle" class="title" />
+                <ui:VisualElement name="rivalsList" />
+                <ui:VisualElement class="spacer" />
+                <ui:VisualElement class="bar wide">
+                    <ui:VisualElement name="rivalsProgress" class="bar-fill rivals-fill" />
+                </ui:VisualElement>
+                <ui:Label text="Клик или пробел — пропустить" class="small" />
+            </ui:VisualElement>
+        </ui:VisualElement>
+        <ui:Label name="tooltip" class="tooltip hidden" picking-mode="Ignore" />
+    </ui:VisualElement>
+</ui:UXML>
