@@ -1,9 +1,14 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <!--
-    Проверка, что скрипты Unity компилируются, без установленного Unity:
-    собирает unity/Assets/Scripts против справочных сборок UnityEngine из NuGet.
+    Проверка, что скрипты Unity компилируются, без запуска Unity:
+    собирает unity/Assets/Scripts против сборок UnityEngine.
     Запуск: dotnet build tools/UnityCompileCheck
+
+    Сборки берутся из установленного Unity 6 (версия проекта, путь Unity Hub на macOS или Windows);
+    свой путь — dotnet build tools/UnityCompileCheck -p:UnityRefs=…/Managed/UnityEngine/
+    Без Unity — справочные сборки 2021.3 из NuGet (новее в NuGet нет): интерфейс на UI Toolkit
+    (Painter2D и др.) против них не соберётся, проверятся только ошибки в остальном.
   -->
   <PropertyGroup>
     <TargetFramework>netstandard2.1</TargetFramework>
@@ -11,8 +16,16 @@
     <Nullable>disable</Nullable>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
-    <UnityRefs>$(NuGetPackageRoot)unityengine.modules/2021.3.33/lib/net45/</UnityRefs>
+    <UnityVersion>6000.0.58f2</UnityVersion>
+    <UnityRefs Condition="'$(UnityRefs)' == '' And Exists('/Applications/Unity/Hub/Editor/$(UnityVersion)/Unity.app/Contents/Managed/UnityEngine/')">/Applications/Unity/Hub/Editor/$(UnityVersion)/Unity.app/Contents/Managed/UnityEngine/</UnityRefs>
+    <UnityRefs Condition="'$(UnityRefs)' == '' And Exists('C:/Program Files/Unity/Hub/Editor/$(UnityVersion)/Editor/Data/Managed/UnityEngine/')">C:/Program Files/Unity/Hub/Editor/$(UnityVersion)/Editor/Data/Managed/UnityEngine/</UnityRefs>
+    <UnityRefsFromNuGet Condition="'$(UnityRefs)' == ''">true</UnityRefsFromNuGet>
+    <UnityRefs Condition="'$(UnityRefs)' == ''">$(NuGetPackageRoot)unityengine.modules/2021.3.33/lib/net45/</UnityRefs>
   </PropertyGroup>
+
+  <Target Name="WarnOldUnityRefs" BeforeTargets="Build" Condition="'$(UnityRefsFromNuGet)' == 'true'">
+    <Message Importance="high" Text="Unity $(UnityVersion) не найден: проверка идёт против сборок 2021.3 из NuGet, интерфейс на UI Toolkit (Painter2D) против них не соберётся." />
+  </Target>
 
   <ItemGroup>
     <PackageDownload Include="UnityEngine.Modules" Version="[2021.3.33]" />
@@ -27,6 +40,7 @@
     <Reference Include="UnityEngine.InputLegacyModule" HintPath="$(UnityRefs)UnityEngine.InputLegacyModule.dll" Private="false" />
     <Reference Include="UnityEngine.UIElementsModule" HintPath="$(UnityRefs)UnityEngine.UIElementsModule.dll" Private="false" />
     <Reference Include="UnityEngine.ScreenCaptureModule" HintPath="$(UnityRefs)UnityEngine.ScreenCaptureModule.dll" Private="false" />
+    <Reference Include="UnityEngine.TextCoreTextEngineModule" HintPath="$(UnityRefs)UnityEngine.TextCoreTextEngineModule.dll" Private="false" Condition="Exists('$(UnityRefs)UnityEngine.TextCoreTextEngineModule.dll')" />
   </ItemGroup>
 
 </Project>
