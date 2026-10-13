@@ -338,6 +338,7 @@ namespace PlanetTrader.Core
             if (Money < 0) CallCollectors(report);
 
             UpdateOrders(report);
+            Discover(report);
             AiTurn(report);
             Market.Tick(_rng);
 
@@ -431,6 +432,15 @@ namespace PlanetTrader.Core
             var o = new Order(_nextOrderId++, Customers[_rng.Range(0, Customers.Length)], r, amount, Turn + Balance.OrderDeadlineTurns);
             _orders.Add(o);
             report.Events.Add($"{o.Customer}: нужно {o.Amount} ({r.RuName()}) за {Balance.OrderDeadlineTurns} ходов");
+        }
+
+        /// <summary>Случайное открытие: новая планета попадает в реестр, её видят все, в том числе ИИ.</summary>
+        void Discover(TurnReport report)
+        {
+            if (!_rng.Chance(Balance.DiscoveryChancePerTurn)) return;
+            var p = GeneratePlanet(RandomType());
+            _planets.Add(p);
+            report.Events.Add($"Открыта новая планета {p.Type.Name} #{p.Id}");
         }
 
         /// <summary>ИИ выкупает лучшую свободную планету и иногда перепродаёт свою.</summary>

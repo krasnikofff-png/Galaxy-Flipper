@@ -102,6 +102,8 @@ namespace PlanetTrader.Core
 
         // --- ИИ и сектор ---
         public int SectorPlanets = 30;
+        /// <summary>Шанс за ход, что в реестре появится новая открытая планета (~1 за 7 ходов).</summary>
+        public double DiscoveryChancePerTurn = 1.0 / 7;
         public double AiStartShare = 0.33;
         public double AiBuyChance = 0.35;
         /// <summary>Шанс, что ИИ выставит одну из своих планет на продажу (допущение).</summary>

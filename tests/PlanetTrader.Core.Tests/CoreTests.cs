@@ -254,3 +254,28 @@ public class ListingTests
         Assert.Equal(type.Upkeep * b.DepletedUpkeepShare, p.BaseUpkeep(b), 6);
     }
 }
+
+public class DiscoveryTests
+{
+    [Fact]
+    public void DiscoveredPlanetsAppearInRegistryAtExpectedRate()
+    {
+        var b = new Balance { AiBuyChance = 0, AiResaleChance = 0, AccidentChance = 0 };
+        var g = Game.New(b, 9);
+        int before = g.AllPlanets.Count;
+        for (int i = 0; i < 700; i++) g.EndTurn();
+        int found = g.AllPlanets.Count - before;
+        // Ожидаем ~100 открытий за 700 ходов.
+        Assert.InRange(found, 70, 130);
+        Assert.All(g.AllPlanets.Skip(before), p => Assert.False(p.FoundByProbe));
+    }
+
+    [Fact]
+    public void NoDiscoveriesWhenChanceIsZero()
+    {
+        var g = Game.New(new Balance { DiscoveryChancePerTurn = 0 }, 9);
+        int before = g.AllPlanets.Count;
+        for (int i = 0; i < 100; i++) g.EndTurn();
+        Assert.Equal(before, g.AllPlanets.Count);
+    }
+}
