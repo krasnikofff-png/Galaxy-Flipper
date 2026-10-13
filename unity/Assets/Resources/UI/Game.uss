@@ -490,14 +490,6 @@
     padding: 2px 6px;
 }
 
-.portrait-hint {
-    position: absolute;
-    left: 10px;
-    bottom: 5px;
-    font-size: 11px;
-    color: rgba(191, 204, 230, 0.6);
-}
-
 /* Ход соперников */
 
 .rivals {

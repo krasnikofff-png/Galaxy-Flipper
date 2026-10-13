@@ -30,6 +30,9 @@ namespace PlanetTrader.Client
 
             ui.Title(silhouette ? $"Силуэт #{p.Id}" : $"{p.Type.Name} #{p.Id}");
             ui.Add(_portraitBox);
+            // Главные действия — сразу под окном планеты, чтобы не искать их под характеристиками.
+            MainActions(ui, p, silhouette, exact);
+            ui.Space("m");
             ui.Line("Владелец", Fmt.OwnerName(p.Owner, p.FoundByProbe));
             ui.Line("Знание", silhouette ? "силуэт: тип и запас неизвестны" : exact ? "полная разведка" : "скан: тип и оценка реестра");
             ui.Line("До биржи", $"{Fmt.Amount(g.DistanceToExchange(p) * 10)} св. лет, груз идёт {g.ShipTurns(p)} х.");
@@ -66,6 +69,44 @@ namespace PlanetTrader.Client
             }
             ui.Space("l");
 
+            // Остальное: разведка, жители, охрана; продажа — в самом конце, чтобы не нажать случайно.
+            switch (p.Owner)
+            {
+                case Owner.Registry:
+                    if (!p.IsDepleted) ExploreButtons(ui, p);
+                    break;
+
+                case Owner.Player:
+                    if (p.Inhabited) People(ui, p);
+                    else
+                    {
+                        ui.Small($"Планета необитаема. Колонисты будут платить налоги, а выучившись — зарабатывать умом, даже когда месторождение выработано. " +
+                                 $"Но шахта их раздражает: −{Fmt.Amount(b.LoyaltyMiningDrain)} лояльности за ход.");
+                        ui.Button($"Заселить колонистов за {Fmt.Money(g.ColonyCost)}: лояльность {Fmt.Amount(b.ColonyLoyalty)} · {Doer(Skill.People)}",
+                            g.ActionsLeft > 0 && g.Money >= g.ColonyCost,
+                            () => Act(() => g.SettleColony(p.Id), $"На {p.Type.Name} #{p.Id} прибыли колонисты."));
+                    }
+                    Guards(ui, p);
+                    ui.Space("m");
+                    double sale = g.SellPlanetPrice(p);
+                    double hype = g.CurrentEvent?.Event.PlanetSale(p.Resource) ?? 1;
+                    if (hype != 1)
+                        ui.Text($"<color=#ffd27a>Событие «{g.CurrentEvent.Event.Name}»: такие планеты сейчас продаются ×{hype:0.##}.</color>");
+                    ui.Button($"Продать за {Fmt.Money(sale)} (комиссия {Fmt.Percent(b.ResaleCommission)}) · {Doer(Skill.Negotiation)}", g.ActionsLeft > 0,
+                        () => Act(() => g.SellPlanet(p.Id), $"Продана планета {p.Type.Name} #{p.Id} за {Fmt.Money(sale)}."));
+                    break;
+
+                case Owner.Ai:
+                    ExploreButtons(ui, p);
+                    break;
+            }
+        }
+
+        /// <summary>Главное, что можно сделать с планетой: купить, построить шахту, отбить иск, подкупить жителей магната.</summary>
+        void MainActions(PanelBuilder ui, Planet p, bool silhouette, bool exact)
+        {
+            var g = _game;
+            var b = g.Balance;
             switch (p.Owner)
             {
                 case Owner.Registry:
@@ -90,10 +131,11 @@ namespace PlanetTrader.Client
                         ui.Button($"Купить{blind} за {Fmt.Money(price)} · {Doer(Skill.Negotiation)}", g.ActionsLeft > 0 && g.Money >= price,
                             () => Act(() => g.BuyPlanet(p.Id), $"Куплена планета {p.Type.Name} #{p.Id} за {Fmt.Money(price)}."));
                     }
-                    ExploreButtons(ui, p);
                     break;
 
                 case Owner.Player:
+                    foreach (var x in g.Claims.Where(c => c.PlanetId == p.Id).ToList())
+                        Claim(ui, x, p);
                     if (p.Mine == MineState.None && !p.IsDepleted)
                     {
                         double mine = g.MineCost(p);
@@ -104,24 +146,6 @@ namespace PlanetTrader.Client
                         ui.Text(p.Inhabited && p.Education > 0
                             ? "Основное месторождение восстанавливается. Пока шахта стоит, все жители заняты умственным трудом."
                             : "Основное месторождение восстанавливается, а содержание идёт. Жители с образованием зарабатывали бы и сейчас.");
-                    foreach (var x in g.Claims.Where(c => c.PlanetId == p.Id).ToList())
-                        Claim(ui, x, p);
-                    if (p.Inhabited) People(ui, p);
-                    else
-                    {
-                        ui.Small($"Планета необитаема. Колонисты будут платить налоги, а выучившись — зарабатывать умом, даже когда месторождение выработано. " +
-                                 $"Но шахта их раздражает: −{Fmt.Amount(b.LoyaltyMiningDrain)} лояльности за ход.");
-                        ui.Button($"Заселить колонистов за {Fmt.Money(g.ColonyCost)}: лояльность {Fmt.Amount(b.ColonyLoyalty)} · {Doer(Skill.People)}",
-                            g.ActionsLeft > 0 && g.Money >= g.ColonyCost,
-                            () => Act(() => g.SettleColony(p.Id), $"На {p.Type.Name} #{p.Id} прибыли колонисты."));
-                    }
-                    Guards(ui, p);
-                    double sale = g.SellPlanetPrice(p);
-                    double hype = g.CurrentEvent?.Event.PlanetSale(p.Resource) ?? 1;
-                    if (hype != 1)
-                        ui.Text($"<color=#ffd27a>Событие «{g.CurrentEvent.Event.Name}»: такие планеты сейчас продаются ×{hype:0.##}.</color>");
-                    ui.Button($"Продать за {Fmt.Money(sale)} (комиссия {Fmt.Percent(b.ResaleCommission)}) · {Doer(Skill.Negotiation)}", g.ActionsLeft > 0,
-                        () => Act(() => g.SellPlanet(p.Id), $"Продана планета {p.Type.Name} #{p.Id} за {Fmt.Money(sale)}."));
                     break;
 
                 case Owner.Ai:
@@ -135,7 +159,6 @@ namespace PlanetTrader.Client
                         ui.Button($"Подкупить жителей за {Fmt.Money(bribe)} · 1 действие", g.ActionsLeft > 0 && g.Money >= bribe,
                             () => Do(g.BribeMagnateResidents(p.Id, out _)));
                     }
-                    ExploreButtons(ui, p);
                     break;
             }
         }
@@ -441,9 +464,18 @@ namespace PlanetTrader.Client
                      "переговоры — покупка, ставки, сделки с жителями, продажа планет; геология — шахты, экстракторы, зонды; " +
                      "грязные дела — слухи и подкуп; работа с людьми — праздники, школы, учёба, колонисты.");
             var performer = g.Staff.FirstOrDefault(m => m.Id == g.Current.PerformerId);
-            ui.Line("Действует", performer == null ? "лучший под каждое дело (авто)" : performer.Name);
-            if (performer != null)
-                ui.Button("Подбирать лучшего под дело", true, () => Do(g.SetPerformer(-1)));
+            ui.Line("Действует", performer == null ? "подбирается под каждое дело по способностям" : performer.Name);
+            if (performer == null)
+            {
+                // Кто возьмётся за дело сейчас: сильнейший в нём, но специалиста бережём для его собственного дела.
+                foreach (var skill in Skills.All)
+                {
+                    var who = g.WhoActs(skill);
+                    ui.Line("   " + skill.RuName(), who == null ? "действий не осталось" : $"{(who.IsDirector ? "вы" : who.Name)}, навык {who.Level(skill)}");
+                }
+            }
+            else
+                ui.Button("Подбирать под дело по способностям", true, () => Do(g.SetPerformer(-1)));
             ui.Space("s");
 
             foreach (var m in g.Staff.ToList())

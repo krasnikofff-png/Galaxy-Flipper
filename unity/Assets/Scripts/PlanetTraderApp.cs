@@ -54,6 +54,8 @@ namespace PlanetTrader.Client
         int _speciesShown = -1;
         /// <summary>Сколько ходов лежат обломки разбитой шахты (если новую не начали строить раньше).</summary>
         const int WreckTurns = 8;
+        /// <summary>Сколько разных обликов у силуэтов на карте.</summary>
+        const int SilhouetteLooks = 4;
 
         // Режим зонда: игрок выбирает тип и задание, потом кликает по карте.
         bool _probeMode;
@@ -150,7 +152,8 @@ namespace PlanetTrader.Client
                 Id = p.Id,
                 // Тип силуэта неизвестен — у всех силуэтов серый каменный облик.
                 Look = silhouette ? PlanetLook.Rocky : PlanetSurface.FromResource(p.Resource),
-                Seed = _lookSeed ^ (p.Id * 7919),
+                // Силуэты неразличимы, поэтому у них несколько общих обликов: запекаются один раз на все.
+                Seed = silhouette ? _lookSeed + p.Id % SilhouetteLooks : _lookSeed ^ (p.Id * 7919),
                 Silhouette = silhouette,
                 Depleted = p.IsDepleted,
                 // Дым над картой: авария на шахте или свежие обломки (у силуэтов ничего не видно).
@@ -212,14 +215,19 @@ namespace PlanetTrader.Client
         void LateUpdate()
         {
             if (!LayoutMap()) return;
+            // Порядок важен при первом показе — в нём планеты встают в очередь запекания:
+            // сначала свои, потом разведанные чужие, силуэты (у них общий облик) — в конце.
             _mapPlanets.Clear();
-            foreach (var p in _game.AllPlanets)
-            {
-                var m = Describe(p);
-                m.Center = ToPixels(ToMap(p.MapX, p.MapY));
-                m.Radius = MapRadius(p) * _pixelScale;
-                _mapPlanets.Add(m);
-            }
+            for (int pass = 0; pass < 3; pass++)
+                foreach (var p in _game.AllPlanets)
+                {
+                    int order = _game.IsMine(p) ? 0 : p.Knowledge != Knowledge.Silhouette ? 1 : 2;
+                    if (order != pass) continue;
+                    var m = Describe(p);
+                    m.Center = ToPixels(ToMap(p.MapX, p.MapY));
+                    m.Radius = MapRadius(p) * _pixelScale;
+                    _mapPlanets.Add(m);
+                }
             _map3d.Show(MapPixels, _mapPlanets);
 
             var b = _game.Balance;

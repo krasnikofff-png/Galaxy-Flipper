@@ -48,6 +48,8 @@ namespace PlanetTrader.Visuals
     {
         /// <summary>Ширина текстур планеты на карте: планета там не больше 50 пикселей.</summary>
         const int Resolution = 256;
+        /// <summary>Ширина черновой текстуры: пока карта не допеклась, планеты видны мыльными, но сразу.</summary>
+        const int PreviewResolution = 64;
         /// <summary>Мир карты далеко от начала координат, чтобы не попадать в другие камеры.</summary>
         static readonly Vector3 Origin = new Vector3(0, -10000, 0);
 
@@ -155,6 +157,7 @@ namespace PlanetTrader.Visuals
                     // Скан открыл тип планеты — запекаем настоящий облик, старый виден, пока новый не готов.
                     e.Look = e.View.Look = p.Look;
                     e.Seed = e.View.Seed = p.Seed;
+                    e.View.Shared = p.Silhouette;
                     e.View.RebuildAsync();
                 }
                 e.Seen = true;
@@ -264,7 +267,8 @@ namespace PlanetTrader.Visuals
         PlanetView Create(MapPlanet p)
         {
             // Ось наклонена у каждой планеты по-своему, но все смотрят на нас примерно одинаково.
-            var rnd = new System.Random(p.Seed);
+            // Зерно облика у силуэтов общее, поэтому наклон и вращение — ещё и от номера планеты.
+            var rnd = new System.Random(p.Seed + p.Id * 7919);
             var pivot = new GameObject($"Планета {p.Id}").transform;
             pivot.SetParent(_root, false);
             var view = new GameObject("Вид").AddComponent<PlanetView>();
@@ -273,6 +277,9 @@ namespace PlanetTrader.Visuals
             view.Look = p.Look;
             view.Seed = p.Seed;
             view.Resolution = Resolution;
+            // Сначала вся карта — мелкими черновиками за доли секунды, потом планеты по одной становятся чёткими.
+            view.PreviewResolution = PreviewResolution;
+            view.Shared = p.Silhouette;
             view.SpinSpeed = 5 + (float)rnd.NextDouble() * 5;
             view.CloudDrift = 2;
             return view;

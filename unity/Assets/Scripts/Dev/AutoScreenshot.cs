@@ -16,6 +16,7 @@ namespace PlanetTrader.Client
     /// -autoShotClicks "x,y;x,y" — перед снимком кликнуть мышью в эти точки интерфейса (экран 1600×900), по одной в полсекунды.
     /// -autoShotWheel "x,y,шаги" — покрутить колесо мыши в точке (меньше нуля — к себе, приблизить),
     /// -autoShotPan "x,y,dx,dy" — потянуть мышью из точки на dx, dy.
+    /// -autoShotBuy — купить свободную планету без шахты, выбрать её и выписать в журнал кнопки правой панели.
     /// -autoShotProbe — включить режим зонда. -autoShotRivals — нажать «Конец хода» перед снимком (пауза «ходят соперники»).
     /// Без ключа ничего не делает.
     /// </summary>
@@ -26,7 +27,7 @@ namespace PlanetTrader.Client
         bool _reveal;
         float _drag;
         int _tab = -1;
-        bool _probe, _rivals;
+        bool _probe, _rivals, _buy;
         Vector2[] _clicks = new Vector2[0];
         float[] _wheel, _pan;
 
@@ -68,6 +69,7 @@ namespace PlanetTrader.Client
                     .ToArray();
             shot._probe = System.Array.IndexOf(args, "-autoShotProbe") >= 0;
             shot._rivals = System.Array.IndexOf(args, "-autoShotRivals") >= 0;
+            shot._buy = System.Array.IndexOf(args, "-autoShotBuy") >= 0;
         }
 
         IEnumerator Start()
@@ -87,6 +89,24 @@ namespace PlanetTrader.Client
                 }
                 var g = app.CurrentGame;
                 g.LaunchScan(g.Balance.ProbeTypes[2], 0.85, 0.2);
+            }
+            if (app != null && _buy)
+            {
+                var g = app.CurrentGame;
+                g.Current.Money += 100000;
+                foreach (var target in g.AllPlanets.Where(p => p.Owner == Core.Owner.Registry && p.Mine == Core.MineState.None && !p.Inhabited && !p.IsDepleted).ToList())
+                {
+                    bool won = false;
+                    var r = target.SoldAtAuction ? g.PlaceBid(target.Id, g.Balance.BidFactors.Max(), out won) : g.BuyPlanet(target.Id);
+                    Debug.Log($"Автопокупка #{target.Id}: {(r.Ok ? (target.SoldAtAuction && !won ? "ставка проиграна" : "куплена") : r.Error)}, шахта {target.Mine}, владелец {target.Owner}");
+                    if (target.Owner != Core.Owner.Player) continue;
+                    app.Select(target.Id);
+                    break;
+                }
+                yield return new WaitForSecondsRealtime(0.5f);
+                var side = FindAnyObjectByType<UIDocument>().rootVisualElement.Q<ScrollView>("sideScroll");
+                foreach (var b in side.Query<Button>().ToList())
+                    Debug.Log($"Кнопка панели: «{b.text}» {(b.enabledSelf ? "" : "(неактивна)")} {(b.resolvedStyle.display == DisplayStyle.None ? "(скрыта)" : "")}");
             }
             if (app != null && _tab >= 0) app.ShowTab(_tab);
             if (app != null && _probe) app.SetProbeMode(true);

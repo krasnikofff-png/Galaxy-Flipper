@@ -26,6 +26,12 @@ namespace PlanetTrader.Visuals
         public int CacheSize;
         [Tooltip("Запекать без очереди: окно планеты не ждёт, пока допекутся планеты карты.")]
         public bool Priority;
+        [Tooltip("Облик общий с другими планетами (силуэты на карте): запекается один раз на всех.")]
+        public bool Shared;
+
+        /// <summary>Общие запекания: облик, зерно и ширина → пиксели (их читают, но не меняют).</summary>
+        static readonly System.Collections.Generic.Dictionary<(PlanetLook, int, int), Task<PlanetPixels>> SharedBakes =
+            new System.Collections.Generic.Dictionary<(PlanetLook, int, int), Task<PlanetPixels>>();
 
         /// <summary>
         /// Очередь фоновых запеканий: планеты карты печёт по одной (каждая и так на всех ядрах),
@@ -124,18 +130,27 @@ namespace PlanetTrader.Visuals
             _bakingLook = look;
             _bakingSeed = seed;
             _bakingRes = res;
+            if (Shared)
+            {
+                if (!SharedBakes.TryGetValue((look, seed, res), out var task))
+                    SharedBakes[(look, seed, res)] = task = Queued(look, seed, res);
+                _baking = task;
+                return;
+            }
             if (Priority)
             {
                 _baking = Task.Run(() => PlanetBaker.BakePixels(look, seed, res));
                 return;
             }
-            _baking = Task.Run(async () =>
-            {
-                await Queue.WaitAsync();
-                try { return PlanetBaker.BakePixels(look, seed, res); }
-                finally { Queue.Release(); }
-            });
+            _baking = Queued(look, seed, res);
         }
+
+        static Task<PlanetPixels> Queued(PlanetLook look, int seed, int res) => Task.Run(async () =>
+        {
+            await Queue.WaitAsync();
+            try { return PlanetBaker.BakePixels(look, seed, res); }
+            finally { Queue.Release(); }
+        });
 
         /// <summary>Убрать поверхность и отменить запекание: планета пропадает до следующей сборки.</summary>
         public void Clear()

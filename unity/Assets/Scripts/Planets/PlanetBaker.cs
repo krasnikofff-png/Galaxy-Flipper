@@ -15,8 +15,11 @@ namespace PlanetTrader.Visuals
     /// </summary>
     public static class PlanetBaker
     {
-        /// <summary>С какой ширины текстуры рельеф считается по соседним пикселям (быстрее втрое).</summary>
-        const int GridNormalsFrom = 2048;
+        /// <summary>
+        /// С какой ширины текстуры рельеф считается по соседним пикселям: втрое быстрее, а на мелких текстурах
+        /// ещё и чище (нет ряби от деталей мельче пикселя). Совсем мелкие черновики — по-старому.
+        /// </summary>
+        const int GridNormalsFrom = 256;
 
         /// <summary>Точка сферы по координатам развёртки: u — долгота 0…1, v — широта 0…1 (снизу вверх).</summary>
         public static Vector3 Direction(float u, float v)
@@ -48,8 +51,7 @@ namespace PlanetTrader.Visuals
             float bump = style.Smooth ? 0 : 1;
             bool hasGlow = false;
 
-            // Рельеф (наклон нормали) — по разнице высот. На крупных текстурах шаг между пикселями почти равен eps,
-            // поэтому высоту берём из соседних пикселей: поверхность считается один раз на пиксель, а не три.
+            // Рельеф (наклон нормали) — по разнице высот соседних пикселей: поверхность считается один раз на пиксель, а не три.
             bool fromGrid = width >= GridNormalsFrom;
             var heights = fromGrid ? new float[width * height] : null;
 

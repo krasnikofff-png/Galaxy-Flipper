@@ -75,6 +75,12 @@ namespace PlanetTrader.Core
         public double ShadyChanceStep = 0.12;
         public double PeopleFestivalStep = 0.25;
         public double PeopleCostStep = 0.1;
+        /// <summary>
+        /// Кого автоматически ставить на дело: навык минус эта доля разрыва до его сильной стороны.
+        /// Геолога с геологией 5 и переговорами 3 не отправят торговаться, если директор торгуется так же, —
+        /// его действие сбережётся для шахты. Заметно лучший в деле всё равно возьмётся за него.
+        /// </summary>
+        public double SpecialistReserve = 0.6;
 
         // --- Содержание: кривая с полкой ---
         public double UpkeepCurveA = 1.0;

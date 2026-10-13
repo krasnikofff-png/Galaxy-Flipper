@@ -31,7 +31,6 @@ namespace PlanetTrader.Client
         // Окно планеты: живёт всё время, при пересборке вкладки переставляется в новое место.
         VisualElement _portraitBox;
         Button _portraitButton;
-        Label _portraitHint;
         Texture _portraitTexture;
 
         void MarkDirty() => _dirty = true;
@@ -186,11 +185,8 @@ namespace PlanetTrader.Client
         {
             _portraitBox = new VisualElement { name = "portrait" };
             _portraitBox.AddToClassList("portrait");
-            _portraitHint = new Label { pickingMode = PickingMode.Ignore };
-            _portraitHint.AddToClassList("portrait-hint");
             _portraitButton = PanelBuilder.MakeButton("К постройкам", () => _portrait.ToggleView());
             _portraitButton.AddToClassList("portrait-button");
-            _portraitBox.Add(_portraitHint);
             _portraitBox.Add(_portraitButton);
 
             // Тянуть мышью — вращать планету (облетать базу), колесо — ближе или дальше.
@@ -233,9 +229,6 @@ namespace PlanetTrader.Client
             }
             _portraitButton.EnableInClassList("hidden", !_portrait.HasBuildings);
             _portraitButton.text = _portrait.CloseUp ? "Вся планета" : "К постройкам";
-            _portraitHint.text = _portrait.CloseUp
-                ? "тянуть мышью — облететь базу, колесо — ближе/дальше"
-                : "тянуть мышью — вращать планету, колесо — ближе/дальше";
         }
 
         // ------------------------------------------------------------------

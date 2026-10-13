@@ -468,8 +468,14 @@ namespace PlanetTrader.Core
             var chosen = free.FirstOrDefault(m => m.Id == _current.PerformerId);
             if (chosen != null) return chosen;
             if (skill == null) return free.OrderBy(m => m.SkillLevels.Max()).ThenByDescending(m => m.IsDirector).First();
-            return free.OrderByDescending(m => m.Level(skill.Value)).ThenBy(m => m.IsDirector).First();
+            // По способностям: кто сильнее в этом деле, но специалиста в другом деле бережём для его дела.
+            // При равенстве — у кого остальные навыки слабее (он меньше нужен в другом месте), потом менеджер раньше директора.
+            var s = skill.Value;
+            return free.OrderByDescending(m => Fit(m, s)).ThenBy(m => m.SkillLevels.Sum()).ThenBy(m => m.IsDirector).First();
         }
+
+        /// <summary>Насколько человек подходит к делу: навык минус «цена» отвлечь его от сильной стороны.</summary>
+        double Fit(Manager m, Skill s) => m.Level(s) - Balance.SpecialistReserve * (m.SkillLevels.Max() - m.Level(s));
 
         /// <summary>Насколько тот, кто возьмётся за дело, лучше среднего: от −2 до +2.</summary>
         public int Edge(Skill skill) => WhoActs(skill)?.Edge(skill) ?? 0;
