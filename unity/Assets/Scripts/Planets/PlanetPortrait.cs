@@ -80,10 +80,44 @@ namespace PlanetTrader.Visuals
             camera.SetPositionAndRotation(pos, Quaternion.Slerp(wholeRot, closeRot, t));
         }
 
+        // Инерция: смахнули и отпустили — планета крутится дальше и плавно останавливается, как парящий глобус.
+        /// <summary>Скорость смахивания, точек интерфейса в секунду.</summary>
+        Vector2 _fling;
+        bool _held;
+        float _lastDragTime = -10;
+        /// <summary>Как быстро гаснет инерция: за секунду скорость падает примерно в e^Damping раз.</summary>
+        const float FlingDamping = 2.2f;
+
+        /// <summary>Мышь нажали на кадре: остановить инерцию, планета «в руке».</summary>
+        public void BeginDrag()
+        {
+            _held = true;
+            _fling = Vector2.zero;
+            _lastInput = _lastDragTime = Time.unscaledTime;
+        }
+
+        /// <summary>Мышь отпустили: если в этот момент ещё тянули — планета летит дальше по инерции.</summary>
+        public void EndDrag()
+        {
+            _held = false;
+            // Остановились и только потом отпустили — без инерции.
+            if (Time.unscaledTime - _lastDragTime > 0.08f) _fling = Vector2.zero;
+        }
+
         /// <summary>Мышь тянут по кадру: на крупном плане — облёт базы, иначе — повернуть и наклонить планету.</summary>
         public void Drag(Vector2 delta)
         {
-            _lastInput = Time.unscaledTime;
+            float now = Time.unscaledTime;
+            _lastInput = now;
+            // Скорость — по последним движениям, сглаженно: один рывок мыши не задаёт её целиком.
+            float dt = Mathf.Max(now - _lastDragTime, 1 / 120f);
+            _fling = Vector2.ClampMagnitude(Vector2.Lerp(_fling, delta / dt, 0.5f), 4000);
+            _lastDragTime = now;
+            Rotate(delta);
+        }
+
+        void Rotate(Vector2 delta)
+        {
             if (_wantCloseUp)
             {
                 _orbitYaw += delta.x * 0.4f;
@@ -92,7 +126,8 @@ namespace PlanetTrader.Visuals
             else
             {
                 _view.Turn(delta.x * 0.4f);
-                _tilt = Mathf.Clamp(_tilt + delta.y * 0.25f, -45, 45);
+                // Тянут вниз — поверхность едет вниз, к камере поворачивается северное полушарие.
+                _tilt = Mathf.Clamp(_tilt - delta.y * 0.25f, -45, 45);
                 _view.transform.parent.localRotation = Quaternion.Euler(Tilt + _tilt, 0, 0);
             }
         }
@@ -155,6 +190,11 @@ namespace PlanetTrader.Visuals
             _view.transform.SetParent(pivot, false);
             _view.transform.localRotation = Quaternion.Euler(0, 0, 18);
             _view.Resolution = Resolution;
+            // Сначала грубый черновик за доли секунды, через пару секунд — чёткая поверхность.
+            // Несколько последних планет помним: к ним возвращаемся без ожидания.
+            _view.PreviewResolution = 256;
+            _view.CacheSize = 4;
+            _view.Priority = true;
             _view.SpinSpeed = Spin;
             _view.CloudDrift = 2;
             _view.enabled = false;   // не запекать в Start: облик задаёт Show
@@ -218,6 +258,15 @@ namespace PlanetTrader.Visuals
 
         void LateUpdate()
         {
+            if (!_held && _fling.sqrMagnitude > 0)
+            {
+                float dt = Time.unscaledDeltaTime;
+                Rotate(_fling * dt);
+                _fling *= Mathf.Exp(-FlingDamping * dt);
+                if (_fling.sqrMagnitude < 25) _fling = Vector2.zero;
+                // Пока планета крутится сама по инерции, своё медленное вращение не включаем.
+                _lastInput = Time.unscaledTime;
+            }
             // Окно планеты закрыто — камера не тратит время.
             _camera.enabled = Time.frameCount - _shownFrame <= 2;
             float target = _wantCloseUp ? 1 : 0;

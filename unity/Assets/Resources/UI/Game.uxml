@@ -19,6 +19,7 @@
                     <ui:VisualElement class="spacer" picking-mode="Ignore" />
                     <ui:Button name="probeDone" text="Готово" focusable="false" class="button probe-done" />
                 </ui:VisualElement>
+                <ui:Label name="mapHint" text="колесо — ближе/дальше, тянуть мышью — сдвинуть" class="map-hint" picking-mode="Ignore" />
                 <ui:VisualElement name="legend" class="legend" picking-mode="Ignore" />
             </ui:VisualElement>
             <ui:VisualElement name="side" class="side panel">

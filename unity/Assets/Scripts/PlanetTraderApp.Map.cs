@@ -13,12 +13,24 @@ namespace PlanetTrader.Client
     /// </summary>
     public sealed partial class PlanetTraderApp
     {
+        Label _mapHint;
+        /// <summary>Карту приблизили или сдвинули — переставить подписи (правую панель пересобирать незачем).</summary>
+        bool _mapDirty;
         VisualElement _map, _mapCanvas, _mapLabels, _legend, _probeBar, _probeTypes, _probeMissions;
         readonly List<Label> _mapLabelPool = new List<Label>();
         /// <summary>Курсор над картой, в точках относительно карты; null — курсор не над картой.</summary>
         Vector2? _mapPointer;
         /// <summary>Квадрат с планетами в точках относительно карты: координаты 0..1 планет растягиваются на него.</summary>
         Rect _mapArea;
+
+        // Приближение карты: колесо — ближе или дальше к курсору, перетаскивание — сдвиг.
+        const float MaxZoom = 5;
+        float _zoom = 1;
+        /// <summary>Сдвиг приближенной карты, в точках.</summary>
+        Vector2 _pan;
+        /// <summary>Карту тянут мышью: откуда начали и сдвинули ли уже (тогда отпускание — не клик).</summary>
+        bool _panning, _panMoved;
+        Vector2 _panStart;
 
         static readonly string[] MissionNames = { "Скан области", "Разведка планеты" };
 
@@ -28,21 +40,25 @@ namespace PlanetTrader.Client
             _mapCanvas = root.Q("mapCanvas");
             _mapLabels = root.Q("mapLabels");
             _legend = root.Q("legend");
+            _mapHint = root.Q<Label>("mapHint");
             _probeBar = root.Q("probeBar");
             _probeTypes = root.Q("probeTypes");
             _probeMissions = root.Q("probeMissions");
             root.Q<Button>("probeDone").clicked += () => Later(() => _probeMode = false);
 
             _mapCanvas.generateVisualContent += PaintMap;
-            _mapCanvas.RegisterCallback<PointerMoveEvent>(e => OnMapPointer(e.localPosition, e.position));
+            _mapCanvas.RegisterCallback<PointerMoveEvent>(e => OnMapPointer(e.localPosition, e.position, e.deltaPosition));
             _mapCanvas.RegisterCallback<PointerLeaveEvent>(_ =>
             {
                 _mapPointer = null;
                 HideTooltip();
             });
-            _mapCanvas.RegisterCallback<PointerDownEvent>(e =>
+            _mapCanvas.RegisterCallback<PointerDownEvent>(OnMapDown);
+            _mapCanvas.RegisterCallback<PointerUpEvent>(OnMapUp);
+            _mapCanvas.RegisterCallback<WheelEvent>(e =>
             {
-                if (e.button == 0) OnMapClick(e.localPosition);
+                ZoomMap(e.delta.y, e.localMousePosition);
+                e.StopPropagation();
             });
             // Карта сменила размер — подписи на новые места.
             _map.RegisterCallback<GeometryChangedEvent>(_ => MarkDirty());
@@ -51,6 +67,8 @@ namespace PlanetTrader.Client
         /// <summary>Новая партия: другие магнаты в легенде, свои типы зондов.</summary>
         void ResetMap()
         {
+            _zoom = 1;
+            _pan = Vector2.zero;
             _probeTypeIndex = 1;
             _probeMission = ProbeMission.ScanArea;
             var types = _game.Balance.ProbeTypes;
@@ -101,16 +119,46 @@ namespace PlanetTrader.Client
 
         /// <summary>
         /// Во сколько раз карта больше или меньше обычной. Планеты, станция и корабли растут и уменьшаются вместе с ней,
-        /// иначе на маленьком окне планеты наезжали бы друг на друга.
+        /// иначе на маленьком окне планеты наезжали бы друг на друга. При приближении они растут медленнее расстояний
+        /// (как корень из приближения) — тесные скопления расходятся.
         /// </summary>
-        float MapScale => Mathf.Clamp(_mapArea.width / ReferenceMapSide, 0.35f, 2f);
+        float MapScale => Mathf.Clamp(_mapArea.width / ReferenceMapSide, 0.35f, 2f) * Mathf.Sqrt(_zoom);
 
         /// <summary>Радиус планеты на карте в точках интерфейса.</summary>
         float MapRadius(Planet p) => PlanetRadius(p) * MapScale;
 
-        Vector2 ToMap(double x, double y) => new Vector2(_mapArea.x + (float)x * _mapArea.width, _mapArea.y + (float)y * _mapArea.height);
+        /// <summary>Точка сектора (0..1) → точка карты на экране с учётом приближения и сдвига.</summary>
+        Vector2 ToMap(double x, double y)
+        {
+            var flat = new Vector2(_mapArea.x + (float)x * _mapArea.width, _mapArea.y + (float)y * _mapArea.height);
+            return _mapArea.center + (flat - _mapArea.center) * _zoom + _pan;
+        }
 
-        Vector2 FromMap(Vector2 local) => new Vector2((local.x - _mapArea.x) / _mapArea.width, (local.y - _mapArea.y) / _mapArea.height);
+        /// <summary>Точка карты на экране → точка сектора (0..1).</summary>
+        Vector2 FromMap(Vector2 local)
+        {
+            var flat = (local - _pan - _mapArea.center) / _zoom + _mapArea.center;
+            return new Vector2((flat.x - _mapArea.x) / _mapArea.width, (flat.y - _mapArea.y) / _mapArea.height);
+        }
+
+        /// <summary>Колесо над картой: приблизить или отдалить, не сдвигая точку под курсором.</summary>
+        void ZoomMap(float wheel, Vector2 at)
+        {
+            if (!LayoutMap()) return;
+            var sector = FromMap(at);
+            _zoom = Mathf.Clamp(_zoom * Mathf.Pow(1.15f, -Mathf.Clamp(wheel, -5, 5)), 1, MaxZoom);
+            _pan = Vector2.zero;
+            _pan = at - ToMap(sector.x, sector.y);
+            ClampPan();
+            _mapDirty = true;
+        }
+
+        /// <summary>Не уводить сектор за край: при отдалении до конца карта снова по центру.</summary>
+        void ClampPan()
+        {
+            var limit = _mapArea.size * ((_zoom - 1) / 2);
+            _pan = new Vector2(Mathf.Clamp(_pan.x, -limit.x, limit.x), Mathf.Clamp(_pan.y, -limit.y, limit.y));
+        }
 
         /// <summary>Точка карты → пиксели экрана от левого верхнего угла (так считает 3D-карта).</summary>
         Vector2 ToPixels(Vector2 local) => (_map.worldBound.position + local) * _pixelScale;
@@ -128,7 +176,9 @@ namespace PlanetTrader.Client
 
         void RefreshMap()
         {
+            _mapDirty = false;
             _probeBar.EnableInClassList("hidden", !_probeMode);
+            _mapHint.EnableInClassList("hidden", _probeMode);
             PanelBuilder.Select(_probeTypes, _probeTypeIndex);
             PanelBuilder.Select(_probeMissions, (int)_probeMission);
             if (!LayoutMap()) return;
@@ -234,7 +284,7 @@ namespace PlanetTrader.Client
 
         /// <summary>Кольцо радиусом radius в координатах карты (0..1).</summary>
         void MapRing(Painter2D paint, double x, double y, double radius, Color color) =>
-            Ring(paint, ToMap(x, y), (float)radius * _mapArea.width, color, 2);
+            Ring(paint, ToMap(x, y), (float)radius * _mapArea.width * _zoom, color, 2);
 
         static void Ring(Painter2D paint, Vector2 center, float radius, Color color, float width)
         {
@@ -276,9 +326,46 @@ namespace PlanetTrader.Client
             return best;
         }
 
-        void OnMapPointer(Vector2 local, Vector2 screenPoint)
+        /// <summary>
+        /// Нажатие на карте: левой кнопкой по планете — выбрать её (в режиме зонда — запустить зонд);
+        /// по пустому месту или правой кнопкой — тянуть карту. В режиме скана клик по пустому месту запускает зонд.
+        /// </summary>
+        void OnMapDown(PointerDownEvent e)
+        {
+            Vector2 local = e.localPosition;
+            bool scan = _probeMode && _probeMission == ProbeMission.ScanArea;
+            if (e.button == 0 && (HitPlanet(local) != null || scan))
+            {
+                OnMapClick(local);
+                return;
+            }
+            if (e.button > 2) return;
+            _panning = true;
+            _panMoved = false;
+            _panStart = local;
+            _mapCanvas.CapturePointer(e.pointerId);
+        }
+
+        void OnMapUp(PointerUpEvent e)
+        {
+            if (!_panning) return;
+            _panning = false;
+            if (_mapCanvas.HasPointerCapture(e.pointerId)) _mapCanvas.ReleasePointer(e.pointerId);
+        }
+
+        void OnMapPointer(Vector2 local, Vector2 screenPoint, Vector2 delta)
         {
             _mapPointer = local;
+            if (_panning)
+            {
+                if (!_panMoved && (local - _panStart).sqrMagnitude < 16) return;
+                _panMoved = true;
+                _pan += delta;
+                ClampPan();
+                _mapDirty = true;
+                HideTooltip();
+                return;
+            }
             if (!LayoutMap()) return;
             var p = HitPlanet(local);
             if (p != null)

@@ -104,6 +104,7 @@ namespace PlanetTrader.Client
         {
             _pixelScale = _screen.layout.width > 1 ? Screen.width / _screen.layout.width : 1;
             _mapCanvas.MarkDirtyRepaint();
+            if (_mapDirty && !_dirty) RefreshMap();
             if (!_dirty) return;
             _dirty = false;
             RefreshTopBar();
@@ -197,6 +198,7 @@ namespace PlanetTrader.Client
             {
                 if (e.button != 0 || e.target != _portraitBox) return;
                 _portraitBox.CapturePointer(e.pointerId);
+                _portrait.BeginDrag();
                 e.StopPropagation();
             });
             _portraitBox.RegisterCallback<PointerMoveEvent>(e =>
@@ -207,6 +209,8 @@ namespace PlanetTrader.Client
             {
                 if (_portraitBox.HasPointerCapture(e.pointerId)) _portraitBox.ReleasePointer(e.pointerId);
             });
+            // Отпустили мышь (или захват потерян) — планета дальше крутится по инерции.
+            _portraitBox.RegisterCallback<PointerCaptureOutEvent>(_ => _portrait.EndDrag());
             // Колесо над окном приближает, а не листает панель.
             _portraitBox.RegisterCallback<WheelEvent>(e =>
             {

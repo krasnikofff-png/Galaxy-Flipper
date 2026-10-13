@@ -11,10 +11,13 @@ namespace PlanetTrader.Visuals
 
     /// <summary>
     /// Запекает текстуры планеты в развёртку «широта–долгота» (ширина вдвое больше высоты).
-    /// Считает на всех ядрах; 1024×512 — около секунды.
+    /// Считает на всех ядрах; 2048×1024 — около двух секунд.
     /// </summary>
     public static class PlanetBaker
     {
+        /// <summary>С какой ширины текстуры рельеф считается по соседним пикселям (быстрее втрое).</summary>
+        const int GridNormalsFrom = 2048;
+
         /// <summary>Точка сферы по координатам развёртки: u — долгота 0…1, v — широта 0…1 (снизу вверх).</summary>
         public static Vector3 Direction(float u, float v)
         {
@@ -45,28 +48,65 @@ namespace PlanetTrader.Visuals
             float bump = style.Smooth ? 0 : 1;
             bool hasGlow = false;
 
+            // Рельеф (наклон нормали) — по разнице высот. На крупных текстурах шаг между пикселями почти равен eps,
+            // поэтому высоту берём из соседних пикселей: поверхность считается один раз на пиксель, а не три.
+            bool fromGrid = width >= GridNormalsFrom;
+            var heights = fromGrid ? new float[width * height] : null;
+
             Parallel.For(0, height, y =>
             {
                 for (int x = 0; x < width; x++)
                 {
                     var q = Direction((x + 0.5f) / width, (y + 0.5f) / height);
                     var s = PlanetSurface.Evaluate(look, noise, q);
-                    // Рельеф: градиент высоты вдоль поверхности — наклоняем нормаль.
-                    var t1 = Vector3.Cross(q, new Vector3(0, 1, 1e-4f)).normalized;
-                    var t2 = Vector3.Cross(q, t1);
-                    float hx = PlanetSurface.Evaluate(look, noise, q + t1 * eps).Height;
-                    float hy = PlanetSurface.Evaluate(look, noise, q + t2 * eps).Height;
-                    var nrm = (q - bump * ((hx - s.Height) / eps * t1 + (hy - s.Height) / eps * t2)).normalized;
-
                     int i = y * width + x;
+                    if (fromGrid)
+                        heights[i] = s.Height;
+                    else
+                    {
+                        // Рельеф: градиент высоты вдоль поверхности — наклоняем нормаль.
+                        var t1 = Vector3.Cross(q, new Vector3(0, 1, 1e-4f)).normalized;
+                        var t2 = Vector3.Cross(q, t1);
+                        float hx = PlanetSurface.Evaluate(look, noise, q + t1 * eps).Height;
+                        float hy = PlanetSurface.Evaluate(look, noise, q + t2 * eps).Height;
+                        var nrm = (q - bump * ((hx - s.Height) / eps * t1 + (hy - s.Height) / eps * t2)).normalized;
+                        normal[i] = new Color(nrm.x * 0.5f + 0.5f, nrm.y * 0.5f + 0.5f, nrm.z * 0.5f + 0.5f, 1);
+                    }
+
                     albedo[i] = new Color(s.Color.x, s.Color.y, s.Color.z, Mathf.Clamp01(s.Spec));
-                    normal[i] = new Color(nrm.x * 0.5f + 0.5f, nrm.y * 0.5f + 0.5f, nrm.z * 0.5f + 0.5f, 1);
                     emission[i] = new Color(s.Glow.x, s.Glow.y, s.Glow.z, 1);
                     if (s.Glow.sqrMagnitude > 0) hasGlow = true;
                     float c = PlanetSurface.Cloud(cloudNoise, q, style.Clouds);
                     clouds[i] = new Color(1, 1, 1, c);
                 }
             });
+
+            if (fromGrid)
+            {
+                float dLon = 2 * Mathf.PI / width, dLat = Mathf.PI / height;
+                Parallel.For(0, height, y =>
+                {
+                    float lat = ((y + 0.5f) / height - 0.5f) * Mathf.PI;
+                    float sinLat = Mathf.Sin(lat), cosLat = Mathf.Cos(lat);
+                    // Шаг на восток короче у полюсов; совсем у полюса не даём ему стать нулём.
+                    float eastStep = 2 * dLon * Mathf.Max(cosLat, 0.02f);
+                    int north = Mathf.Min(y + 1, height - 1), south = Mathf.Max(y - 1, 0);
+                    float northStep = (north - south) * dLat;
+                    for (int x = 0; x < width; x++)
+                    {
+                        float lon = (x + 0.5f) / width * 2 * Mathf.PI - Mathf.PI;
+                        float sinLon = Mathf.Sin(lon), cosLon = Mathf.Cos(lon);
+                        var q = new Vector3(cosLat * cosLon, sinLat, cosLat * sinLon);
+                        var east = new Vector3(-sinLon, 0, cosLon);
+                        var up = new Vector3(-sinLat * cosLon, cosLat, -sinLat * sinLon);
+                        int row = y * width;
+                        float dEast = (heights[row + (x + 1) % width] - heights[row + (x + width - 1) % width]) / eastStep;
+                        float dNorth = (heights[north * width + x] - heights[south * width + x]) / northStep;
+                        var nrm = (q - bump * (dEast * east + dNorth * up)).normalized;
+                        normal[row + x] = new Color(nrm.x * 0.5f + 0.5f, nrm.y * 0.5f + 0.5f, nrm.z * 0.5f + 0.5f, 1);
+                    }
+                });
+            }
 
             return new PlanetPixels
             {

@@ -20,6 +20,18 @@ namespace PlanetTrader.Visuals
         [Range(0, 1)] public float Saturation = 1;
         [Tooltip("Яркость: меньше 1 — тусклая (выработанная планета).")]
         [Range(0, 1.5f)] public float Brightness = 1;
+        [Tooltip("Черновик: сначала быстро запечь планету с такой шириной текстуры, потом подменить чёткой. 0 — без черновика.")]
+        public int PreviewResolution;
+        [Tooltip("Сколько последних планет помнить готовыми: к ним возвращаешься без запекания. 0 — не помнить.")]
+        public int CacheSize;
+        [Tooltip("Запекать без очереди: окно планеты не ждёт, пока допекутся планеты карты.")]
+        public bool Priority;
+
+        /// <summary>
+        /// Очередь фоновых запеканий: планеты карты печёт по одной (каждая и так на всех ядрах),
+        /// чтобы срочное запекание окна планеты не стояло за десятками планет.
+        /// </summary>
+        static readonly System.Threading.SemaphoreSlim Queue = new System.Threading.SemaphoreSlim(1);
 
         Transform _surface, _clouds, _halo, _rings;
         Material _surfaceMat, _cloudMat, _haloMat, _ringMat;
@@ -29,6 +41,14 @@ namespace PlanetTrader.Visuals
         PlanetStyle _style;
         Task<PlanetPixels> _baking;
         PlanetLook _bakingLook;
+        int _bakingSeed, _bakingRes;
+        /// <summary>После черновика — запечь начисто с такой шириной; 0 — больше ничего не печь.</summary>
+        int _nextRes;
+        /// <summary>Что сейчас собрано: облик, зерно и ширина текстуры.</summary>
+        PlanetLook _builtLook;
+        int _builtSeed = int.MinValue;
+        readonly System.Collections.Generic.List<(PlanetLook look, int seed, int res, PlanetPixels pixels)> _cache =
+            new System.Collections.Generic.List<(PlanetLook, int, int, PlanetPixels)>();
         static Mesh _sphere;
 
         /// <summary>Готова ли поверхность (после асинхронного запекания — не сразу).</summary>
@@ -70,7 +90,8 @@ namespace PlanetTrader.Visuals
         public void Rebuild()
         {
             _baking = null;
-            Build(Look, PlanetBaker.BakePixels(Look, Seed, Resolution));
+            _nextRes = 0;
+            Build(Look, Seed, Resolution, PlanetBaker.BakePixels(Look, Seed, Resolution));
         }
 
         /// <summary>
@@ -81,20 +102,54 @@ namespace PlanetTrader.Visuals
         {
             var look = Look;
             int seed = Seed, res = Resolution;
+            int cached = _cache.FindIndex(c => c.look == look && c.seed == seed && c.res == res);
+            if (cached >= 0)
+            {
+                // Недавно была — собрать сразу, без запекания, и поднять в начало очереди.
+                var entry = _cache[cached];
+                _cache.RemoveAt(cached);
+                _cache.Insert(0, entry);
+                _baking = null;
+                _nextRes = 0;
+                Build(look, seed, res, entry.pixels);
+                return;
+            }
+            bool preview = PreviewResolution > 0 && PreviewResolution < res;
+            _nextRes = preview ? res : 0;
+            StartBake(look, seed, preview ? PreviewResolution : res);
+        }
+
+        void StartBake(PlanetLook look, int seed, int res)
+        {
             _bakingLook = look;
-            _baking = Task.Run(() => PlanetBaker.BakePixels(look, seed, res));
+            _bakingSeed = seed;
+            _bakingRes = res;
+            if (Priority)
+            {
+                _baking = Task.Run(() => PlanetBaker.BakePixels(look, seed, res));
+                return;
+            }
+            _baking = Task.Run(async () =>
+            {
+                await Queue.WaitAsync();
+                try { return PlanetBaker.BakePixels(look, seed, res); }
+                finally { Queue.Release(); }
+            });
         }
 
         /// <summary>Убрать поверхность и отменить запекание: планета пропадает до следующей сборки.</summary>
         public void Clear()
         {
             _baking = null;
+            _nextRes = 0;
             Cleanup();
         }
 
-        void Build(PlanetLook look, PlanetPixels pixels)
+        void Build(PlanetLook look, int seed, int res, PlanetPixels pixels)
         {
             Cleanup();
+            _builtLook = look;
+            _builtSeed = seed;
             _style = PlanetSurface.Style(look);
             _tex = pixels.ToTextures();
             if (_sphere == null) _sphere = SphereMesh.Build(96, 48);
@@ -190,24 +245,64 @@ namespace PlanetTrader.Visuals
             {
                 var task = _baking;
                 _baking = null;
-                if (task.Status == TaskStatus.RanToCompletion) Build(_bakingLook, task.Result);
+                if (task.Status == TaskStatus.RanToCompletion) Baked(task.Result);
                 else Debug.LogException(task.Exception);
             }
             if (_surface != null) _surface.Rotate(Vector3.up, -SpinSpeed * Time.deltaTime, Space.Self);
             if (_clouds != null) _clouds.Rotate(Vector3.up, -(SpinSpeed + CloudDrift) * Time.deltaTime, Space.Self);
         }
 
+        /// <summary>Запекание готово: собрать планету или подменить текстуры черновика чёткими.</summary>
+        void Baked(PlanetPixels pixels)
+        {
+            var look = _bakingLook;
+            int seed = _bakingSeed, res = _bakingRes;
+            if (_surface != null && _builtLook == look && _builtSeed == seed)
+                Sharpen(res, pixels);
+            else
+                Build(look, seed, res, pixels);
+            if (res == Resolution && CacheSize > 0)
+            {
+                _cache.Insert(0, (look, seed, res, pixels));
+                if (_cache.Count > CacheSize) _cache.RemoveAt(_cache.Count - 1);
+            }
+            if (_nextRes > 0)
+            {
+                int next = _nextRes;
+                _nextRes = 0;
+                StartBake(look, seed, next);
+            }
+        }
+
+        /// <summary>
+        /// Та же планета, текстуры чётче: меняем только текстуры, а сферу, её поворот и постройки на ней не трогаем.
+        /// </summary>
+        void Sharpen(int res, PlanetPixels pixels)
+        {
+            var old = _tex;
+            _tex = pixels.ToTextures();
+            _surfaceMat.SetTexture("_MainTex", _tex.Albedo);
+            _surfaceMat.SetTexture("_NormalTex", _tex.Normal);
+            _surfaceMat.SetTexture("_EmissionTex", _tex.Emission);
+            if (_cloudMat != null && _tex.Clouds != null) _cloudMat.SetTexture("_MainTex", _tex.Clouds);
+            KillTextures(old);
+        }
+
+        static void KillTextures(PlanetTextures t)
+        {
+            if (t == null) return;
+            Kill(t.Albedo);
+            Kill(t.Normal);
+            if (t.Emission != Texture2D.blackTexture) Kill(t.Emission);
+            if (t.Clouds != null) Kill(t.Clouds);
+        }
+
         void Cleanup()
         {
             for (int i = transform.childCount - 1; i >= 0; i--) Kill(transform.GetChild(i).gameObject);
-            if (_tex != null)
-            {
-                Kill(_tex.Albedo);
-                Kill(_tex.Normal);
-                if (_tex.Emission != Texture2D.blackTexture) Kill(_tex.Emission);
-                if (_tex.Clouds != null) Kill(_tex.Clouds);
-                _tex = null;
-            }
+            KillTextures(_tex);
+            _tex = null;
+            _builtSeed = int.MinValue;
             if (_surfaceMat) Kill(_surfaceMat);
             if (_cloudMat) Kill(_cloudMat);
             if (_haloMat) Kill(_haloMat);
