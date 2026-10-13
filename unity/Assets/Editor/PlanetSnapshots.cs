@@ -56,6 +56,10 @@ namespace PlanetTrader.EditorTools
 
         public static void RenderBuildings(string path)
         {
+            // Как модели пришли из FBX: подвижные части должны стоять в своих точках вращения без поворотов.
+            foreach (var name in new[] { "extractor", "guard_tower", "mine_build" })
+                foreach (var t in PlanetBuildings.LoadModel(name).GetComponentsInChildren<Transform>())
+                    Debug.Log($"Модель {name}: {t.name} поз {t.localPosition} пов {t.localEulerAngles} масштаб {t.localScale}");
             const int w = 1032, h = 420;   // как окно планеты в игре (516×210) с удвоенной чёткостью
             var looks = new[] { PlanetLook.Jungle, PlanetLook.Rocky, PlanetLook.Gas, PlanetLook.Ice };
             var accent = new Color(0.35f, 0.95f, 0.45f);
@@ -105,6 +109,8 @@ namespace PlanetTrader.EditorTools
                         Accent = accent,
                     });
                     view.TurnToward(buildings.Focus, PlanetPortrait.FacingDir);
+                    var moving = view.GetComponentsInChildren<BuildingMotion>();
+                    Debug.Log($"Подвижные части на {looks[i]}: {moving.Length} — " + string.Join(", ", System.Array.ConvertAll(moving, m => m.name)));
                     PlanetPortrait.PlaceCamera(cam.transform, root.transform, 1, view.Surface.TransformPoint(buildings.Focus), view.transform.position);
 
                     cam.Render();

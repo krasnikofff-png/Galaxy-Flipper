@@ -122,7 +122,7 @@ namespace PlanetTrader.Visuals
         }
 
         /// <summary>Звёздное небо с лёгкой туманностью.</summary>
-        static Texture2D BakeSky(int width, int seed)
+        internal static Texture2D BakeSky(int width, int seed)
         {
             int height = width / 2;
             var noise = new PlanetNoise(seed);

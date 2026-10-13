@@ -14,6 +14,9 @@
                          0 — свет (окна и огни, светятся и на ночной стороне);
     UV.x — блеск: 0 — матовый бетон и камень, 0.5 — крашеный металл, 0.9 — стекло.
 Ось Z — вверх, основание модели — на z = 0, высота моделей около 2 единиц, площадка — радиус около 1.
+
+Подвижные части (балансир качалки, радар, стрела крана…) — отдельные объекты «модель__часть», дочерние
+к модели, с началом координат в точке вращения. Как они движутся, задаёт Unity (BuildingMotion) по имени части.
 """
 import math
 import os
@@ -62,6 +65,25 @@ MODELS = ["mine_rig", "mine_gas", "mine_build", "extractor", "settlement", "scho
 
 # Детали текущей модели; join() собирает их в один объект.
 PARTS = []
+# Подвижные части текущей модели: имя → (точка вращения, детали).
+MOVING = {}
+
+
+class moving:
+    """Всё, что создано внутри with moving("имя", точка), станет отдельной подвижной частью модели."""
+
+    def __init__(self, name, pivot):
+        self.name, self.pivot = name, Vector(pivot)
+
+    def __enter__(self):
+        global PARTS
+        self.saved = PARTS
+        PARTS = []
+
+    def __exit__(self, *exc):
+        global PARTS
+        MOVING[self.name] = (self.pivot, PARTS)
+        PARTS = self.saved
 
 
 # ----------------------------------------------------------------------
@@ -346,21 +368,22 @@ def flag(x, y, z, h=0.6):
 def dish(x, y, z, r, tilt=0.6, yaw=0.0):
     """Тарелка антенны на мачте: чаша, облучатель на трёх распорках, огонёк."""
     rod((x, y, z), (x, y, z + 0.25), 0.015, STEEL, segs=6)
-    box((0.06, 0.06, 0.04), (x, y, z + 0.25), DARK, bevel=0.005)
-    m = mat((x, y, z + 0.28), (tilt, 0, yaw))
-    dome(r, (x, y, z + 0.28), METAL, shine=0.6, u=20, v=6, height=0.35, rot=(math.pi + tilt, 0, yaw))
-    feed = m @ Vector((0, 0, r * 0.8))
-    for k in range(3):
-        a = 2 * math.pi * k / 3
-        rod(tuple(m @ Vector((r * 0.9 * math.cos(a), r * 0.9 * math.sin(a), -r * 0.3))), tuple(feed), 0.004, DARK, segs=3)
-    sphere(0.018, tuple(feed), RED, LIGHT, u=6, v=4)
+    with moving("dish", (x, y, z + 0.25)):
+        box((0.06, 0.06, 0.04), (x, y, z + 0.25), DARK, bevel=0.005)
+        m = mat((x, y, z + 0.28), (tilt, 0, yaw))
+        dome(r, (x, y, z + 0.28), METAL, shine=0.6, u=20, v=6, height=0.35, rot=(math.pi + tilt, 0, yaw))
+        feed = m @ Vector((0, 0, r * 0.8))
+        for k in range(3):
+            a = 2 * math.pi * k / 3
+            rod(tuple(m @ Vector((r * 0.9 * math.cos(a), r * 0.9 * math.sin(a), -r * 0.3))), tuple(feed), 0.004, DARK, segs=3)
+        sphere(0.018, tuple(feed), RED, LIGHT, u=6, v=4)
 
 
-def join(name):
+def join_parts(parts, name):
     bpy.ops.object.select_all(action="DESELECT")
-    for p in PARTS:
+    for p in parts:
         p.select_set(True)
-    bpy.context.view_layer.objects.active = PARTS[0]
+    bpy.context.view_layer.objects.active = parts[0]
     bpy.ops.object.join()
     ob = bpy.context.view_layer.objects.active
     ob.name = name
@@ -368,8 +391,20 @@ def join(name):
     me = ob.data
     me.use_auto_smooth = True
     me.auto_smooth_angle = math.radians(45)
-    PARTS.clear()
     return ob
+
+
+def join(name):
+    """Собрать модель: неподвижный корпус и дочерние подвижные части с началом координат в точке вращения."""
+    body = join_parts(PARTS, name)
+    for part, (pivot, parts) in MOVING.items():
+        ob = join_parts(parts, f"{name}__{part}")
+        ob.data.transform(Matrix.Translation(-pivot))
+        ob.location = pivot
+        ob.parent = body
+    PARTS.clear()
+    MOVING.clear()
+    return body
 
 
 # ----------------------------------------------------------------------
@@ -399,9 +434,10 @@ def mine_rig():
     rod((0, 0, top + 0.1), (0, 0, top + 0.24), 0.01, DARK, segs=4)
     sphere(0.05, (0, 0, top + 0.28), RED, LIGHT, u=10, v=6)
     # Тали, бур, роторный стол.
-    box((0.12, 0.12, 0.18), (0, 0, z0 + 1.35), HAZARD, shine=0.5, bevel=0.01)
-    for dx in (-0.03, 0.03):
-        rod((dx, 0, top), (dx, 0, z0 + 1.44), 0.004, DARK, segs=3)
+    with moving("travel_block", (0, 0, z0 + 1.35)):
+        box((0.12, 0.12, 0.18), (0, 0, z0 + 1.35), HAZARD, shine=0.5, bevel=0.01)
+        cyl(0.05, 0.03, (0, 0.062, z0 + 1.38), DARK, segs=12, rot=(math.pi / 2, 0, 0))
+        rod((0, 0, z0 + 1.26), (0, 0, z0 + 1.2), 0.02, DARK, segs=6)
     rod((0, 0, z0 + 0.37), (0, 0, z0 + 1.26), 0.035, STEEL, shine=0.8, segs=10)
     cyl(0.16, 0.06, (0, 0, z0 + 0.345), DARK, shine=0.5, segs=20, bevel=0.01)
     # Цех с окнами, дверью, кондиционерами и трубой.
@@ -519,26 +555,27 @@ def mine_build():
     lattice_tower(0.07, 0.07, z0 + 0.06, 2.1, 12, 0.009, HAZARD, center=(mx, my))
     top = z0 + 2.16
     cyl(0.1, 0.05, (mx, my, top), DARK, segs=16)
-    box((0.12, 0.14, 0.12), (mx + 0.1, my - 0.12, top + 0.06), HAZARD, shine=0.5, bevel=0.01)
-    box((0.01, 0.1, 0.06), (mx + 0.16, my - 0.12, top + 0.07), GLASS, shine=0.9, bevel=0)
-    jib_end = (mx - 1.55, my + 0.35, top + 0.05)
-    tail_end = (mx + 0.5, my - 0.11, top + 0.05)
-    truss((mx, my, top + 0.05), jib_end, 0.09, 0.007, HAZARD, panels=14)
-    truss((mx, my, top + 0.05), tail_end, 0.09, 0.007, HAZARD, panels=4)
-    for k in range(3):
-        box((0.06, 0.16, 0.12), (mx + 0.32 + k * 0.065, my - 0.07 - k * 0.015, top - 0.02), CONCRETE, shine=0.05, rot=(0, 0, -0.22), bevel=0.006)
-    lattice_tower(0.03, 0.006, top + 0.05, 0.3, 2, 0.006, HAZARD, center=(mx, my))
-    for end in (jib_end, tail_end):
-        rod((mx, my, top + 0.35), (end[0], end[1], top + 0.14), 0.004, DARK, segs=3)
-    sphere(0.03, (mx, my, top + 0.37), RED, LIGHT, u=8, v=6)
-    sphere(0.02, (jib_end[0], jib_end[1], top + 0.15), RED, LIGHT, u=6, v=4)
-    tx, ty = mx - 1.05, my + 0.24
-    box((0.06, 0.08, 0.03), (tx, ty, top + 0.035), DARK)
-    rod((tx, ty, top + 0.02), (tx, ty, z0 + 0.95), 0.004, DARK, segs=3)
-    box((0.04, 0.04, 0.05), (tx, ty, z0 + 0.92), HAZARD)
-    rod((tx, ty, z0 + 0.9), (tx - 0.2, ty - 0.14, z0 + 0.86), 0.003, DARK, segs=3)
-    rod((tx, ty, z0 + 0.9), (tx + 0.2, ty + 0.14, z0 + 0.86), 0.003, DARK, segs=3)
-    box((0.5, 0.06, 0.06), (tx, ty, z0 + 0.83), WHITE, ACCENT, shine=0.4, rot=(0, 0, 0.6))
+    with moving("crane_top", (mx, my, top)):
+        box((0.12, 0.14, 0.12), (mx + 0.1, my - 0.12, top + 0.06), HAZARD, shine=0.5, bevel=0.01)
+        box((0.01, 0.1, 0.06), (mx + 0.16, my - 0.12, top + 0.07), GLASS, shine=0.9, bevel=0)
+        jib_end = (mx - 1.55, my + 0.35, top + 0.05)
+        tail_end = (mx + 0.5, my - 0.11, top + 0.05)
+        truss((mx, my, top + 0.05), jib_end, 0.09, 0.007, HAZARD, panels=14)
+        truss((mx, my, top + 0.05), tail_end, 0.09, 0.007, HAZARD, panels=4)
+        for k in range(3):
+            box((0.06, 0.16, 0.12), (mx + 0.32 + k * 0.065, my - 0.07 - k * 0.015, top - 0.02), CONCRETE, shine=0.05, rot=(0, 0, -0.22), bevel=0.006)
+        lattice_tower(0.03, 0.006, top + 0.05, 0.3, 2, 0.006, HAZARD, center=(mx, my))
+        for end in (jib_end, tail_end):
+            rod((mx, my, top + 0.35), (end[0], end[1], top + 0.14), 0.004, DARK, segs=3)
+        sphere(0.03, (mx, my, top + 0.37), RED, LIGHT, u=8, v=6)
+        sphere(0.02, (jib_end[0], jib_end[1], top + 0.15), RED, LIGHT, u=6, v=4)
+        tx, ty = mx - 1.05, my + 0.24
+        box((0.06, 0.08, 0.03), (tx, ty, top + 0.035), DARK)
+        rod((tx, ty, top + 0.02), (tx, ty, z0 + 0.95), 0.004, DARK, segs=3)
+        box((0.04, 0.04, 0.05), (tx, ty, z0 + 0.92), HAZARD)
+        rod((tx, ty, z0 + 0.9), (tx - 0.2, ty - 0.14, z0 + 0.86), 0.003, DARK, segs=3)
+        rod((tx, ty, z0 + 0.9), (tx + 0.2, ty + 0.14, z0 + 0.86), 0.003, DARK, segs=3)
+        box((0.5, 0.06, 0.06), (tx, ty, z0 + 0.83), WHITE, ACCENT, shine=0.4, rot=(0, 0, 0.6))
     # Штабеля балок и ящики.
     for row in range(3):
         for k in range(4 - row):
@@ -583,20 +620,25 @@ def extractor():
     apex = (px, py, z0 + 0.5)
     for dx, dy in ((-0.08, -0.07), (-0.08, 0.07), (0.08, -0.07), (0.08, 0.07)):
         rod((px + dx, py + dy, z0 + 0.05), apex, 0.012, STEEL, segs=5)
-    beam_rot = (0, math.radians(-10), 0)
-    box((0.62, 0.05, 0.05), (px, py, z0 + 0.53), HAZARD, shine=0.5, rot=beam_rot, bevel=0.008)
-    hx, hz = px + 0.33, z0 + 0.475
-    box((0.07, 0.07, 0.16), (hx, py, hz), HAZARD, shine=0.5, rot=beam_rot, bevel=0.01)
-    cyl(0.08, 0.07, (hx - 0.01, py + 0.035, hz), HAZARD, shine=0.5, segs=12, rot=(math.pi / 2, 0, 0))
-    rod((hx + 0.05, py, hz - 0.08), (hx + 0.05, py, z0 + 0.1), 0.006, STEEL, segs=4)
-    cyl(0.04, 0.06, (hx + 0.05, py, z0 + 0.05), DARK, segs=12)
-    ring(0.035, z0 + 0.13, 0.006, RED, segs=12, center=(hx + 0.05, py))
-    for sy in (-0.05, 0.05):
-        box((0.04, 0.02, 0.18), (px - 0.25, py + sy, z0 + 0.2), STEEL, rot=(0, 0.4, 0), bevel=0.004)
-        box((0.12, 0.03, 0.1), (px - 0.31, py + sy, z0 + 0.13), DARK, rot=(0, 0.4, 0), bevel=0.01)
-    box((0.12, 0.1, 0.1), (px - 0.2, py, z0 + 0.1), DARK, shine=0.4, bevel=0.01)
+    hx = px + 0.33
+    with moving("pumpjack_beam", apex):
+        box((0.68, 0.05, 0.05), (px, py, z0 + 0.53), HAZARD, shine=0.5, bevel=0.008)
+        box((0.07, 0.07, 0.17), (hx, py, z0 + 0.5), HAZARD, shine=0.5, bevel=0.01)
+        cyl(0.085, 0.07, (hx + 0.005, py + 0.035, z0 + 0.5), HAZARD, shine=0.5, segs=14, rot=(math.pi / 2, 0, 0))
+        box((0.06, 0.12, 0.04), (px - 0.3, py, z0 + 0.53), DARK, bevel=0.006)
+        cyl(0.02, 0.07, (px, py + 0.035, z0 + 0.5), DARK, segs=10, rot=(math.pi / 2, 0, 0))
+    rod((hx + 0.08, py, z0 + 0.4), (hx + 0.08, py, z0 + 0.1), 0.006, STEEL, segs=4)
+    cyl(0.04, 0.06, (hx + 0.08, py, z0 + 0.05), DARK, segs=12)
+    ring(0.035, z0 + 0.13, 0.006, RED, segs=12, center=(hx + 0.08, py))
+    crank = (px - 0.2, py, z0 + 0.24)
+    box((0.12, 0.1, 0.2), (crank[0], py, z0 + 0.12), DARK, shine=0.4, bevel=0.01)
+    with moving("pumpjack_crank", crank):
+        cyl(0.03, 0.17, (crank[0], py - 0.085, crank[2]), STEEL, segs=10, rot=(-math.pi / 2, 0, 0))
+        for sy in (-0.075, 0.075):
+            box((0.17, 0.02, 0.035), (crank[0] - 0.08, py + sy, crank[2]), STEEL, bevel=0.004)
+            box((0.06, 0.03, 0.11), (crank[0] - 0.15, py + sy, crank[2]), DARK, shine=0.4, bevel=0.008)
     box((0.1, 0.08, 0.08), (px - 0.12, py + 0.12, z0 + 0.08), WHITE, ACCENT, shine=0.4, bevel=0.01)
-    polyline([(hx + 0.05, py, z0 + 0.04), (hx + 0.05, py + 0.35, z0 + 0.04), (tx + 0.25, ty + 0.25, z0 + 0.04)], 0.02, STEEL)
+    polyline([(hx + 0.08, py, z0 + 0.04), (hx + 0.08, py + 0.35, z0 + 0.04), (tx + 0.25, ty + 0.25, z0 + 0.04)], 0.02, STEEL)
     # Щит управления и фонарь.
     box((0.14, 0.06, 0.2), (0.3, 0.45, z0 + 0.1), STEEL, shine=0.4, bevel=0.01)
     box((0.04, 0.01, 0.03), (0.27, 0.419, z0 + 0.15), GREEN_LIGHT, LIGHT, bevel=0)
@@ -804,14 +846,19 @@ def guard_tower():
     cyl(0.31, 0.12, (0, 0, zd + 0.27), DARK, shine=0.4, segs=16, r2=0.12)
     sx, sy = 0.3, -0.18
     rod((sx, sy, zd + 0.05), (sx, sy, zd + 0.13), 0.012, DARK, segs=5)
-    for dy in (-0.035, 0.035):
-        rod((sx, sy + dy, zd + 0.13), (sx, sy + dy, zd + 0.2), 0.006, DARK, segs=4)
-    lamp = mat((sx, sy, zd + 0.18), (0, math.radians(100), -0.5))
-    cyl(0.04, 0.09, tuple(lamp @ Vector((0, 0, -0.045))), STEEL, shine=0.6, segs=14, rot=(0, math.radians(100), -0.5))
-    cyl(0.036, 0.004, tuple(lamp @ Vector((0, 0, 0.046))), WARM, LIGHT, segs=14, rot=(0, math.radians(100), -0.5))
+    with moving("searchlight", (sx, sy, zd + 0.13)):
+        box((0.02, 0.09, 0.015), (sx, sy, zd + 0.13), DARK, bevel=0.003)
+        for dy in (-0.04, 0.04):
+            rod((sx, sy + dy, zd + 0.13), (sx, sy + dy, zd + 0.2), 0.006, DARK, segs=4)
+        lamp = mat((sx, sy, zd + 0.18), (0, math.radians(100), -0.5))
+        cyl(0.04, 0.09, tuple(lamp @ Vector((0, 0, -0.045))), STEEL, shine=0.6, segs=14, rot=(0, math.radians(100), -0.5))
+        cyl(0.036, 0.004, tuple(lamp @ Vector((0, 0, 0.046))), WARM, LIGHT, segs=14, rot=(0, math.radians(100), -0.5))
     zr = zd + 0.39
-    rod((0, 0, zr), (0, 0, zr + 0.1), 0.015, STEEL, segs=6)
-    box((0.32, 0.02, 0.08), (0, 0, zr + 0.13), METAL, shine=0.6, rot=(0.25, 0, 0.5), bevel=0.004)
+    rod((0, 0, zr), (0, 0, zr + 0.08), 0.015, STEEL, segs=6)
+    with moving("radar", (0, 0, zr + 0.08)):
+        rod((0, 0, zr + 0.08), (0, 0, zr + 0.12), 0.012, DARK, segs=6)
+        box((0.36, 0.02, 0.08), (0, 0.02, zr + 0.14), METAL, shine=0.6, rot=(0.25, 0, 0), bevel=0.004)
+        box((0.03, 0.04, 0.03), (0, -0.01, zr + 0.13), DARK, bevel=0.004)
     rod((-0.1, 0.06, zr - 0.05), (-0.1, 0.06, zr + 0.35), 0.006, DARK, segs=4)
     sphere(0.025, (-0.1, 0.06, zr + 0.36), RED, LIGHT, u=8, v=6)
     rod((0.1, 0.08, zr - 0.05), (0.1, 0.08, zr + 0.2), 0.005, DARK, segs=4)
@@ -896,7 +943,8 @@ def build_all():
         ob = join(name)
         # В файле модели стоят в ряд, чтобы их было удобно смотреть; выгружаются из начала координат.
         ob.location = ((i % 4) * 3.2, -(i // 4) * 3.5, 0)
-        print(name, len(ob.data.vertices), "вершин,", len(ob.data.polygons), "граней")
+        verts = len(ob.data.vertices) + sum(len(c.data.vertices) for c in ob.children)
+        print(name, verts, "вершин; подвижные части:", ", ".join(c.name for c in ob.children) or "нет")
     bpy.ops.wm.save_as_mainfile(filepath=BLEND)
     print("Сохранено:", BLEND)
 
@@ -912,6 +960,8 @@ def export_all():
         ob.location = (0, 0, 0)
         bpy.ops.object.select_all(action="DESELECT")
         ob.select_set(True)
+        for child in ob.children:
+            child.select_set(True)
         bpy.context.view_layer.objects.active = ob
         path = os.path.join(OUT_DIR, name + ".fbx")
         bpy.ops.export_scene.fbx(

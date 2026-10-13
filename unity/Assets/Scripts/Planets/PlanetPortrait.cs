@@ -30,33 +30,85 @@ namespace PlanetTrader.Visuals
 
         // Два кадра: вся планета и крупный план построек — камера над базой, за ней горизонт и звёзды.
         static readonly Vector3 WholePos = new Vector3(0, 0, -4.6f), WholeLook = Vector3.zero;
-        /// <summary>Крупный план: насколько камера выше базы и насколько отходит от неё (в радиусах планеты).</summary>
-        const float CloseUpHeight = 0.36f, CloseUpDistance = 0.8f;
+        /// <summary>Крупный план: расстояние от базы (в радиусах планеты) и высота взгляда над горизонтом, градусы.</summary>
+        const float CloseUpRadius = 0.88f, DefaultElevation = 24;
         /// <summary>Сейчас между кадрами: 0 — вся планета, 1 — крупный план.</summary>
         float _closeUp;
         bool _wantCloseUp;
         const float Spin = 3;
+        /// <summary>Наклон оси планеты к камере, градусы.</summary>
+        const float Tilt = 14;
+
+        // Управление мышью. На крупном плане — облёт базы, иначе — вращение и наклон планеты.
+        bool _hasBuildings;
+        /// <summary>Игрок сам выбрал «всю планету», хотя постройки есть.</summary>
+        bool _userWhole;
+        float _orbitYaw, _orbitElevation = DefaultElevation, _orbitZoom = 1, _wholeZoom = 1, _tilt;
+        float _lastInput = -10;
+
+        /// <summary>На планете есть постройки: можно переключаться между крупным планом и всей планетой.</summary>
+        public bool HasBuildings => _hasBuildings;
+        /// <summary>Сейчас крупный план построек (или камера летит к нему).</summary>
+        public bool CloseUp => _wantCloseUp;
 
         /// <summary>
         /// Поставить камеру между кадрами «вся планета» (0) и «крупный план» (1).
-        /// focus — главная постройка на поверхности, center — центр планеты (обе точки в мире).
+        /// focus — главная постройка на поверхности, center — центр планеты (обе точки в мире);
+        /// yaw, elevation, zoom — облёт базы, wholeZoom — удаление от всей планеты.
         /// </summary>
-        public static void PlaceCamera(Transform camera, Transform root, float closeUp, Vector3 focus, Vector3 center)
+        public static void PlaceCamera(Transform camera, Transform root, float closeUp, Vector3 focus, Vector3 center,
+            float yaw = 0, float elevation = DefaultElevation, float zoom = 1, float wholeZoom = 1)
         {
             float t = Mathf.SmoothStep(0, 1, closeUp);
-            var wholePos = root.TransformPoint(WholePos);
+            var wholePos = root.TransformPoint(WholePos * wholeZoom);
             var wholeRot = Quaternion.LookRotation(root.TransformPoint(WholeLook) - wholePos, root.up);
             if (t <= 0)
             {
                 camera.SetPositionAndRotation(wholePos, wholeRot);
                 return;
             }
-            // Над базой и чуть в сторону зрителя: база внизу кадра, за ней изгиб планеты и звёзды.
+            // Над базой и со стороны зрителя: база внизу кадра, за ней изгиб планеты и звёзды.
             var up = (focus - center).normalized;
-            var toViewer = Vector3.ProjectOnPlane(-root.forward, up).normalized;
-            var closePos = focus + up * CloseUpHeight + toViewer * CloseUpDistance;
+            var toViewer = Quaternion.AngleAxis(yaw, up) * Vector3.ProjectOnPlane(-root.forward, up).normalized;
+            float e = elevation * Mathf.Deg2Rad;
+            var closePos = focus + (toViewer * Mathf.Cos(e) + up * Mathf.Sin(e)) * (CloseUpRadius * zoom);
             var closeRot = Quaternion.LookRotation(focus + up * 0.1f - closePos, up);
-            camera.SetPositionAndRotation(Vector3.Lerp(wholePos, closePos, t), Quaternion.Slerp(wholeRot, closeRot, t));
+            // Камера летит по дуге вокруг центра планеты, а не напрямую — так она не проходит сквозь планету.
+            var pos = center + Vector3.Slerp(wholePos - center, closePos - center, t);
+            camera.SetPositionAndRotation(pos, Quaternion.Slerp(wholeRot, closeRot, t));
+        }
+
+        /// <summary>Мышь тянут по кадру: на крупном плане — облёт базы, иначе — повернуть и наклонить планету.</summary>
+        public void Drag(Vector2 delta)
+        {
+            _lastInput = Time.unscaledTime;
+            if (_wantCloseUp)
+            {
+                _orbitYaw += delta.x * 0.4f;
+                _orbitElevation = Mathf.Clamp(_orbitElevation + delta.y * 0.3f, 6, 80);
+            }
+            else
+            {
+                _view.Turn(delta.x * 0.4f);
+                _tilt = Mathf.Clamp(_tilt + delta.y * 0.25f, -45, 45);
+                _view.transform.parent.localRotation = Quaternion.Euler(Tilt + _tilt, 0, 0);
+            }
+        }
+
+        /// <summary>Колесо мыши: ближе или дальше.</summary>
+        public void Zoom(float wheel)
+        {
+            _lastInput = Time.unscaledTime;
+            float k = 1 + Mathf.Clamp(wheel, -5, 5) * 0.06f;
+            if (_wantCloseUp) _orbitZoom = Mathf.Clamp(_orbitZoom * k, 0.45f, 2.2f);
+            else _wholeZoom = Mathf.Clamp(_wholeZoom * k, 0.62f, 1.7f);
+        }
+
+        /// <summary>Переключить крупный план построек и всю планету.</summary>
+        public void ToggleView()
+        {
+            _userWhole = !_userWhole;
+            _lastInput = Time.unscaledTime;
         }
 
         void Awake()
@@ -69,7 +121,7 @@ namespace PlanetTrader.Visuals
             _camera.transform.SetParent(_root, false);
             PlaceCamera(_camera.transform, _root, 0, Vector3.zero, Vector3.zero);
             _camera.fieldOfView = 30;
-            _camera.nearClipPlane = 0.1f;
+            _camera.nearClipPlane = 0.02f;
             _camera.farClipPlane = 100;
             _camera.clearFlags = CameraClearFlags.SolidColor;
             _camera.backgroundColor = new Color(0.01f, 0.012f, 0.03f);
@@ -82,28 +134,20 @@ namespace PlanetTrader.Visuals
             sun.intensity = 1.1f;
             sun.transform.rotation = Quaternion.LookRotation(-new Vector3(-0.5f, 0.4f, -0.78f).normalized);
 
-            // Звёзды на плоскости за планетой; ширины хватает на кадр втрое шире высоты.
-            _stars = SectorMapView.BakeStars(1024, 777);
+            // Звёздное небо — сфера вокруг всей сцены: камера облетает базу и смотрит в любую сторону.
+            _stars = PlanetShowcase.BakeSky(2048, 777);
             _backdropMat = new Material(Shader.Find("PlanetTrader/PlanetSky"));
             _backdropMat.SetTexture("_MainTex", _stars);
-            _backdropMat.SetFloat("_Cull", 0);
-            const float half = 14;
-            _backdropMesh = new Mesh
-            {
-                name = "Фон окна планеты",
-                vertices = new[] { new Vector3(-half, -half), new Vector3(half, -half), new Vector3(-half, half), new Vector3(half, half) },
-                uv = new[] { new Vector2(0, 0), new Vector2(1, 0), new Vector2(0, 1), new Vector2(1, 1) },
-                triangles = new[] { 0, 2, 1, 1, 2, 3 },
-            };
-            var backdrop = new GameObject("Фон");
+            _backdropMesh = SphereMesh.Build(64, 32);
+            var backdrop = new GameObject("Небо");
             backdrop.transform.SetParent(_root, false);
-            backdrop.transform.localPosition = new Vector3(0, 0, 8);
+            backdrop.transform.localScale = Vector3.one * 40;
             backdrop.AddComponent<MeshFilter>().sharedMesh = _backdropMesh;
             backdrop.AddComponent<MeshRenderer>().sharedMaterial = _backdropMat;
 
             var pivot = new GameObject("Ось").transform;
             pivot.SetParent(_root, false);
-            pivot.localRotation = Quaternion.Euler(14, 0, 0);
+            pivot.localRotation = Quaternion.Euler(Tilt, 0, 0);
             _view = new GameObject("Планета").AddComponent<PlanetView>();
             _view.transform.SetParent(pivot, false);
             _view.transform.localRotation = Quaternion.Euler(0, 0, 18);
@@ -145,6 +189,12 @@ namespace PlanetTrader.Visuals
                     _view.Clear();
                     // Новая планета показывается сразу целиком, потом камера подлетает к постройкам.
                     _closeUp = 0;
+                    _userWhole = false;
+                    _orbitYaw = 0;
+                    _orbitElevation = DefaultElevation;
+                    _orbitZoom = _wholeZoom = 1;
+                    _tilt = 0;
+                    _view.transform.parent.localRotation = Quaternion.Euler(Tilt, 0, 0);
                 }
                 _view.RebuildAsync();
             }
@@ -157,7 +207,8 @@ namespace PlanetTrader.Visuals
                 _view.TurnToward(_buildings.Focus, FacingDir);
                 _facedId = p.Id;
             }
-            _wantCloseUp = !structures.IsEmpty && _view.Ready;
+            _hasBuildings = !structures.IsEmpty;
+            _wantCloseUp = _hasBuildings && _view.Ready && !_userWhole;
             _shownFrame = Time.frameCount;
             return _rt;
         }
@@ -169,12 +220,15 @@ namespace PlanetTrader.Visuals
             float target = _wantCloseUp ? 1 : 0;
             _closeUp = Mathf.MoveTowards(_closeUp, target, Time.unscaledDeltaTime * 0.8f);
             // На крупном плане планета замирает (облака плывут), иначе база уехала бы из кадра.
-            _view.SpinSpeed = Spin * (1 - Mathf.SmoothStep(0, 1, _closeUp));
+            // Целиком — вращается сама, но не пока её крутят мышью.
+            bool resting = Time.unscaledTime - _lastInput > 2.5f;
+            _view.SpinSpeed = resting ? Spin * (1 - Mathf.SmoothStep(0, 1, _closeUp)) : 0;
             var surface = _view.Surface;
             if (surface != null && _closeUp > 0)
-                PlaceCamera(_camera.transform, _root, _closeUp, surface.TransformPoint(_buildings.Focus), _view.transform.position);
+                PlaceCamera(_camera.transform, _root, _closeUp, surface.TransformPoint(_buildings.Focus), _view.transform.position,
+                    _orbitYaw, _orbitElevation, _orbitZoom, _wholeZoom);
             else
-                PlaceCamera(_camera.transform, _root, 0, Vector3.zero, Vector3.zero);
+                PlaceCamera(_camera.transform, _root, 0, Vector3.zero, Vector3.zero, wholeZoom: _wholeZoom);
         }
 
         void OnEnable()

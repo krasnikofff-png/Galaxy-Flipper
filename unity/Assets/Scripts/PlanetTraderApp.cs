@@ -55,7 +55,7 @@ namespace PlanetTrader.Client
         /// <summary>Квадрат карты на экране: координаты 0..1 планет растягиваются на него.</summary>
         Rect _mapArea;
 
-        GUIStyle _text, _small, _title, _button, _mapLabel, _logText, _header, _tooltipText;
+        GUIStyle _text, _small, _title, _button, _mapLabel, _logText, _header, _tooltipText, _portraitButton, _portraitHint;
         bool _stylesReady;
 
         /// <summary>
@@ -659,8 +659,40 @@ namespace PlanetTrader.Client
         void DrawPortrait(Planet p)
         {
             var rect = GUILayoutUtility.GetRect(10, PortraitHeight, GUILayout.ExpandWidth(true));
-            if (Event.current.type == EventType.Repaint)
+            var ev = Event.current;
+            int id = GUIUtility.GetControlID(FocusType.Passive);
+            if (ev.type == EventType.Repaint)
+            {
                 GUI.DrawTexture(rect, _portrait.Show(Describe(p), Structures(p), rect.size * _guiScale), ScaleMode.StretchToFill, false);
+                GUI.Label(new Rect(rect.x + 10, rect.yMax - 24, rect.width - 20, 20),
+                    _portrait.CloseUp ? "тянуть мышью — облететь базу, колесо — ближе/дальше" : "тянуть мышью — вращать планету, колесо — ближе/дальше",
+                    _portraitHint);
+            }
+            // Кнопка — раньше перетаскивания, чтобы клик по ней не начинал вращение.
+            if (_portrait.HasBuildings &&
+                GUI.Button(new Rect(rect.xMax - 132, rect.y + 8, 124, 26), _portrait.CloseUp ? "Вся планета" : "К постройкам", _portraitButton))
+                _portrait.ToggleView();
+
+            switch (ev.GetTypeForControl(id))
+            {
+                case EventType.MouseDown when ev.button == 0 && rect.Contains(ev.mousePosition):
+                    GUIUtility.hotControl = id;
+                    ev.Use();
+                    break;
+                case EventType.MouseDrag when GUIUtility.hotControl == id:
+                    _portrait.Drag(ev.delta);
+                    ev.Use();
+                    break;
+                case EventType.MouseUp when GUIUtility.hotControl == id:
+                    GUIUtility.hotControl = 0;
+                    ev.Use();
+                    break;
+                case EventType.ScrollWheel when rect.Contains(ev.mousePosition):
+                    // Колесо над кадром приближает, а не листает панель.
+                    _portrait.Zoom(ev.delta.y);
+                    ev.Use();
+                    break;
+            }
             GUILayout.Space(8);
         }
 
@@ -1492,6 +1524,9 @@ namespace PlanetTrader.Client
             _text = new GUIStyle(GUI.skin.label) { fontSize = 16, wordWrap = true, richText = true };
             _small = new GUIStyle(GUI.skin.label) { fontSize = 13, wordWrap = true, richText = true };
             _small.normal.textColor = new Color(0.75f, 0.78f, 0.85f);
+            _portraitButton = new GUIStyle(GUI.skin.button) { fontSize = 13 };
+            _portraitHint = new GUIStyle(GUI.skin.label) { fontSize = 11, wordWrap = false };
+            _portraitHint.normal.textColor = new Color(0.75f, 0.8f, 0.9f, 0.55f);
             _title = new GUIStyle(_text) { fontSize = 24, fontStyle = FontStyle.Bold };
             _header = new GUIStyle(_text) { fontSize = 17, fontStyle = FontStyle.Bold };
             _header.normal.textColor = new Color(0.6f, 0.75f, 1f);

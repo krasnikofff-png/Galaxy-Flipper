@@ -8,6 +8,7 @@ namespace PlanetTrader.Client
     /// запуск с ключом -autoShot путь.png делает снимок через несколько секунд и закрывает игру.
     /// -autoShotDelay секунды — сколько ждать (по умолчанию 6: планеты карты запекаются в фоне).
     /// -autoShotReveal — полностью разведать все планеты сектора (виден облик каждого типа, руины) и выбрать свою планету.
+    /// -autoShotDrag dx — перед снимком «потянуть мышью» окно планеты на dx пикселей (облёт базы).
     /// Без ключа ничего не делает.
     /// </summary>
     public sealed class AutoScreenshot : MonoBehaviour
@@ -15,6 +16,7 @@ namespace PlanetTrader.Client
         string _path;
         float _delay = 6;
         bool _reveal;
+        float _drag;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         static void Init()
@@ -23,9 +25,11 @@ namespace PlanetTrader.Client
             string path = null;
             float delay = 6;
             bool reveal = System.Array.IndexOf(args, "-autoShotReveal") >= 0;
+            float drag = 0;
             for (int i = 0; i < args.Length - 1; i++)
             {
                 if (args[i] == "-autoShot") path = args[i + 1];
+                if (args[i] == "-autoShotDrag") float.TryParse(args[i + 1], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out drag);
                 if (args[i] == "-autoShotDelay") float.TryParse(args[i + 1], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out delay);
             }
             if (path == null) return;
@@ -35,6 +39,7 @@ namespace PlanetTrader.Client
             shot._path = path;
             shot._delay = delay;
             shot._reveal = reveal;
+            shot._drag = drag;
         }
 
         IEnumerator Start()
@@ -51,7 +56,19 @@ namespace PlanetTrader.Client
                     break;
                 }
             }
-            yield return new WaitForSecondsRealtime(_delay);
+            if (_drag != 0 && app != null)
+            {
+                yield return new WaitForSecondsRealtime(_delay * 0.6f);
+                var portrait = app.GetComponent<Visuals.PlanetPortrait>();
+                for (int i = 0; i < 20; i++)
+                {
+                    portrait.Drag(new Vector2(_drag / 20, -1));
+                    yield return null;
+                }
+                yield return new WaitForSecondsRealtime(_delay * 0.4f);
+            }
+            else
+                yield return new WaitForSecondsRealtime(_delay);
             yield return new WaitForEndOfFrame();
             ScreenCapture.CaptureScreenshot(_path);
             yield return null;

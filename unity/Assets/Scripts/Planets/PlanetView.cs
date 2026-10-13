@@ -35,6 +35,15 @@ namespace PlanetTrader.Visuals
         /// <summary>Вращающаяся поверхность: к ней крепятся постройки. Null, пока планета не собрана.</summary>
         public Transform Surface => _surface;
 
+        /// <summary>Повернуть планету вокруг оси на degrees градусов (мышью в окне планеты).</summary>
+        public void Turn(float degrees)
+        {
+            if (_surface == null) return;
+            var turn = Quaternion.AngleAxis(-degrees, Vector3.up);
+            _surface.localRotation = turn * _surface.localRotation;
+            if (_clouds != null) _clouds.localRotation = turn * _clouds.localRotation;
+        }
+
         /// <summary>
         /// Повернуть планету вокруг оси так, чтобы точка поверхности localPoint (в пространстве планеты)
         /// смотрела в сторону worldDir — например, постройками к камере.

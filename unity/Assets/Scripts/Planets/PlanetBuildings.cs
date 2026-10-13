@@ -55,7 +55,7 @@ namespace PlanetTrader.Visuals
         /// <summary>Модели в единицах Blender (высота около 2) — в радиусы планеты.</summary>
         const float Scale = 0.1f;
 
-        static readonly Dictionary<string, Mesh> Meshes = new Dictionary<string, Mesh>();
+        static readonly Dictionary<string, GameObject> Models = new Dictionary<string, GameObject>();
         static Material _material;
 
         readonly List<GameObject> _placed = new List<GameObject>();
@@ -199,20 +199,26 @@ namespace PlanetTrader.Visuals
 
         GameObject Put(string model, Vector3 q, float radius, float size, System.Random rnd, Color accent)
         {
-            var mesh = LoadMesh(model);
-            if (mesh == null) return null;
+            var prefab = LoadModel(model);
+            if (prefab == null) return null;
+            // Держатель стоит на поверхности, внутри — модель как есть: корпус и подвижные части.
             var go = new GameObject(model);
-            go.layer = _parent.gameObject.layer;
             var t = go.transform;
             t.SetParent(_parent, false);
             t.localPosition = q * radius;
             t.localRotation = Quaternion.FromToRotation(Vector3.up, q) * Quaternion.AngleAxis((float)rnd.NextDouble() * 360, Vector3.up);
             t.localScale = Vector3.one * (Scale * size);
-            go.AddComponent<MeshFilter>().sharedMesh = mesh;
-            var r = go.AddComponent<MeshRenderer>();
-            r.sharedMaterial = Material;
-            r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-            r.receiveShadows = false;
+            var model3d = Object.Instantiate(prefab, t, false);
+            model3d.name = model;
+            int layer = _parent.gameObject.layer;
+            foreach (var tr in go.GetComponentsInChildren<Transform>()) tr.gameObject.layer = layer;
+            foreach (var r in go.GetComponentsInChildren<MeshRenderer>())
+            {
+                r.sharedMaterial = Material;
+                r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                r.receiveShadows = false;
+            }
+            BuildingMotion.Attach(model3d, (float)rnd.NextDouble());
             SetLights(go, 1.3f, 0, accent);
             _placed.Add(go);
             return go;
@@ -221,12 +227,14 @@ namespace PlanetTrader.Visuals
         void SetLights(GameObject go, float glow, float pulse, Color accent)
         {
             if (go == null) return;
-            var r = go.GetComponent<MeshRenderer>();
-            r.GetPropertyBlock(_block);
-            _block.SetColor("_Accent", accent);
-            _block.SetFloat("_Glow", glow);
-            _block.SetFloat("_Pulse", pulse);
-            r.SetPropertyBlock(_block);
+            foreach (var r in go.GetComponentsInChildren<MeshRenderer>())
+            {
+                r.GetPropertyBlock(_block);
+                _block.SetColor("_Accent", accent);
+                _block.SetFloat("_Glow", glow);
+                _block.SetFloat("_Pulse", pulse);
+                r.SetPropertyBlock(_block);
+            }
         }
 
         static Material Material
@@ -238,14 +246,14 @@ namespace PlanetTrader.Visuals
             }
         }
 
-        /// <summary>Сетка модели из Resources/Buildings (FBX, выгруженный tools/buildings/make_buildings.py).</summary>
-        public static Mesh LoadMesh(string model)
+        /// <summary>Модель из Resources/Buildings (FBX, выгруженный tools/buildings/make_buildings.py).</summary>
+        public static GameObject LoadModel(string model)
         {
-            if (Meshes.TryGetValue(model, out var mesh) && mesh != null) return mesh;
-            mesh = Resources.Load<Mesh>("Buildings/" + model);
-            if (mesh == null) Debug.LogWarning($"Нет модели постройки Buildings/{model}");
-            Meshes[model] = mesh;
-            return mesh;
+            if (Models.TryGetValue(model, out var go) && go != null) return go;
+            go = Resources.Load<GameObject>("Buildings/" + model);
+            if (go == null) Debug.LogWarning($"Нет модели постройки Buildings/{model}");
+            Models[model] = go;
+            return go;
         }
 
         static void Kill(Object o)
