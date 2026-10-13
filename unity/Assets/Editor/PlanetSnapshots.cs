@@ -91,7 +91,7 @@ namespace PlanetTrader.EditorTools
                     view.transform.localRotation = Quaternion.Euler(0, 0, 18);
                     view.Look = looks[i];
                     view.Seed = 11 + i;
-                    view.Resolution = 1024;
+                    view.Resolution = 2048;
                     view.Rebuild();
                     var buildings = new PlanetBuildings();
                     buildings.Sync(view, new PlanetStructures
@@ -105,7 +105,7 @@ namespace PlanetTrader.EditorTools
                         Accent = accent,
                     });
                     view.TurnToward(buildings.Focus, PlanetPortrait.FacingDir);
-                    PlanetPortrait.PlaceCamera(cam.transform, root.transform, 1);
+                    PlanetPortrait.PlaceCamera(cam.transform, root.transform, 1, view.Surface.TransformPoint(buildings.Focus), view.transform.position);
 
                     cam.Render();
                     RenderTexture.active = rt;

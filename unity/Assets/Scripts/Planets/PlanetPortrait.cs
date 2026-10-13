@@ -9,7 +9,7 @@ namespace PlanetTrader.Visuals
     /// </summary>
     public sealed class PlanetPortrait : MonoBehaviour
     {
-        const int Resolution = 1024;
+        const int Resolution = 2048;   // на крупном плане построек поверхность видна близко
         /// <summary>Свой угол мира, подальше от карты и витрины.</summary>
         static readonly Vector3 Origin = new Vector3(0, -20000, 0);
 
@@ -28,19 +28,35 @@ namespace PlanetTrader.Visuals
         /// <summary>Куда поворачивать постройки: к камере, в середину кадра (солнце и так светит слева).</summary>
         public static readonly Vector3 FacingDir = new Vector3(-0.08f, 0.2f, -1f).normalized;
 
-        // Два кадра: вся планета и «горизонт» — верх планеты с постройками крупно на фоне звёзд.
+        // Два кадра: вся планета и крупный план построек — камера над базой, за ней горизонт и звёзды.
         static readonly Vector3 WholePos = new Vector3(0, 0, -4.6f), WholeLook = Vector3.zero;
-        static readonly Vector3 CloseUpPos = new Vector3(0, 0.55f, -2.5f), CloseUpLook = new Vector3(0, 0.78f, 0);
-        /// <summary>Сейчас между кадрами: 0 — вся планета, 1 — горизонт.</summary>
+        /// <summary>Крупный план: насколько камера выше базы и насколько отходит от неё (в радиусах планеты).</summary>
+        const float CloseUpHeight = 0.36f, CloseUpDistance = 0.8f;
+        /// <summary>Сейчас между кадрами: 0 — вся планета, 1 — крупный план.</summary>
         float _closeUp;
         bool _wantCloseUp;
+        const float Spin = 3;
 
-        /// <summary>Поставить камеру между кадрами «вся планета» (0) и «горизонт» (1).</summary>
-        public static void PlaceCamera(Transform camera, Transform root, float closeUp)
+        /// <summary>
+        /// Поставить камеру между кадрами «вся планета» (0) и «крупный план» (1).
+        /// focus — главная постройка на поверхности, center — центр планеты (обе точки в мире).
+        /// </summary>
+        public static void PlaceCamera(Transform camera, Transform root, float closeUp, Vector3 focus, Vector3 center)
         {
             float t = Mathf.SmoothStep(0, 1, closeUp);
-            camera.localPosition = Vector3.Lerp(WholePos, CloseUpPos, t);
-            camera.LookAt(root.TransformPoint(Vector3.Lerp(WholeLook, CloseUpLook, t)));
+            var wholePos = root.TransformPoint(WholePos);
+            var wholeRot = Quaternion.LookRotation(root.TransformPoint(WholeLook) - wholePos, root.up);
+            if (t <= 0)
+            {
+                camera.SetPositionAndRotation(wholePos, wholeRot);
+                return;
+            }
+            // Над базой и чуть в сторону зрителя: база внизу кадра, за ней изгиб планеты и звёзды.
+            var up = (focus - center).normalized;
+            var toViewer = Vector3.ProjectOnPlane(-root.forward, up).normalized;
+            var closePos = focus + up * CloseUpHeight + toViewer * CloseUpDistance;
+            var closeRot = Quaternion.LookRotation(focus + up * 0.1f - closePos, up);
+            camera.SetPositionAndRotation(Vector3.Lerp(wholePos, closePos, t), Quaternion.Slerp(wholeRot, closeRot, t));
         }
 
         void Awake()
@@ -51,7 +67,7 @@ namespace PlanetTrader.Visuals
 
             _camera = new GameObject("Камера окна планеты").AddComponent<Camera>();
             _camera.transform.SetParent(_root, false);
-            PlaceCamera(_camera.transform, _root, 0);
+            PlaceCamera(_camera.transform, _root, 0, Vector3.zero, Vector3.zero);
             _camera.fieldOfView = 30;
             _camera.nearClipPlane = 0.1f;
             _camera.farClipPlane = 100;
@@ -92,7 +108,7 @@ namespace PlanetTrader.Visuals
             _view.transform.SetParent(pivot, false);
             _view.transform.localRotation = Quaternion.Euler(0, 0, 18);
             _view.Resolution = Resolution;
-            _view.SpinSpeed = 3;
+            _view.SpinSpeed = Spin;
             _view.CloudDrift = 2;
             _view.enabled = false;   // не запекать в Start: облик задаёт Show
         }
@@ -151,11 +167,14 @@ namespace PlanetTrader.Visuals
             // Окно планеты закрыто — камера не тратит время.
             _camera.enabled = Time.frameCount - _shownFrame <= 2;
             float target = _wantCloseUp ? 1 : 0;
-            if (_closeUp != target)
-            {
-                _closeUp = Mathf.MoveTowards(_closeUp, target, Time.unscaledDeltaTime * 1.2f);
-                PlaceCamera(_camera.transform, _root, _closeUp);
-            }
+            _closeUp = Mathf.MoveTowards(_closeUp, target, Time.unscaledDeltaTime * 0.8f);
+            // На крупном плане планета замирает (облака плывут), иначе база уехала бы из кадра.
+            _view.SpinSpeed = Spin * (1 - Mathf.SmoothStep(0, 1, _closeUp));
+            var surface = _view.Surface;
+            if (surface != null && _closeUp > 0)
+                PlaceCamera(_camera.transform, _root, _closeUp, surface.TransformPoint(_buildings.Focus), _view.transform.position);
+            else
+                PlaceCamera(_camera.transform, _root, 0, Vector3.zero, Vector3.zero);
         }
 
         void OnEnable()

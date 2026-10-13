@@ -127,7 +127,7 @@ namespace PlanetTrader.Visuals
             if (s.Settlement || s.School || s.Guard)
             {
                 // Поселение — в стороне от базы, но рядом: в кадре «горизонт» видно вместе с ней.
-                town = FindSite(look, noise, rnd, used, industry, industry == Vector3.zero ? 0 : 28, 14);
+                town = FindSite(look, noise, rnd, used, industry, industry == Vector3.zero ? 0 : 20, 14);
                 if (s.Settlement) Put("settlement", town, gas ? 1.03f : 0.996f, 0.95f, rnd, s.Accent);
                 if (s.School) Put("school", FindSite(look, noise, rnd, used, town, 17, 12), gas ? 1.03f : 0.996f, 0.8f, rnd, s.Accent);
                 if (s.Guard) Put("guard_tower", FindSite(look, noise, rnd, used, town, 16, 11), gas ? 1.03f : 0.996f, 0.75f, rnd, s.Accent);
