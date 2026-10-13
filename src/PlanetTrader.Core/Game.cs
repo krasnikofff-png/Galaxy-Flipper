@@ -147,6 +147,13 @@ namespace PlanetTrader.Core
         public IReadOnlyList<ResidentRequest> Requests => _requests;
         public IReadOnlyList<Magnate> Magnates => _magnates;
         public IReadOnlyList<BribeAttempt> Bribes => _bribes;
+        readonly List<HostileClaim> _claims = new List<HostileClaim>();
+        int _nextClaimId;
+        public IReadOnlyList<HostileClaim> Claims => _claims;
+
+        /// <summary>Против текущего игрока действует картель: до какого хода и насколько меньше платит биржа.</summary>
+        public bool CartelActive => _current.CartelUntilTurn >= Turn;
+        public double CartelCut => !CartelActive ? 0 : Balance.CartelPriceCut * (Reputation >= Balance.CartelReputationShield ? 0.5 : 1);
 
         public Magnate GetMagnate(int id) => _magnates.FirstOrDefault(m => m.Id == id);
 
@@ -236,6 +243,7 @@ namespace PlanetTrader.Core
                 g.ActionsLeft = g.ActionsPerTurn;
             }
             g._current = g._corps[0];
+            g.Market.SectorFactor = Math.Pow(Math.Max(1, players), balance.MarketGrowthPower);
             return g;
         }
 
@@ -326,7 +334,7 @@ namespace PlanetTrader.Core
         public double MarketDepthFactor => 1 + SpecialtyBonus(Specialty.Economists);
         public double MarketDepth(Resource r) => Market.Depth(r, MarketDepthFactor);
         /// <summary>Сколько текущий игрок выручит за amount с учётом падения цены.</summary>
-        public double Quote(Resource r, double amount) => Market.Quote(r, amount, MarketDepthFactor);
+        public double Quote(Resource r, double amount) => Market.Quote(r, amount, MarketDepthFactor) * (1 - CartelCut);
 
         /// <summary>Капитал = деньги − долг + стоимость планет + стоимость склада.</summary>
         public double Capital => Money - Debt + PlanetsValue + StockValue;
@@ -587,6 +595,8 @@ namespace PlanetTrader.Core
             double income = p.IntellectBase(Balance);
             if (income <= 0 || p.OnStrike) return 0;
             if (p.Mine == MineState.Working && !p.IsDepleted) income *= Balance.IntellectWhileMining;
+            if (Balance.CartelHitsIntellect && p.OwnerCorp != null && p.OwnerCorp.CartelUntilTurn >= Turn)
+                income *= 1 - Balance.CartelPriceCut * (p.OwnerCorp.Reputation >= Balance.CartelReputationShield ? 0.5 : 1);
             return income * (1 + (p.Loyalty - 50) * Balance.IntellectPerLoyalty);
         }
 
@@ -753,6 +763,7 @@ namespace PlanetTrader.Core
                 }
             }
 
+            if (_current.IsAi) return;
             foreach (var r in _requests.Where(r => r.DeadlineTurn <= Turn).ToList())
             {
                 _requests.Remove(r);
@@ -830,6 +841,7 @@ namespace PlanetTrader.Core
             p.Guarded = false;
             _requests.RemoveAll(r => r.PlanetId == p.Id);
             _bribes.RemoveAll(x => x.PlanetId == p.Id);
+            _claims.RemoveAll(x => x.PlanetId == p.Id);
         }
 
         // ------------------------------------------------------------------
@@ -903,12 +915,48 @@ namespace PlanetTrader.Core
         {
             _requests.RemoveAll(r => r.PlanetId == p.Id);
             _bribes.RemoveAll(x => x.PlanetId == p.Id);
+            _claims.RemoveAll(x => x.PlanetId == p.Id);
             p.OwnerCorp = m?.Corp;
             p.Guarded = false;
             p.Tax = TaxLevel.None;
             p.PaysWages = false;
             p.OnStrike = false;
-            if (p.Mine == MineState.None) p.Mine = MineState.Working;
+        }
+
+        public double ClaimDefenseCost(Planet p) => Math.Round(p.MarketValue(Balance) * Balance.ClaimDefenseShare);
+
+        /// <summary>Оплатить защиту от рейдерского захвата: юристы реестра отклоняют иск. Действия не тратит.</summary>
+        public ActionResult DefendClaim(int claimId)
+        {
+            var x = _claims.FirstOrDefault(c => c.Id == claimId);
+            if (x == null) return ActionResult.Fail("Иска нет");
+            var p = GetPlanet(x.PlanetId);
+            if (!IsMine(p)) return ActionResult.Fail("Это не ваша планета");
+            double cost = ClaimDefenseCost(p);
+            if (Money < cost) return ActionResult.Fail("Не хватает денег");
+            Money -= cost;
+            p.Earned -= cost;
+            _claims.Remove(x);
+            Notices.Add($"Иск против {p.Type.Name} #{p.Id} отклонён: юристы обошлись в {Math.Round(cost)}.");
+            return ActionResult.Success;
+        }
+
+        /// <summary>Рейдерские иски, у которых вышел срок: планета уходит магнату, игрок получает компенсацию.</summary>
+        void ResolveClaims(TurnReport report)
+        {
+            foreach (var x in _claims.Where(c => c.ResolveTurn <= Turn && IsMine(GetPlanet(c.PlanetId))).ToList())
+            {
+                _claims.Remove(x);
+                var p = GetPlanet(x.PlanetId);
+                var m = GetMagnate(x.MagnateId);
+                if (m?.Corp == null || m.Corp.Bankrupt) continue;
+                double compensation = Math.Round(p.MarketValue(Balance) * Balance.ClaimCompensationShare);
+                m.Money -= compensation;
+                Money += compensation;
+                p.Earned += compensation;
+                GiveToMagnate(p, m);
+                report.Events.Add($"Реестр отдал {p.Type.Name} #{p.Id} магнату {m.Name}. Компенсация — {compensation}.");
+            }
         }
 
         /// <summary>Встречный подкуп: жители остаются с вами и становятся лояльнее. Действия не тратит.</summary>
@@ -1165,7 +1213,7 @@ namespace PlanetTrader.Core
             if (amount <= 0) return ActionResult.Fail("Нечего продавать");
             if (_stock[(int)r] + 1e-9 < amount) return ActionResult.Fail("Столько ресурса нет на складе");
             _stock[(int)r] -= amount;
-            Money += Market.Sell(r, amount, MarketDepthFactor);
+            Money += Market.Sell(r, amount, MarketDepthFactor) * (1 - CartelCut);
             return ActionResult.Success;
         }
 
@@ -1231,10 +1279,15 @@ namespace PlanetTrader.Core
                 return shared;
             }
             var active = players.Where(c => !c.Bankrupt).ToList();
+            // Магнаты живут по тем же правилам, но их аварии и забастовки игроку не показываем.
+            var rivals = _magnates.Select(m => m.Corp).Where(c => c != null && !c.Bankrupt).ToList();
+            foreach (var c in rivals) reports[c.Id] = new TurnReport { Turn = Turn };
 
-            void Each(Action<TurnReport> phase)
+            void Each(Action<TurnReport> phase) => Run(active, phase);
+            void EachCorp(Action<TurnReport> phase) => Run(active.Concat(rivals), phase);
+            void Run(IEnumerable<Corporation> corps, Action<TurnReport> phase)
             {
-                foreach (var c in active)
+                foreach (var c in corps)
                 {
                     _current = c;
                     phase(reports[c.Id]);
@@ -1242,10 +1295,9 @@ namespace PlanetTrader.Core
                 _current = caller;
             }
 
-            Each(ProducePlayer);
-            ProduceAi();
+            EachCorp(ProducePlayer);
             Regenerate(shared);
-            Each(r =>
+            EachCorp(r =>
             {
                 AdvanceResearch(r);
                 DeliverShipments();
@@ -1253,12 +1305,14 @@ namespace PlanetTrader.Core
                 PayCosts(r);
                 ResolveProbes(r);
                 ResolveBribes(r);
+                ResolveClaims(r);
             });
             UpdateOrders(shared);
             Discover(shared);
             AiTurn(shared);
+            Run(rivals, r => MagnateManage(_current.Magnate, r));
+            ReplaceBankruptMagnates(shared);
             Each(MagnatesPester);
-            MagnatesDevelop(shared);
             Each(r =>
             {
                 MagnatesRemark(r);
@@ -1267,10 +1321,11 @@ namespace PlanetTrader.Core
                 else if (Reputation > 50) ChangeReputation(-Math.Min(Balance.ReputationRecovery, Reputation - 50));
             });
             Market.Tick(_rng);
+            Market.SectorFactor = Math.Pow(Math.Max(1, active.Count), Balance.MarketGrowthPower);
             UpdateEvent(shared);
 
             Turn++;
-            Each(_ => ActionsLeft = ActionsPerTurn);
+            EachCorp(_ => ActionsLeft = ActionsPerTurn);
             _lastReports = reports;
             return shared;
         }
@@ -1582,80 +1637,18 @@ namespace PlanetTrader.Core
             }
         }
 
-        /// <summary>
-        /// Планеты магнатов добывают и приносят им деньги, образованные жители — умственный труд;
-        /// содержание растёт с числом планет так же, как у игрока.
-        /// </summary>
-        void ProduceAi()
-        {
-            foreach (var m in _magnates) m.LastIncome = 0;
-            var working = new Dictionary<int, int>();
-            foreach (var p in _planets)
-            {
-                if (p.Owner != Owner.Ai) continue;
-                var m = GetMagnate(p.MagnateId);
-                bool mining = p.Mine == MineState.Working && !p.IsDepleted;
-                if (mining)
-                {
-                    double amount = Math.Min(p.Type.OutputPerTurn, p.Reserve);
-                    p.Reserve -= amount;
-                    if (m != null) m.LastIncome += amount * Balance.BasePrice(p.Resource) * Balance.MagnateIncomeShare;
-                    if (p.Reserve <= 1e-9) StartRegen(p);
-                }
-                if (m == null) continue;
-                m.LastIncome += p.IntellectBase(Balance) * (mining ? Balance.IntellectWhileMining : 1);
-                if (!p.IsDepleted) working[m.Id] = working.TryGetValue(m.Id, out int n) ? n + 1 : 1;
-            }
-            foreach (var m in _magnates)
-            {
-                m.LastIncome -= MagnateUpkeep(m, working.TryGetValue(m.Id, out int n) ? n : 0);
-                m.Money += m.LastIncome;
-            }
-        }
-
         IEnumerable<Planet> MagnatePlanets(Magnate m) => _planets.Where(p => p.OwnerCorp != null && p.OwnerCorp == m.Corp);
 
-        double MagnateUpkeep(Magnate m, int workingPlanets) =>
-            MagnatePlanets(m).Sum(p => p.BaseUpkeep(Balance)) * Balance.UpkeepMultiplier(workingPlanets);
-
-        /// <summary>Богатство магната: казна и рыночная стоимость его планет.</summary>
-        public double MagnateWealth(Magnate m) => m.Money + MagnatePlanets(m).Sum(p => p.MarketValue(Balance));
+        /// <summary>Богатство магната, как капитал игрока: деньги минус долг, рыночная стоимость планет, склад по базовым ценам.</summary>
+        public double MagnateWealth(Magnate m) =>
+            m.Corp == null ? m.Money
+                : m.Corp.Money - m.Corp.Debt + MagnatePlanets(m).Sum(p => p.MarketValue(Balance))
+                  + ResourceTypes.All.Sum(r => (m.Corp.Stock[(int)r] + m.Corp.Shipments.Where(x => x.Resource == r).Sum(x => x.Amount)) * Balance.BasePrice(r));
 
         public int MagnatePlanetCount(Magnate m) => MagnatePlanets(m).Count();
 
         /// <summary>Сколько денег магнат держит про запас и не тратит.</summary>
         double MagnateReserve(Magnate m) => Balance.MagnateReserveTurns * MagnatePlanets(m).Sum(p => p.BaseUpkeep(Balance));
-
-        /// <summary>
-        /// Магнаты тоже развиваются: учат жителей своих обитаемых планет, а в долгах продают худшую планету.
-        /// </summary>
-        void MagnatesDevelop(TurnReport report)
-        {
-            var b = Balance;
-            foreach (var m in _magnates)
-            {
-                if (m.Money < 0)
-                {
-                    var worst = MagnatePlanets(m).OrderBy(p => p.MarketValue(b)).FirstOrDefault();
-                    if (worst != null)
-                    {
-                        m.Money += worst.MarketValue(b) * (1 - b.ResaleCommission);
-                        ReleaseToRegistry(worst);
-                        report.Events.Add($"{m.Name} в долгах и продаёт планету {worst.Type.Name} #{worst.Id}.");
-                    }
-                    continue;
-                }
-                if (!_rng.Chance(b.MagnateEducateChance)) continue;
-                var p = MagnatePlanets(m).Where(x => x.Inhabited && x.Education < b.EducationCost.Length - 1)
-                    .OrderByDescending(x => x.IsDepleted).ThenBy(x => x.Education).FirstOrDefault();
-                if (p == null) continue;
-                double cost = b.EducationCost[p.Education + 1];
-                if (m.Money - cost < MagnateReserve(m)) continue;
-                m.Money -= cost;
-                if (p.Education == 0) p.Specialty = Specialties.Natural(p.Resource);
-                p.Education++;
-            }
-        }
 
         /// <summary>
         /// Невыплата: недостача уходит в долг. Если долг выше кредитного лимита,
@@ -1768,7 +1761,105 @@ namespace PlanetTrader.Core
             report.Events.Add($"Событие «{ev.Name}» на {ev.Duration} ходов: {ev.Description}");
         }
 
-        /// <summary>Магнаты покупают планеты, иногда перепродают свои и пакостят игроку.</summary>
+        // ------------------------------------------------------------------
+        // Мозг магната: те же действия, что у игрока
+        // ------------------------------------------------------------------
+
+        /// <summary>
+        /// Магнат распоряжается своей корпорацией через те же действия, что доступны игроку:
+        /// продаёт на бирже, строит шахты, ставит налог, устраивает праздники, строит школы, учит жителей,
+        /// исследует, гасит долг. Характер решает, насколько он жаден и заботлив.
+        /// </summary>
+        void MagnateManage(Magnate m, TurnReport report)
+        {
+            var b = Balance;
+            double before = Money;
+            double sold = 0;
+
+            // Магнат продаёт всё по текущей цене биржи и цену не двигает: её роняют только игроки.
+            foreach (var r in ResourceTypes.All)
+            {
+                double amount = _stock[(int)r];
+                if (amount <= 0) continue;
+                double revenue = amount * Market.Price(r);
+                _stock[(int)r] = 0;
+                Money += revenue;
+                sold += revenue;
+            }
+
+            if (Debt > 0 && Money > MagnateReserve(m)) RepayLoan(Math.Min(Debt, Money - MagnateReserve(m)));
+
+            foreach (var p in PlayerPlanets.Where(x => x.Mine == MineState.None && !x.IsDepleted).ToList())
+                if (Money - p.Type.MineCost >= MagnateReserve(m)) BuildMine(p.Id);
+
+            // Жители: налог по настроению, праздник, если дело идёт к забастовке, школа и учёба, когда есть деньги.
+            double highTax = m.Personality == Personality.Greedy ? 55 : m.Personality == Personality.Cautious ? 75 : 65;
+            double lowTax = m.Personality == Personality.Greedy ? 35 : m.Personality == Personality.Cautious ? 50 : 45;
+            foreach (var p in PlayerPlanets.Where(x => x.Inhabited).ToList())
+            {
+                SetTax(p.Id, p.Loyalty >= highTax ? TaxLevel.High : p.Loyalty >= lowTax ? TaxLevel.Low : TaxLevel.None);
+                if ((p.Loyalty < 40 || p.OnStrike) && Money - b.FestivalCost >= MagnateReserve(m)) HoldFestival(p.Id);
+                bool caring = m.Personality == Personality.Cautious || _rng.Chance(0.3);
+                if (!p.HasSchool && caring && Money - b.SchoolCost >= MagnateReserve(m) + 1000) BuildSchool(p.Id);
+                if (_rng.Chance(b.MagnateEducateChance) && CanEducate(p, out _) && Money - b.EducationCost[p.Education + 1] >= MagnateReserve(m))
+                    Educate(p.Id, p.Education > 0 ? p.Specialty : Specialties.Natural(p.Resource));
+            }
+
+            // Исследует, когда богат: то, что дешевле.
+            if (CurrentResearch == null && _rng.Chance(0.1))
+            {
+                var tech = b.Technologies.Where(CanResearch).OrderBy(ResearchCost).FirstOrDefault();
+                if (tech != null && Money - ResearchCost(tech) >= MagnateReserve(m) + 3 * ResearchCost(tech)) StartResearch(tech.Id);
+            }
+
+            var r0 = report;
+            m.LastIncome = sold + r0.Taxes + r0.Intellect - r0.TotalCosts;
+        }
+
+        /// <summary>
+        /// Слияния: богатый магнат поглощает того, кто беднее во много раз, — забирает планеты, деньги и долги.
+        /// Разорившийся или поглощённый магнат уходит из сектора, на его место приходит новый с такими же повадками.
+        /// </summary>
+        void ReplaceBankruptMagnates(TurnReport report)
+        {
+            if (_magnates.Count >= 2 && _rng.Chance(Balance.MergerChance))
+            {
+                var byWealth = _magnates.Where(x => x.Corp != null && !x.Corp.Bankrupt).OrderByDescending(MagnateWealth).ToList();
+                var rich = byWealth.FirstOrDefault();
+                var poor = byWealth.LastOrDefault();
+                if (rich != null && poor != null && rich != poor && MagnateWealth(rich) >= Balance.MergerWealthRatio * Math.Max(1, MagnateWealth(poor)))
+                {
+                    foreach (var p in MagnatePlanets(poor).ToList()) p.OwnerCorp = rich.Corp;
+                    rich.Corp.Money += poor.Corp.Money;
+                    rich.Corp.Debt += poor.Corp.Debt;
+                    for (int r = 0; r < ResourceTypes.Count; r++) rich.Corp.Stock[r] += poor.Corp.Stock[r];
+                    foreach (var x in _bribes.Where(x => x.MagnateId == poor.Id)) x.MagnateId = rich.Id;
+                    foreach (var x in _claims.Where(x => x.MagnateId == poor.Id)) x.MagnateId = rich.Id;
+                    poor.Corp.Money = 0;
+                    poor.Corp.Debt = 0;
+                    poor.Corp.Bankrupt = true;
+                    report.Events.Add($"{rich.Name} поглотил(а) корпорацию {poor.Name}. Теперь у него {MagnatePlanetCount(rich)} планет.");
+                }
+            }
+
+            for (int i = 0; i < _magnates.Count; i++)
+            {
+                var old = _magnates[i];
+                if (old.Corp == null || !old.Corp.Bankrupt) continue;
+                _claims.RemoveAll(x => x.MagnateId == old.Id);
+                foreach (var p in MagnatePlanets(old).ToList()) ReleaseToRegistry(p);
+                _bribes.RemoveAll(x => x.MagnateId == old.Id);
+                var pattern = Balance.Magnates.FirstOrDefault(x => x.Personality == old.Personality) ?? old;
+                var fresh = Magnate.Generate(_magnates.Max(x => x.Id) + 1, pattern, _rng);
+                fresh.Corp = new Corporation(_corps.Max(x => x.Id) + 1, fresh.Name) { Magnate = fresh, Money = Balance.MagnateStartMoney, Reputation = Balance.StartReputation };
+                fresh.Corp.ActionsLeft = Balance.BaseActionsPerTurn;
+                _corps.Add(fresh.Corp);
+                _magnates[i] = fresh;
+                report.Events.Add($"{old.Name} разорился(ась) и покидает сектор. На его место приходит {fresh.Name} ({fresh.PersonalityName}).");
+            }
+        }
+
+        /// <summary>Магнаты покупают планеты на свои деньги и иногда перепродают свои.</summary>
         void AiTurn(TurnReport report)
         {
             var active = ActiveMagnates.ToList();
@@ -1790,10 +1881,11 @@ namespace PlanetTrader.Core
 
             if (_rng.Chance(Balance.AiResaleChance))
             {
-                var aiPlanets = _planets.Where(p => p.Owner == Owner.Ai && !p.IsDepleted).ToList();
-                if (aiPlanets.Count > 0)
+                // Магнат избавляется от худшей планеты, если их у него хотя бы три.
+                var sellers = _magnates.Where(x => x.Corp != null && !x.Corp.Bankrupt && MagnatePlanetCount(x) >= 3).ToList();
+                if (sellers.Count > 0)
                 {
-                    var p = aiPlanets[_rng.Range(0, aiPlanets.Count)];
+                    var p = MagnatePlanets(sellers[_rng.Range(0, sellers.Count)]).OrderBy(x => x.MarketValue(Balance)).First();
                     var seller = GetMagnate(p.MagnateId);
                     if (seller != null) seller.Money += p.MarketValue(Balance) * (1 - Balance.ResaleCommission);
                     p.OwnerCorp = null;
@@ -1808,6 +1900,13 @@ namespace PlanetTrader.Core
         {
             var active = ActiveMagnates.ToList();
             double attention = MagnateAttention;
+            // Лидера травят сообща: картель со скупщиками.
+            if (!CartelActive && active.Count >= 2 && Rivalry >= Balance.CartelRivalry && _rng.Chance(Balance.CartelChance))
+            {
+                _current.CartelUntilTurn = Turn + Balance.CartelTurns;
+                report.Events.Add($"Магнаты сговорились со скупщиками против вас: {Balance.CartelTurns} ходов биржа платит на {Math.Round(CartelCut * 100)}% меньше" +
+                                  (Reputation >= Balance.CartelReputationShield ? " (репутация смягчила удар вдвое)." : ". Репутация от " + Balance.CartelReputationShield + " смягчила бы удар вдвое."));
+            }
             double crowd = Balance.RivalMagnates > 0 && _magnates.Count > Balance.RivalMagnates ? Balance.RivalMagnates / (double)_magnates.Count : 1;
             foreach (var m in active)
             {
@@ -1895,6 +1994,22 @@ namespace PlanetTrader.Core
                     var o = _orders[_rng.Range(0, _orders.Count)];
                     _orders.Remove(o);
                     report.Events.Add($"{m.Name} переманил(а) заказчика: {o.Customer} больше не ждёт {o.Amount} ({o.Resource.RuName()}).");
+                    return;
+                }
+                case TrickKind.HostileClaim:
+                {
+                    // Новичка не трогают; жители своих не отдают — оспаривают только необитаемые.
+                    if (PlayerPlanetCount < Balance.MagnateAttentionPlanets) return;
+                    var target = PlayerPlanets
+                        .Where(p => !p.Inhabited && !p.IsDepleted && !_claims.Any(c => c.PlanetId == p.Id))
+                        .OrderByDescending(p => p.MarketValue(Balance))
+                        .FirstOrDefault();
+                    if (target == null) return;
+                    double compensation = target.MarketValue(Balance) * Balance.ClaimCompensationShare;
+                    if (m.Money - compensation < MagnateReserve(m)) return;
+                    _claims.Add(new HostileClaim { Id = _nextClaimId++, PlanetId = target.Id, MagnateId = m.Id, ResolveTurn = Turn + Balance.ClaimWarningTurns });
+                    report.Events.Add($"{m.Name} оспаривает в реестре права на {target.Type.Name} #{target.Id}! Через {Balance.ClaimWarningTurns} хода планета уйдёт к нему за полцены, " +
+                                      $"если не оплатить защиту ({Math.Round(ClaimDefenseCost(target))}).");
                     return;
                 }
                 case TrickKind.PoachScientists:

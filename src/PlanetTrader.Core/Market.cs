@@ -18,8 +18,11 @@ namespace PlanetTrader.Core
 
         public double Price(Resource r) => _price[(int)r];
 
+        /// <summary>Во сколько раз рынок глубже базового: в кооперативе игроков больше, и спроса тоже. Задаёт игра.</summary>
+        public double SectorFactor = 1;
+
         /// <summary>Глубина рынка для продавца; depthFactor — его экономисты делают рынок глубже.</summary>
-        public double Depth(Resource r, double depthFactor = 1) => _b.Depth(r) * depthFactor;
+        public double Depth(Resource r, double depthFactor = 1) => _b.Depth(r) * SectorFactor * depthFactor;
 
         /// <summary>К какой цене возвращается рынок: базовая, а во время события — с его множителем.</summary>
         public double TargetPrice(Resource r) => _b.BasePrice(r) * _eventFactor[(int)r];

@@ -103,6 +103,12 @@ namespace PlanetTrader.Sim
                 if (g.Money - b.CounterBribeCost >= Buffer(g) / 2) g.CounterBribe(x.Id);
                 else if (g.ActionsLeft > 0 && g.Money >= b.FestivalCost) g.HoldFestival(target.Id);
             }
+            // Рейдерский захват: защита дешевле, чем отдать планету за полцены.
+            foreach (var c in g.Claims.ToList())
+            {
+                var target = g.GetPlanet(c.PlanetId);
+                if (g.IsMine(target) && g.Money >= g.ClaimDefenseCost(target)) g.DefendClaim(c.Id);
+            }
             foreach (var r in g.Requests.ToList())
             {
                 var p = g.GetPlanet(r.PlanetId);

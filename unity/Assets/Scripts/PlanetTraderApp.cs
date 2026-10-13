@@ -651,6 +651,8 @@ namespace PlanetTrader.Client
                         GUILayout.Label(p.Inhabited && p.Education > 0
                             ? "Основное месторождение восстанавливается. Пока шахта стоит, все жители заняты умственным трудом."
                             : "Основное месторождение восстанавливается, а содержание идёт. Жители с образованием зарабатывали бы и сейчас.", _text);
+                    foreach (var x in g.Claims.Where(c => c.PlanetId == p.Id).ToList())
+                        DrawClaim(x, p);
                     if (p.Inhabited) DrawPeople(p);
                     else
                     {
@@ -837,6 +839,23 @@ namespace PlanetTrader.Client
             GUILayout.EndVertical();
         }
 
+        /// <summary>Рейдерский иск: срок и кнопка защиты.</summary>
+        void DrawClaim(HostileClaim x, Planet p)
+        {
+            var g = _game;
+            var b = g.Balance;
+            var m = g.GetMagnate(x.MagnateId);
+            int left = x.ResolveTurn - g.Turn + 1;
+            double cost = g.ClaimDefenseCost(p);
+            GUILayout.BeginVertical(GUI.skin.box);
+            GUILayout.Label($"<color=#ff8a7a><b>{m?.Name} оспаривает в реестре {p.Type.Name} #{p.Id}!</b></color> Через {left} х. планета уйдёт к магнату " +
+                            $"за {Fmt.Percent(b.ClaimCompensationShare)} стоимости, если не оплатить юристов.", _small);
+            int id = x.Id;
+            if (ActionButton($"Оплатить защиту: {Fmt.Money(cost)}, без действия", g.Money >= cost))
+                Act(() => g.DefendClaim(id), $"Иск против {p.Type.Name} #{p.Id} отклонён.");
+            GUILayout.EndVertical();
+        }
+
         void DrawGuards(Planet p)
         {
             if (!p.Inhabited) return;
@@ -984,7 +1003,12 @@ namespace PlanetTrader.Client
             Line("Внимание магнатов", $"{Fmt.Percent(g.MagnateAttention)}: чем больше у вас планет, тем чаще пакости");
             if (g.Rivalry > 1)
                 GUILayout.Label($"<color=#ffd27a>Вы богаче среднего магната в {g.Rivalry:0.#} раза — лидера травят все, пакостей больше.</color>", _small);
-            GUILayout.Label($"Жители с лояльностью от {Fmt.Amount(b.PoachScientistsBelowLoyalty)} не дают переманить своих учёных.", _small);
+            GUILayout.Label($"Жители с лояльностью от {Fmt.Amount(b.PoachScientistsBelowLoyalty)} не дают переманить своих учёных. " +
+                            $"Обитаемые планеты не оспорить в реестре: жители своих не отдают.", _small);
+            if (g.CartelActive)
+                GUILayout.Label($"<color=#ff8a7a>Картель магнатов против вас до хода {g.Current.CartelUntilTurn}: биржа платит на {Fmt.Percent(g.CartelCut)} меньше.</color>", _text);
+            else if (g.Rivalry >= b.CartelRivalry)
+                GUILayout.Label($"<color=#ffd27a>Вы так богаты, что магнаты могут сговориться против вас (картель).</color> Репутация от {Fmt.Amount(b.CartelReputationShield)} смягчит удар вдвое.", _small);
             GUILayout.Space(10);
 
             foreach (var m in g.Magnates)
@@ -1012,6 +1036,12 @@ namespace PlanetTrader.Client
                 GUILayout.Space(6);
             }
 
+            var claims = g.Claims.Where(c => g.IsMine(g.GetPlanet(c.PlanetId))).ToList();
+            if (claims.Count > 0)
+            {
+                GUILayout.Label("Рейдерские иски", _header);
+                foreach (var x in claims) DrawClaim(x, g.GetPlanet(x.PlanetId));
+            }
             if (g.Bribes.Count > 0)
             {
                 GUILayout.Label("Подкупы ваших жителей", _header);
@@ -1090,6 +1120,8 @@ namespace PlanetTrader.Client
         void DrawMarketTab()
         {
             var g = _game;
+            if (g.CartelActive)
+                GUILayout.Label($"<color=#ff8a7a>Картель магнатов: до хода {g.Current.CartelUntilTurn} вы получаете на {Fmt.Percent(g.CartelCut)} меньше за всё проданное.</color>", _text);
             GUILayout.BeginHorizontal();
             GUILayout.Label("Ресурс", _header, GUILayout.Width(110));
             GUILayout.Label("Склад", _header, GUILayout.Width(90));
@@ -1135,6 +1167,12 @@ namespace PlanetTrader.Client
         void DrawOrdersTab()
         {
             var g = _game;
+            var claims = g.Claims.Where(c => g.IsMine(g.GetPlanet(c.PlanetId))).ToList();
+            if (claims.Count > 0)
+            {
+                GUILayout.Label("Рейдерские иски", _header);
+                foreach (var x in claims) DrawClaim(x, g.GetPlanet(x.PlanetId));
+            }
             if (g.Bribes.Count > 0)
             {
                 GUILayout.Label("Подкупы ваших жителей", _header);

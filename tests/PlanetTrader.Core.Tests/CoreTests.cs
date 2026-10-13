@@ -273,7 +273,7 @@ public class DiscoveryTests
     [Fact]
     public void DiscoveredPlanetsAppearInRegistryAtExpectedRate()
     {
-        var b = new Balance { AiBuyChance = 0, AiResaleChance = 0, AccidentChance = 0, MaxSectorPlanets = 1000 };
+        var b = new Balance { AiBuyChance = 0, AiResaleChance = 0, AiStartShare = 0, AccidentChance = 0, MaxSectorPlanets = 1000 };
         var g = Game.New(b, 9);
         int before = g.AllPlanets.Count;
         for (int i = 0; i < 700; i++) g.EndTurn();
@@ -286,7 +286,7 @@ public class DiscoveryTests
     [Fact]
     public void FullSectorHasNoMoreDiscoveries()
     {
-        var b = new Balance { AiBuyChance = 0, AiResaleChance = 0, AccidentChance = 0 };
+        var b = new Balance { AiBuyChance = 0, AiResaleChance = 0, AiStartShare = 0, AccidentChance = 0 };
         var g = Game.New(b, 9);
         for (int i = 0; i < 1000; i++) g.EndTurn();
         Assert.True(g.SectorFull);
@@ -882,6 +882,94 @@ public class MagnateTests
     }
 
     [Fact]
+    public void MagnatesSellWithoutMovingPrices()
+    {
+        var b = NoTricks();
+        b.MarketNoise = 0;
+        b.AiResaleChance = 0;
+        b.AiBuyChance = 0;
+        b.StartPlanetHasMine = false; // игрок ничего не продаёт
+        var g = Game.New(b, 6);
+        for (int i = 0; i < 5; i++) g.EndTurn();
+        foreach (var r in ResourceTypes.All) Assert.Equal(b.BasePrice(r), g.Market.Price(r), 6);
+        Assert.Contains(g.Magnates, m => m.LastIncome > 0);
+        Assert.True(g.Magnates.Sum(m => m.Corp.Stock.Sum()) < 1e-9);
+    }
+
+    [Fact]
+    public void CartelCutsLeaderSales()
+    {
+        var b = NoTricks();
+        b.CartelRivalry = 0;
+        b.CartelChance = 1;
+        b.MagnateAttentionPlanets = 1;
+        b.MarketNoise = 0;
+        var g = Game.New(b, 6);
+        g.EndTurn();
+        Assert.True(g.CartelActive);
+        Assert.Equal(b.CartelPriceCut, g.CartelCut, 6);
+        double quote = g.Quote(Resource.Ice, 10);
+        Assert.Equal(g.Market.Quote(Resource.Ice, 10) * (1 - b.CartelPriceCut), quote, 6);
+    }
+
+    static Game ClaimGame(out Planet target)
+    {
+        var b = NoTricks();
+        b.MagnateAttentionPlanets = 1;
+        b.MagnateStartMoney = 1_000_000;
+        b.Magnates[0].TrickChance = 1;
+        b.Magnates[0].TrickWeights = new[] { 0, 0, 0, 0, 0, 1.0 };
+        b.AiResaleChance = 0;
+        var g = Game.New(b, 6);
+        target = g.PlayerPlanets.Single();
+        g.EndTurn();
+        return g;
+    }
+
+    [Fact]
+    public void HostileClaimTakesUndefendedPlanetForHalfPrice()
+    {
+        var g = ClaimGame(out var p);
+        var claim = g.Claims.Single();
+        Assert.Equal(p.Id, claim.PlanetId);
+        double money = g.Money;
+        while (g.Turn <= claim.ResolveTurn) g.EndTurn();
+        Assert.Equal(Owner.Ai, p.Owner);
+        Assert.True(g.Money > money);
+    }
+
+    [Fact]
+    public void DefendedClaimKeepsPlanet()
+    {
+        var g = ClaimGame(out var p);
+        var claim = g.Claims.Single();
+        double cost = g.ClaimDefenseCost(p);
+        double money = g.Money;
+        Assert.True(g.DefendClaim(claim.Id).Ok);
+        Assert.Equal(money - cost, g.Money, 6);
+        Assert.Empty(g.Claims);
+    }
+
+    [Fact]
+    public void RichMagnateAbsorbsPoorOneAndNewcomerArrives()
+    {
+        var b = NoTricks();
+        b.MergerChance = 1;
+        b.AiResaleChance = 0;
+        b.AiBuyChance = 0;
+        var g = Game.New(b, 6);
+        g.Magnates[0].Corp.Money = 10_000_000;
+        var poor = g.Magnates[2];
+        int poorPlanets = g.MagnatePlanetCount(poor);
+        int richPlanets = g.MagnatePlanetCount(g.Magnates[0]);
+        g.EndTurn();
+        Assert.DoesNotContain(poor, g.Magnates);
+        Assert.Equal(3, g.Magnates.Count);
+        Assert.True(g.MagnatePlanetCount(g.Magnates[0]) >= richPlanets + poorPlanets - 1);
+        Assert.Equal(0, g.MagnatePlanetCount(g.Magnates[2]));
+    }
+
+    [Fact]
     public void BigSectorGetsGeneratedMagnates()
     {
         var b = NoTricks();
@@ -953,6 +1041,8 @@ public class EventTests
     {
         var b = Quiet();
         b.Events = new[] { ev };
+        // Магнаты торгуют на той же бирже — здесь проверяем только событие.
+        b.AiStartShare = 0;
         foreach (var m in b.Magnates) m.TrickChance = 0;
         return b;
     }

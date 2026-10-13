@@ -21,6 +21,8 @@ namespace PlanetTrader.Core
         PoachManager,
         /// <summary>Переманить учёных: образованные жители планеты с невысокой лояльностью уезжают к магнату, уровень образования падает.</summary>
         PoachScientists,
+        /// <summary>Рейдерский захват: магнат оспаривает в реестре вашу необитаемую планету.</summary>
+        HostileClaim,
     }
 
     /// <summary>ИИ-магнат: соперник игрока со своим характером.</summary>
@@ -34,7 +36,7 @@ namespace PlanetTrader.Core
         /// <summary>Шанс заинтересоваться аукционом и разброс его ставки (доля базовой цены).</summary>
         public double AuctionInterest;
         public double BidMin, BidMax;
-        /// <summary>Веса пакостей: подкуп, слух, переманить заказчика, переманить менеджера, переманить учёных.</summary>
+        /// <summary>Веса пакостей: подкуп, слух, переманить заказчика, переманить менеджера, переманить учёных, рейдерский захват.</summary>
         public double[] TrickWeights;
         /// <summary>До этого хода магнат отбивается от слухов: не покупает и не пакостит.</summary>
         public int QuietUntilTurn;
@@ -89,6 +91,16 @@ namespace PlanetTrader.Core
             return new Magnate(id, name, pattern.Personality, J(pattern.TrickChance), Math.Min(1, J(pattern.AuctionInterest)),
                 bidMin, Math.Max(bidMin + 0.05, J(pattern.BidMax)), (double[])pattern.TrickWeights.Clone());
         }
+    }
+
+    /// <summary>Рейдерский захват: если до срока не оплатить защиту, планета уйдёт магнату за полцены.</summary>
+    public sealed class HostileClaim
+    {
+        public int Id;
+        public int PlanetId;
+        public int MagnateId;
+        /// <summary>В конце этого хода всё решится.</summary>
+        public int ResolveTurn;
     }
 
     /// <summary>Магнат подкупает жителей вашей планеты. Если не помешать, планета перейдёт к нему.</summary>

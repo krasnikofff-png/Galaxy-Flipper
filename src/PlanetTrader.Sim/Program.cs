@@ -93,6 +93,8 @@ namespace PlanetTrader.Sim
             var ignoresPeople = RunMany(balance, Strategy.ActiveIgnoresPeople, runs, turns, seed);
             var calm = MakeBalance(overrides);
             foreach (var m in calm.Magnates) m.TrickChance = 0;
+            calm.CartelChance = 0;
+            calm.MergerChance = 0;
             var noTricks = RunMany(calm, Strategy.Active, runs, turns, seed);
             var report = new StringBuilder();
             WriteReport(report, results, noScouting, ignoresPeople, noTricks, runs, overrides);
@@ -384,7 +386,7 @@ namespace PlanetTrader.Sim
             double trickCost = Median(active.Select(r => r.Capital[End])) / Median(noTricks.Select(r => r.Capital[End]));
             double winRate = active.Sum(r => r.AuctionsWon) / (double)Math.Max(1, active.Sum(r => r.AuctionsWon + r.AuctionsLost));
             double lostCare = active.Average(r => r.PlanetsLostToBribes), lostIgnore = ignoresPeople.Average(r => r.PlanetsLostToBribes);
-            sb.AppendLine($"| ИИ мешает заметно, но не бесит (этап 5) | пакости магнатов снижают капитал к концу на 8–25% | капитал ×{F(trickCost, "0.00")} от партий без пакостей | {Check(trickCost >= 0.75 && trickCost <= 0.92)} |");
+            sb.AppendLine($"| ИИ мешает заметно, но не бесит (этап 5) | пакости и крупные ходы магнатов (картель, иски, слияния) снижают капитал к концу на 8–25% | капитал ×{F(trickCost, "0.00")} от партий без них | {Check(trickCost >= 0.75 && trickCost <= 0.92)} |");
             sb.AppendLine($"| Магнаты растут (этап 7) | для справки: средний магнат к концу, сколько планет у всех магнатов, во сколько раз «Активный» богаче среднего магната | " +
                           $"{N(Median(active.Select(r => r.MagnateWealth)))}, планет {F(Median(active.Select(r => (double)r.MagnatePlanets)), "0")}, ×{F(Median(active.Select(r => r.Rivalry)), "0.0")} | |");
             sb.AppendLine($"| Аукционы (этап 5) | бот выигрывает 40–80% своих ставок | {F(winRate * 100, "0")}% | {Check(winRate >= 0.4 && winRate <= 0.8)} |");
@@ -432,7 +434,8 @@ namespace PlanetTrader.Sim
                 ("Без стартового долга", b => b.StartDebt = 0),
                 ("Без роста содержания с числом планет", b => b.UpkeepCurveK = 1),
                 ("Без влияния продаж на рынок", b => b.SalesImpact = 0),
-                ("Без ИИ-конкурентов", b => { b.AiBuyChance = 0; b.AiStartShare = 0; b.AuctionMarkup = 0; foreach (var m in b.Magnates) { m.TrickChance = 0; m.AuctionInterest = 0; } }),
+                ("Без ИИ-конкурентов", b => { b.AiBuyChance = 0; b.AiStartShare = 0; b.AuctionMarkup = 0; b.CartelChance = 0; b.MergerChance = 0; foreach (var m in b.Magnates) { m.TrickChance = 0; m.AuctionInterest = 0; } }),
+                ("Без крупных ходов магнатов (картель, иски, слияния)", b => { b.CartelChance = 0; b.MergerChance = 0; foreach (var m in b.Magnates) m.TrickWeights[5] = 0; }),
                 ("Без зарплат", b => b.ManagerSalary = 0),
                 ("Без процентов", b => b.InterestPerTurn = 0),
                 ("Без аварий", b => b.AccidentChance = 0),

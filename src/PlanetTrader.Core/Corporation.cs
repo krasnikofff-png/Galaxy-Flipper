@@ -22,6 +22,8 @@ namespace PlanetTrader.Core
         public bool Insured;
         /// <summary>Репутация 0–100: грязные дела её портят, выполненные заказы чинят.</summary>
         public double Reputation;
+        /// <summary>До этого хода против корпорации действует картель магнатов: биржа платит ей меньше.</summary>
+        public int CartelUntilTurn;
         /// <summary>Коллекторы забрали последнюю планету, а долг остался.</summary>
         public bool Bankrupt;
 

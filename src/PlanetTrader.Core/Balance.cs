@@ -84,6 +84,11 @@ namespace PlanetTrader.Core
         /// <summary>Нижний предел цены как доля базовой (допущение).</summary>
         public double MinPriceShare = 0.20;
         public double[] MarketDepth = { 150, 120, 140, 50, 35, 10 };
+        /// <summary>
+        /// В кооперативе рынок глубже: глубина × (число игроков)^это. Магнаты цены не двигают —
+        /// продают по текущей цене биржи, её роняют только игроки.
+        /// </summary>
+        public double MarketGrowthPower = 0.5;
 
         // --- Заказы ---
         public double OrderMarkup = 1.5;
@@ -171,11 +176,11 @@ namespace PlanetTrader.Core
         public Magnate[] Magnates =
         {
             new Magnate(0, "Гуго Жаднер", Personality.Greedy, trickChance: 0.20, auctionInterest: 0.60, bidMin: 0.90, bidMax: 1.20,
-                trickWeights: new[] { 0.5, 0.2, 0.3, 0.0, 0.3 }),
+                trickWeights: new[] { 0.5, 0.2, 0.3, 0.0, 0.3, 0.3 }),
             new Magnate(1, "Зизи Квазар", Personality.Chaotic, trickChance: 0.30, auctionInterest: 0.40, bidMin: 0.80, bidMax: 1.30,
-                trickWeights: new[] { 0.25, 0.35, 0.25, 0.15, 0.2 }),
+                trickWeights: new[] { 0.25, 0.35, 0.25, 0.15, 0.2, 0.2 }),
             new Magnate(2, "Матильда Ласкова", Personality.Cautious, trickChance: 0.12, auctionInterest: 0.35, bidMin: 0.90, bidMax: 1.15,
-                trickWeights: new[] { 0.3, 0.2, 0.5, 0.0, 0.3 }),
+                trickWeights: new[] { 0.3, 0.2, 0.5, 0.0, 0.3, 0.1 }),
         };
         /// <summary>Сколько планет сектора приходится на одного магната. Если магнатов из списка меньше, недостающие придумываются.</summary>
         public int PlanetsPerMagnate = 10;
@@ -186,8 +191,6 @@ namespace PlanetTrader.Core
         public int RivalMagnates = 3;
         /// <summary>Казна магната на старте.</summary>
         public double MagnateStartMoney = 3000;
-        /// <summary>Сколько магнат получает с добычи своих планет: доля базовой цены (он тоже платит доставку и роняет рынок).</summary>
-        public double MagnateIncomeShare = 0.6;
         /// <summary>Магнат не тратит казну ниже стольких ходов содержания своих планет.</summary>
         public double MagnateReserveTurns = 5;
         /// <summary>Шанс за ход, что магнат выучит жителей одной своей обитаемой планеты на следующий уровень, если хватает денег.</summary>
@@ -220,6 +223,24 @@ namespace PlanetTrader.Core
         /// <summary>Охрана: за ход; охраняемую планету подкупают, только если лояльность ниже этой.</summary>
         public double GuardsCost = 40;
         public double GuardedBribeLoyalty = 25;
+        /// <summary>Рейдерский захват: срок, цена защиты (доля рыночной стоимости планеты) и компенсация, если планету отняли.</summary>
+        public int ClaimWarningTurns = 3;
+        public double ClaimDefenseShare = 0.15;
+        public double ClaimCompensationShare = 0.5;
+        /// <summary>
+        /// Картель против лидера: когда игрок во столько раз богаче среднего магната, магнаты с таким шансом за ход
+        /// сговариваются со скупщиками на столько ходов, и биржа платит ему меньше. Репутация от CartelReputationShield вдвое смягчает удар.
+        /// </summary>
+        public double CartelRivalry = 2;
+        public double CartelChance = 0.06;
+        public int CartelTurns = 10;
+        public double CartelPriceCut = 0.3;
+        public double CartelReputationShield = 70;
+        /// <summary>Картель давит и на заказчиков умственного труда: он тоже приносит меньше.</summary>
+        public bool CartelHitsIntellect = true;
+        /// <summary>Слияние: магнат, который во столько раз богаче другого, с таким шансом за ход поглощает его.</summary>
+        public double MergerWealthRatio = 4;
+        public double MergerChance = 0.02;
         /// <summary>Учёных переманивают с планет, где лояльность ниже этой.</summary>
         public double PoachScientistsBelowLoyalty = 70;
         /// <summary>Слух магната: на сколько падает цена вашего главного ресурса.</summary>
