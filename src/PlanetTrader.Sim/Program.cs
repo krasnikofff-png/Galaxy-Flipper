@@ -24,6 +24,7 @@ namespace PlanetTrader.Sim
         public int InhabitedTurns, StrikeTurns;
         public double InhabitedInvested, InhabitedReturned;
         public int AuctionsWon, AuctionsLost, PlanetsLostToBribes;
+        public int Techs, Extractors, RegeneratingTurns, PlanetTurns;
         public readonly Dictionary<string, (double invested, double returned)> ByType = new Dictionary<string, (double, double)>();
     }
 
@@ -177,12 +178,19 @@ namespace PlanetTrader.Sim
                     r.InhabitedTurns++;
                     if (p.OnStrike) r.StrikeTurns++;
                 }
+                foreach (var p in g.PlayerPlanets)
+                {
+                    r.PlanetTurns++;
+                    if (p.IsRegenerating) r.RegeneratingTurns++;
+                }
             }
 
             r.TurnsActionsExhausted = g.TurnsActionsExhausted;
             r.AuctionsWon = g.AuctionsWon;
             r.AuctionsLost = g.AuctionsLost;
             r.PlanetsLostToBribes = g.PlanetsLostToBribes;
+            r.Techs = b.Technologies.Count(t => g.IsResearched(t.Id));
+            r.Extractors = g.PlayerPlanets.Sum(p => p.ExtraDeposits.Count(d => d.HasExtractor));
             r.Seizures = g.TotalSeizures;
 
             // Доход на вложенное по типам: всё, что планета принесла, + её текущая стоимость.
@@ -268,8 +276,8 @@ namespace PlanetTrader.Sim
             sb.AppendLine("|---|---|---|---|");
             sb.AppendLine($"| Время до второй планеты | 8–12 ходов | {F(secondPlanet, "0")} | {Check(secondPlanet >= 8 && secondPlanet <= 12)} |");
             sb.AppendLine($"| Капитал к 30-му ходу | ×3–4 от старта | ×{F(growth30)} | {Check(growth30 >= 3 && growth30 <= 4)} |");
-            sb.AppendLine($"| Активная обгоняет пассивную к 90 | на 20%+ | ×{F(lead90, "0.00")} | {Check(lead90 >= 1.2)} |");
-            sb.AppendLine($"| Активная обгоняет пассивную к 120 | в 1,5–2 раза | ×{F(lead120, "0.00")} | {Check(lead120 >= 1.5 && lead120 <= 2)} |");
+            sb.AppendLine($"| Развитие окупается: «Активный» (технологии, экстракторы) обгоняет «Пассивного» к 90 | на 20%+ | ×{F(lead90, "0.00")} | {Check(lead90 >= 1.2)} |");
+            sb.AppendLine($"| То же к 120 | в 1,5–2 раза | ×{F(lead120, "0.00")} | {Check(lead120 >= 1.5 && lead120 <= 2)} |");
             sb.AppendLine($"| Рост замедляется после 60-го хода | прирост 90→120 < 60→90 | {N(g30to60)} → {N(g60to90)} → {N(g90to120)} | {Check(g90to120 < g60to90)} |");
             sb.AppendLine($"| то же, строже | прирост 90→120 < 30→60 | | {Check(g90to120 < g30to60)} |");
             sb.AppendLine($"| Кредит — осознанный риск («Активный + кредит») | есть и выигрыши, и потери планет | обогнали активного: {F(creditWinShare * 100, "0")}%, коллекторы: {F(seizedShare * 100, "0")}% | {Check(creditWinShare > 0 && seizedShare > 0)} |");
@@ -305,6 +313,9 @@ namespace PlanetTrader.Sim
             sb.AppendLine($"| ИИ мешает заметно, но не бесит (этап 5) | пакости магнатов снижают капитал к 120 на 8–25% | капитал ×{F(trickCost, "0.00")} от партий без пакостей | {Check(trickCost >= 0.75 && trickCost <= 0.92)} |");
             sb.AppendLine($"| Аукционы (этап 5) | бот выигрывает 40–80% своих ставок | {F(winRate * 100, "0")}% | {Check(winRate >= 0.4 && winRate <= 0.8)} |");
             sb.AppendLine($"| Подкуп жителей (этап 5) | заботливый теряет ≤1 планеты за партию, тот, кто жителей не замечает, — больше | {F(lostCare, "0.0")} против {F(lostIgnore, "0.0")} | {Check(lostCare <= 1 && lostIgnore > lostCare)} |");
+            double regenShare = active.Sum(r => r.RegeneratingTurns) / (double)Math.Max(1, active.Sum(r => r.PlanetTurns));
+            sb.AppendLine($"| Месторождения восстанавливаются (этап 7) | для справки: доля планет-ходов, когда основное месторождение восстанавливается | {F(regenShare * 100, "0")}% | |");
+            sb.AppendLine($"| Развитие (этап 7) | для справки: технологий и экстракторов у «Активного» к 120 | {F(Median(active.Select(r => (double)r.Techs)), "0")} технологий, {F(Median(active.Select(r => (double)r.Extractors)), "0")} экстракторов | |");
             sb.AppendLine($"| Квантий не ломает экономику | Аномалия не сильно выгоднее Льда | Аномалия ×{F(anomalyRoi, "0.00")}, Лёд ×{F(iceRoi, "0.00")} | {Check(anomalyRoi <= iceRoi * 1.3)} |");
             sb.AppendLine();
 

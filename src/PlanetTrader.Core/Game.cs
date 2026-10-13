@@ -217,6 +217,16 @@ namespace PlanetTrader.Core
             if (_surveyRng.Chance(Balance.RuinsChance))
                 p.RuinsValue = Math.Round(_surveyRng.Range(Balance.RuinsMinValue, Balance.RuinsMaxValue) / 10) * 10;
             p.Inhabited = _surveyRng.Chance(Balance.InhabitedChance);
+
+            double roll = _surveyRng.NextDouble();
+            int extra = roll < Balance.TwoExtraDepositsChance ? 2 : roll < Balance.OneExtraDepositChance ? 1 : 0;
+            var others = ResourceTypes.All.Where(r => r != p.Resource).OrderBy(_ => _surveyRng.NextULong()).Take(extra);
+            foreach (var r in others)
+            {
+                double output = Math.Round(Balance.TypeOf(r).OutputPerTurn * _surveyRng.Range(Balance.ExtraOutputMin, Balance.ExtraOutputMax), 1);
+                double capacity = Math.Round(output * _surveyRng.Range(Balance.ExtraCapacityTurnsMin, Balance.ExtraCapacityTurnsMax));
+                p.ExtraDeposits.Add(new Deposit { Resource = r, OutputPerTurn = Math.Max(1, output), Capacity = capacity, Reserve = capacity });
+            }
         }
 
         /// <summary>Случайное место на карте, не слишком близко к другим планетам и к бирже.</summary>
@@ -272,8 +282,9 @@ namespace PlanetTrader.Core
         /// <summary>Стоимость планеты по тому, что знает игрок; null у силуэтов.</summary>
         public double? KnownValue(Planet p)
         {
-            var reserve = KnownReserve(p);
-            return reserve.HasValue ? p.ValueWithReserve(Balance, reserve.Value) : (double?)null;
+            if (p.Owner == Owner.Player || p.Knowledge == Knowledge.Explored) return p.MarketValue(Balance);
+            if (p.Knowledge == Knowledge.Scanned) return p.EstimatedValue(Balance);
+            return null;
         }
 
         // ------------------------------------------------------------------
@@ -289,9 +300,9 @@ namespace PlanetTrader.Core
             amount * Balance.BasePrice(r) * Balance.ShippingCostPerDistance * distance;
 
         /// <summary>Доставка добычи за ход, если все шахты работают.</summary>
-        public double ShippingPerTurn => PlayerPlanets
-            .Where(p => p.Mine == MineState.Working && !p.IsDepleted)
-            .Sum(p => ShippingCost(p.Resource, Math.Min(p.Type.OutputPerTurn, p.Reserve), DistanceToExchange(p)));
+        public double ShippingPerTurn => PlayerPlanets.Sum(p =>
+            (p.Mine == MineState.Working && !p.IsDepleted ? ShippingCost(p.Resource, Math.Min(p.Type.OutputPerTurn, p.Reserve), DistanceToExchange(p)) : 0)
+            + p.ExtraDeposits.Where(CanMine).Sum(d => ShippingCost(d.Resource, Math.Min(d.OutputPerTurn, d.Reserve), DistanceToExchange(p))));
 
         public int DeliveryTurns(Order o) => Math.Max(1, (int)Math.Ceiling(o.Distance(Balance) / Balance.ShipSpeed));
         public double DeliveryCost(Order o) => ShippingCost(o.Resource, o.Amount, o.Distance(Balance));
@@ -434,6 +445,8 @@ namespace PlanetTrader.Core
             else
                 p.Loyalty = Clamp(Balance.LoyaltyAfterFairDeal + (offer.PriceShare - 1) * 100);
             p.OnStrike = false;
+            if (offer.WithSchool || offer.PriceShare >= 1.1) RecordDeed(DeedKind.GenerousDeal, p);
+            else if (offer.PriceShare <= 0.8) RecordDeed(DeedKind.LowballDeal, p);
             Notices.Add($"Жители {p.Type.Name} #{p.Id} согласились. Лояльность {Math.Round(p.Loyalty)}.");
             return ActionResult.Success;
         }
@@ -453,6 +466,7 @@ namespace PlanetTrader.Core
         {
             var p = OwnInhabited(planetId, out var error);
             if (p == null) return error;
+            if (tax == TaxLevel.High && p.Tax != TaxLevel.High) RecordDeed(DeedKind.HighTax, p);
             p.Tax = tax;
             return ActionResult.Success;
         }
@@ -461,6 +475,7 @@ namespace PlanetTrader.Core
         {
             var p = OwnInhabited(planetId, out var error);
             if (p == null) return error;
+            if (on && !p.PaysWages) RecordDeed(DeedKind.Wages, p);
             p.PaysWages = on;
             return ActionResult.Success;
         }
@@ -476,6 +491,7 @@ namespace PlanetTrader.Core
             Money -= Balance.FestivalCost;
             p.Earned -= Balance.FestivalCost;
             p.Loyalty = Clamp(p.Loyalty + Balance.FestivalLoyalty);
+            RecordDeed(DeedKind.Festival, p);
             return ActionResult.Success;
         }
 
@@ -491,6 +507,7 @@ namespace PlanetTrader.Core
             Money -= Balance.SchoolCost;
             p.Invested += Balance.SchoolCost;
             p.HasSchool = true;
+            RecordDeed(DeedKind.School, p);
             foreach (var r in _requests.Where(r => r.PlanetId == p.Id && r.Kind == RequestKind.School).ToList())
                 CompleteRequest(r, p, Notices);
             return ActionResult.Success;
@@ -513,6 +530,7 @@ namespace PlanetTrader.Core
         {
             _requests.Remove(r);
             p.Loyalty = Clamp(p.Loyalty + Balance.RequestLoyaltyReward);
+            RecordDeed(DeedKind.RequestDone, p);
             events.Add($"Жители {p.Type.Name} #{p.Id} довольны: просьба выполнена, лояльность {Math.Round(p.Loyalty)}.");
         }
 
@@ -525,6 +543,7 @@ namespace PlanetTrader.Core
             if (p.HasSchool) delta += b.SchoolLoyalty;
             if (p.PaysWages) delta += b.WagesLoyalty;
             if (Ev != null) delta -= Ev.ExtraLoyaltyDrain;
+            delta += TechLoyaltyBonus;
             return delta;
         }
 
@@ -552,6 +571,7 @@ namespace PlanetTrader.Core
                 if (!p.OnStrike && p.Loyalty < b.StrikeBelow)
                 {
                     p.OnStrike = true;
+                    RecordDeed(DeedKind.Strike, p);
                     report.Events.Add($"Забастовка на {p.Type.Name} #{p.Id}: лояльность {Math.Round(p.Loyalty)}, добычи и налогов нет.");
                 }
                 else if (p.OnStrike && p.Loyalty >= b.StrikeEndsAt)
@@ -565,6 +585,7 @@ namespace PlanetTrader.Core
                 {
                     p.Mine = MineState.None;
                     p.BuildTurnsLeft = 0;
+                    RecordDeed(DeedKind.Riot, p);
                     report.Events.Add($"Бунт на {p.Type.Name} #{p.Id}: жители разнесли шахту. Страховка бунты не покрывает.");
                 }
             }
@@ -575,6 +596,7 @@ namespace PlanetTrader.Core
                 var p = GetPlanet(r.PlanetId);
                 if (p == null || p.Owner != Owner.Player) continue;
                 p.Loyalty = Clamp(p.Loyalty - b.RequestLoyaltyPenalty);
+                RecordDeed(DeedKind.RequestFailed, p);
                 report.Events.Add($"Жители {p.Type.Name} #{p.Id} обижены: просьбу не выполнили, лояльность {Math.Round(p.Loyalty)}.");
             }
 
@@ -732,6 +754,7 @@ namespace PlanetTrader.Core
             p.Earned -= Balance.CounterBribeCost;
             p.Loyalty = Clamp(p.Loyalty + Balance.CounterBribeLoyalty);
             _bribes.Remove(x);
+            RecordDeed(DeedKind.CounterBribe, p);
             return ActionResult.Success;
         }
 
@@ -775,6 +798,7 @@ namespace PlanetTrader.Core
             if (!a.Ok) return a;
             Money -= cost;
             ChangeReputation(Balance.PlayerBribeReputation);
+            RecordDeed(DeedKind.BribedRivalResidents, p);
             if (_rng.Chance(Balance.PlayerBribeChance))
             {
                 success = true;
@@ -1021,6 +1045,8 @@ namespace PlanetTrader.Core
 
             ProducePlayer(report);
             ProduceAi();
+            Regenerate(report);
+            AdvanceResearch(report);
             DeliverShipments();
             UpdatePeople(report);
 
@@ -1043,6 +1069,7 @@ namespace PlanetTrader.Core
             UpdateOrders(report);
             Discover(report);
             AiTurn(report);
+            MagnatesRemark(report);
             // Репутация понемногу возвращается к 50.
             if (Reputation < 50) ChangeReputation(Math.Min(Balance.ReputationRecovery, 50 - Reputation));
             else if (Reputation > 50) ChangeReputation(-Math.Min(Balance.ReputationRecovery, Reputation - 50));
@@ -1056,20 +1083,27 @@ namespace PlanetTrader.Core
 
         void ProducePlayer(TurnReport report)
         {
+            double techBonus = OutputBonus;
             foreach (var p in PlayerPlanets)
             {
-                if (p.Mine == MineState.Building)
+                // Шахта, которая достроилась в этот ход, начнёт добывать со следующего.
+                bool justBuilt = false;
+                if (p.Mine == MineState.Building && --p.BuildTurnsLeft <= 0)
                 {
-                    if (--p.BuildTurnsLeft <= 0) p.Mine = MineState.Working;
-                    continue;
+                    p.Mine = MineState.Working;
+                    justBuilt = true;
                 }
-                if (p.Mine != MineState.Working || p.IsDepleted || p.OnStrike) continue;
+                if (p.OnStrike) continue;
+                bool mainWorks = p.Mine == MineState.Working && !p.IsDepleted && !justBuilt;
+                var extras = p.ExtraDeposits.Where(CanMine).ToList();
+                if (!mainWorks && extras.Count == 0) continue;
 
-                // Метеорит разбивает шахту; страховка возмещает её стоимость.
-                if (_rng.Chance(Balance.MeteorChance * (Ev?.MeteorFactor ?? 1)))
+                // Метеорит разбивает основную шахту; страховка возмещает её стоимость.
+                if (p.Mine != MineState.None && _rng.Chance(Balance.MeteorChance * (Ev?.MeteorFactor ?? 1)))
                 {
                     p.Mine = MineState.None;
                     p.AccidentTurnsLeft = 0;
+                    mainWorks = false;
                     string line = $"Метеорит разбил шахту на {p.Type.Name} #{p.Id}";
                     if (Insured)
                     {
@@ -1078,7 +1112,6 @@ namespace PlanetTrader.Core
                         line += $", страховка выплатила {Math.Round(p.Type.MineCost)}";
                     }
                     report.Events.Add(line + ".");
-                    continue;
                 }
 
                 // Эпидемия на обитаемой планете: добыча вполовину, жители недовольны.
@@ -1096,47 +1129,231 @@ namespace PlanetTrader.Core
                     report.Events.Add($"Авария на планете {p.Type.Name} #{p.Id}");
                 }
 
-                double amount = Math.Min(p.Type.OutputPerTurn, p.Reserve);
+                // Что добыли бы без аварии и эпидемии: основное месторождение и дополнительные.
+                var batch = new List<(Resource r, double amount, Deposit d)>();
+                if (mainWorks) batch.Add((p.Resource, Math.Min(p.Type.OutputPerTurn * (1 + techBonus), p.Reserve), null));
+                foreach (var d in extras) batch.Add((d.Resource, Math.Min(d.OutputPerTurn * (1 + techBonus), d.Reserve), d));
+
                 if (p.AccidentTurnsLeft > 0)
                 {
                     p.AccidentTurnsLeft--;
                     if (Insured)
-                    {
-                        double payout = amount * Market.Price(p.Resource);
-                        Money += payout;
-                        report.InsurancePayout += payout;
-                    }
+                        foreach (var x in batch)
+                        {
+                            double payout = x.amount * Market.Price(x.r);
+                            Money += payout;
+                            report.InsurancePayout += payout;
+                        }
                     continue;
                 }
 
+                double share = 1;
                 if (p.EpidemicTurnsLeft > 0)
                 {
                     p.EpidemicTurnsLeft--;
-                    double lost = amount * (1 - Balance.EpidemicOutputShare);
-                    amount -= lost;
-                    if (Insured)
+                    share = Balance.EpidemicOutputShare;
+                }
+
+                foreach (var x in batch)
+                {
+                    double amount = x.amount * share;
+                    if (Insured && share < 1)
                     {
-                        double payout = lost * Market.Price(p.Resource);
+                        double payout = x.amount * (1 - share) * Market.Price(x.r);
                         Money += payout;
                         report.InsurancePayout += payout;
                     }
+                    p.Earned += amount * Market.Price(x.r);
+                    Ship(p, x.r, amount, report);
+                    if (x.d == null)
+                    {
+                        p.Reserve -= amount;
+                        if (p.Reserve <= 1e-9)
+                        {
+                            StartRegen(p);
+                            report.Events.Add($"{p.Type.Name} #{p.Id}: основное месторождение ({p.Resource.RuName()}) выработано, восстановится за {p.RegenTotal} х.");
+                        }
+                    }
+                    else
+                    {
+                        x.d.Reserve -= amount;
+                        if (x.d.Reserve <= 1e-9)
+                        {
+                            StartRegen(x.d, true);
+                            report.Events.Add($"{p.Type.Name} #{p.Id}: месторождение «{x.d.Resource.RuName()}» выработано, восстановится за {x.d.RegenTotal} х.");
+                        }
+                    }
                 }
-
-                p.Reserve -= amount;
-                p.Earned += amount * Market.Price(p.Resource);
-                Ship(p, amount, report);
             }
         }
 
         /// <summary>Добытое летит на биржу: стоит денег и, с дальних планет, времени.</summary>
-        void Ship(Planet p, double amount, TurnReport report)
+        void Ship(Planet p, Resource r, double amount, TurnReport report)
         {
-            double cost = ShippingCost(p.Resource, amount, DistanceToExchange(p));
+            double cost = ShippingCost(r, amount, DistanceToExchange(p));
             report.Shipping += cost;
             p.Earned -= cost;
             int turns = ShipTurns(p);
-            if (turns == 0) _stock[(int)p.Resource] += amount;
-            else _shipments.Add(new Shipment { Resource = p.Resource, Amount = amount, ResolveTurn = Turn + turns });
+            if (turns == 0) _stock[(int)r] += amount;
+            else _shipments.Add(new Shipment { Resource = r, Amount = amount, ResolveTurn = Turn + turns });
+        }
+
+        // ------------------------------------------------------------------
+        // Восстановление месторождений и развитие
+        // ------------------------------------------------------------------
+
+        int RegenTurnsFor(Resource r, bool playerOwned) =>
+            Math.Max(1, (int)Math.Round(Balance.RegenTurns[(int)r] * (playerOwned ? RegenFactor : 1)));
+
+        void StartRegen(Planet p)
+        {
+            p.Reserve = 0;
+            p.RegenTotal = RegenTurnsFor(p.Resource, p.Owner == Owner.Player);
+            p.RegenTurnsLeft = p.RegenTotal;
+        }
+
+        void StartRegen(Deposit d, bool playerOwned)
+        {
+            d.Reserve = 0;
+            d.RegenTotal = RegenTurnsFor(d.Resource, playerOwned);
+            d.RegenTurnsLeft = d.RegenTotal;
+        }
+
+        /// <summary>Выработанные месторождения понемногу наполняются и к концу срока снова полны.</summary>
+        void Regenerate(TurnReport report)
+        {
+            foreach (var p in _planets)
+            {
+                if (p.RegenTurnsLeft > 0)
+                {
+                    p.Reserve += p.InitialReserve / p.RegenTotal;
+                    if (--p.RegenTurnsLeft == 0)
+                    {
+                        p.Reserve = p.InitialReserve;
+                        if (p.Owner == Owner.Player) report.Events.Add($"{p.Type.Name} #{p.Id}: основное месторождение восстановилось.");
+                    }
+                }
+                foreach (var d in p.ExtraDeposits)
+                {
+                    if (d.RegenTurnsLeft <= 0) continue;
+                    d.Reserve += d.Capacity / d.RegenTotal;
+                    if (--d.RegenTurnsLeft == 0)
+                    {
+                        d.Reserve = d.Capacity;
+                        if (p.Owner == Owner.Player && d.HasExtractor) report.Events.Add($"{p.Type.Name} #{p.Id}: месторождение «{d.Resource.RuName()}» восстановилось.");
+                    }
+                }
+            }
+        }
+
+        public bool CanMine(Deposit d) => d.HasExtractor && !d.IsRegenerating && IsUnlocked(d.Resource);
+
+        readonly HashSet<string> _researched = new HashSet<string>();
+
+        /// <summary>Исследование, которое идёт сейчас; null — никакого.</summary>
+        public Research CurrentResearch { get; private set; }
+
+        public bool IsResearched(string techId) => _researched.Contains(techId);
+
+        IEnumerable<Technology> Researched => Balance.Technologies.Where(t => _researched.Contains(t.Id));
+
+        /// <summary>Можно ли добывать ресурс на дополнительных месторождениях.</summary>
+        public bool IsUnlocked(Resource r) => Researched.Any(t => t.UnlocksResource == r);
+
+        public double OutputBonus => Researched.Sum(t => t.OutputBonus);
+        public double RegenFactor => Researched.Aggregate(1.0, (f, t) => f * t.RegenFactor);
+        public double TechLoyaltyBonus => Researched.Sum(t => t.LoyaltyBonus);
+
+        public bool CanResearch(Technology t) =>
+            !_researched.Contains(t.Id) && t.Requires.All(_researched.Contains) && CurrentResearch?.Technology != t;
+
+        /// <summary>Начать исследование: платите сразу, тратите действие, результат через несколько ходов.</summary>
+        public ActionResult StartResearch(string techId)
+        {
+            var t = Balance.Technologies.FirstOrDefault(x => x.Id == techId);
+            if (t == null) return ActionResult.Fail("Нет такой технологии");
+            if (CurrentResearch != null) return ActionResult.Fail("Уже идёт исследование: " + CurrentResearch.Technology.Name);
+            if (!CanResearch(t)) return ActionResult.Fail("Сначала нужны: " + string.Join(", ", t.Requires.Where(r => !_researched.Contains(r))
+                .Select(r => Balance.Technologies.First(x => x.Id == r).Name)));
+            if (Money < t.Cost) return ActionResult.Fail("Не хватает денег");
+            var a = SpendAction();
+            if (!a.Ok) return a;
+            Money -= t.Cost;
+            CurrentResearch = new Research { Technology = t, TurnsLeft = t.Turns };
+            return ActionResult.Success;
+        }
+
+        void AdvanceResearch(TurnReport report)
+        {
+            if (CurrentResearch == null || --CurrentResearch.TurnsLeft > 0) return;
+            _researched.Add(CurrentResearch.Technology.Id);
+            report.Events.Add($"Исследование «{CurrentResearch.Technology.Name}» завершено: {CurrentResearch.Technology.Description}");
+            CurrentResearch = null;
+        }
+
+        public double ExtractorCost(Deposit d) => Math.Round(Balance.TypeOf(d.Resource).MineCost * Balance.ExtractorCostShare);
+
+        /// <summary>Экстрактор на дополнительном месторождении: нужна технология для ресурса. Работает со следующего хода.</summary>
+        public ActionResult BuildExtractor(int planetId, int depositIndex)
+        {
+            var p = GetPlanet(planetId);
+            if (p == null || p.Owner != Owner.Player) return ActionResult.Fail("Это не ваша планета");
+            if (depositIndex < 0 || depositIndex >= p.ExtraDeposits.Count) return ActionResult.Fail("Нет такого месторождения");
+            var d = p.ExtraDeposits[depositIndex];
+            if (d.HasExtractor) return ActionResult.Fail("Экстрактор уже стоит");
+            if (!IsUnlocked(d.Resource)) return ActionResult.Fail($"Нужна технология добычи ресурса «{d.Resource.RuName()}»");
+            double cost = ExtractorCost(d);
+            if (Money < cost) return ActionResult.Fail("Не хватает денег");
+            var a = SpendAction();
+            if (!a.Ok) return a;
+            Money -= cost;
+            p.Invested += cost;
+            d.HasExtractor = true;
+            return ActionResult.Success;
+        }
+
+        // ------------------------------------------------------------------
+        // Память магнатов: поступки игрока с жителями и реплики
+        // ------------------------------------------------------------------
+
+        readonly List<Deed> _deeds = new List<Deed>();
+        readonly List<Remark> _remarks = new List<Remark>();
+        int _nextDeedId;
+
+        public IReadOnlyList<Deed> Deeds => _deeds;
+        public IReadOnlyList<Remark> RecentRemarks => _remarks;
+
+        void RecordDeed(DeedKind kind, Planet p) =>
+            _deeds.Add(new Deed { Id = _nextDeedId++, Turn = Turn, Kind = kind, PlanetId = p?.Id ?? -1, PlanetName = p == null ? "" : $"{p.Type.Name} #{p.Id}" });
+
+        /// <summary>Добряк или живодёр: сумма поступков с жителями за последние ходы.</summary>
+        public int Kindness => _deeds.Where(d => d.Turn > Turn - Balance.KindnessMemoryTurns).Sum(d => d.Kindness);
+
+        /// <summary>Магнаты вспоминают свежие поступки игрока — каждый в своём характере.</summary>
+        void MagnatesRemark(TurnReport report)
+        {
+            foreach (var m in _magnates)
+            {
+                if (!_rng.Chance(Balance.RemarkChance)) continue;
+                var deed = _deeds
+                    .Where(d => d.Turn > Turn - Balance.RemarkMemoryTurns && !m.CommentedDeeds.Contains(d.Id))
+                    .OrderByDescending(d => d.Turn)
+                    .FirstOrDefault();
+                string text;
+                if (deed != null)
+                {
+                    m.CommentedDeeds.Add(deed.Id);
+                    text = Remarks.For(m.Personality, deed.Kind)?.Replace("{p}", deed.PlanetName);
+                }
+                else if (_deeds.Count > 0 && _rng.Chance(0.25))
+                    text = Remarks.Overall(m.Personality, Kindness);
+                else
+                    continue;
+                if (text == null) continue;
+                _remarks.Add(new Remark { Turn = Turn, MagnateId = m.Id, Text = text });
+                if (_remarks.Count > 30) _remarks.RemoveAt(0);
+                report.Events.Add($"{m.Name}: «{text}»");
+            }
         }
 
         void DeliverShipments()
@@ -1152,7 +1369,10 @@ namespace PlanetTrader.Core
         {
             foreach (var p in _planets)
                 if (p.Owner == Owner.Ai && p.Mine == MineState.Working && !p.IsDepleted)
+                {
                     p.Reserve -= Math.Min(p.Type.OutputPerTurn, p.Reserve);
+                    if (p.Reserve <= 1e-9) StartRegen(p);
+                }
         }
 
         /// <summary>
@@ -1314,6 +1534,9 @@ namespace PlanetTrader.Core
             {
                 case TrickKind.Bribe:
                 {
+                    // Осторожная не трогает заботливых, жадный щадит «родственную душу».
+                    if (m.Personality == Personality.Cautious && Kindness >= Balance.CautiousSparesKindness) return;
+                    if (m.Personality == Personality.Greedy && Kindness <= Balance.GreedyLikesKindness && _rng.Chance(0.5)) return;
                     var target = PlayerPlanets
                         .Where(p => p.Inhabited && !p.IsDepleted && !_bribes.Any(b => b.PlanetId == p.Id)
                                     && p.Loyalty < (p.Guarded ? Balance.GuardedBribeLoyalty : Balance.BribeTargetLoyalty))

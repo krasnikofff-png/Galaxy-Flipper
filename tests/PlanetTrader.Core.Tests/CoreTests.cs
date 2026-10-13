@@ -15,7 +15,7 @@ public class BalanceTests
     public void UpkeepCurveMatchesSpreadsheet(int planets, double expected)
     {
         // Форма кривой из вкладки «Кривая с полкой» (полка 8–16).
-        Assert.Equal(expected, new Balance { UpkeepShelfEnd = 16 }.UpkeepMultiplier(planets), 2);
+        Assert.Equal(expected, new Balance { UpkeepShelfEnd = 16, UpkeepCurveK = 1.336 }.UpkeepMultiplier(planets), 2);
     }
 
     [Fact]
@@ -36,9 +36,9 @@ public class MarketTests
         var m = new Market(b);
         double revenue = m.Sell(Resource.Ice, b.Depth(Resource.Ice));
 
-        Assert.Equal(10 * 0.9, m.Price(Resource.Ice), 6);
+        Assert.Equal(10 * (1 - b.SalesImpact), m.Price(Resource.Ice), 6);
         // Средняя цена между «до» и «после».
-        Assert.Equal(150 * 10 * 0.95, revenue, 6);
+        Assert.Equal(150 * 10 * (1 - b.SalesImpact / 2), revenue, 6);
     }
 
     [Fact]
@@ -909,5 +909,128 @@ public class EventTests
         g.EndTurn();
         Assert.Equal(reserve - p.Type.OutputPerTurn * b.EpidemicOutputShare, p.Reserve, 6);
         Assert.Equal(b.EpidemicTurns - 1, p.EpidemicTurnsLeft);
+    }
+}
+
+public class DevelopmentTests
+{
+    static Balance Quiet()
+    {
+        var b = new Balance
+        {
+            AccidentChance = 0,
+            AiBuyChance = 0,
+            AiResaleChance = 0,
+            OrderChancePerTurn = 0,
+            DiscoveryChancePerTurn = 0,
+            MarketNoise = 0,
+            StartMoney = 100_000,
+            RequestChancePerPlanet = 0,
+            ShipSpeed = 100,
+            ShippingCostPerDistance = 0,
+            MeteorChance = 0,
+            EpidemicChance = 0,
+            Events = new GalacticEvent[0],
+            RemarkChance = 0,
+        };
+        foreach (var m in b.Magnates) m.TrickChance = 0;
+        return b;
+    }
+
+    [Fact]
+    public void DepletedDepositRegeneratesAfterItsTime()
+    {
+        var b = Quiet();
+        var g = Game.New(b, 1);
+        var p = g.PlayerPlanets.Single();
+        p.Reserve = p.Type.OutputPerTurn; // ровно на один ход
+        g.EndTurn();
+        Assert.True(p.IsRegenerating);
+        int regen = b.RegenTurns[(int)Resource.Ice];
+        Assert.Equal(regen, p.RegenTotal);
+        for (int i = 0; i < regen - 1; i++) g.EndTurn();
+        Assert.False(p.IsRegenerating);
+        Assert.Equal(p.InitialReserve, p.Reserve, 6);
+    }
+
+    [Fact]
+    public void ExtraDepositNeedsTechAndExtractor()
+    {
+        var b = Quiet();
+        var g = Game.New(b, 1);
+        var p = g.PlayerPlanets.Single();
+        p.ExtraDeposits.Add(new Deposit { Resource = Resource.Metal, OutputPerTurn = 5, Capacity = 50, Reserve = 50 });
+
+        Assert.False(g.BuildExtractor(p.Id, 0).Ok);
+        Assert.True(g.StartResearch("metal").Ok);
+        Assert.False(g.StartResearch("gas").Ok); // одно исследование за раз
+        for (int i = 0; i < 3; i++) g.EndTurn();
+        Assert.True(g.IsResearched("metal"));
+        Assert.True(g.BuildExtractor(p.Id, 0).Ok);
+        double before = g.Stock(Resource.Metal);
+        g.EndTurn();
+        Assert.Equal(before + 5, g.Stock(Resource.Metal), 6);
+    }
+
+    [Fact]
+    public void TechTreeRespectsRequirements()
+    {
+        var g = Game.New(Quiet(), 1);
+        Assert.False(g.StartResearch("biomass").Ok);
+        Assert.True(g.StartResearch("ice").Ok);
+    }
+
+    [Fact]
+    public void ExtraDepositsAddToPlanetValue()
+    {
+        var b = Quiet();
+        var g = Game.New(b, 1);
+        var p = g.PlayerPlanets.Single();
+        double before = p.MarketValue(b);
+        p.ExtraDeposits.Add(new Deposit { Resource = Resource.Gas, OutputPerTurn = 8, Capacity = 80, Reserve = 80, HasExtractor = true });
+        Assert.True(p.MarketValue(b) > before);
+    }
+
+    [Fact]
+    public void MagnatesRememberDeedsInCharacter()
+    {
+        var b = Quiet();
+        b.RemarkChance = 1;
+        var g = Game.New(b, 1);
+        var p = g.PlayerPlanets.Single();
+        p.Inhabited = true;
+        Assert.True(g.SetTax(p.Id, TaxLevel.High).Ok);
+        Assert.Equal(DeedKind.HighTax, g.Deeds.Single().Kind);
+        Assert.True(g.Kindness < 0);
+        var report = g.EndTurn();
+        var greedy = g.Magnates.First(m => m.Personality == Personality.Greedy);
+        var line = report.Events.First(e => e.StartsWith(greedy.Name));
+        Assert.Contains("музыка для моих ушей", line);
+        Assert.Contains(p.Type.Name, line);
+    }
+
+    [Fact]
+    public void CautiousMagnateSparesKindPlayer()
+    {
+        var b = Quiet();
+        b.MagnateAttentionPlanets = 1;
+        var g = Game.New(b, 1);
+        var p = g.PlayerPlanets.Single();
+        p.Inhabited = true;
+        // Два хода заботы: праздник, школа, праздник, праздник — доброта 5.
+        Assert.True(g.HoldFestival(p.Id).Ok);
+        Assert.True(g.BuildSchool(p.Id).Ok);
+        g.EndTurn();
+        Assert.True(g.HoldFestival(p.Id).Ok);
+        Assert.True(g.HoldFestival(p.Id).Ok);
+        Assert.True(g.Kindness >= b.CautiousSparesKindness);
+
+        var cautious = g.Magnates.First(m => m.Personality == Personality.Cautious);
+        cautious.TrickChance = 1;
+        cautious.TrickWeights = new[] { 1.0, 0, 0, 0 };
+        // Ниже порога подкупа (50), но выше забастовки (30): забастовка сама испортила бы доброту.
+        p.Loyalty = 35;
+        g.EndTurn();
+        Assert.Empty(g.Bribes);
     }
 }

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 namespace PlanetTrader.Core
 {
@@ -61,6 +62,11 @@ namespace PlanetTrader.Core
         public bool Guarded;
         /// <summary>Сколько ещё ходов идёт эпидемия: добыча вполовину.</summary>
         public int EpidemicTurnsLeft;
+        /// <summary>Основное месторождение восстанавливается: столько ходов ещё, из скольких.</summary>
+        public int RegenTurnsLeft;
+        public int RegenTotal;
+        /// <summary>Дополнительные месторождения: небольшие, других ресурсов.</summary>
+        public readonly List<Deposit> ExtraDeposits = new List<Deposit>();
 
         public Planet(int id, PlanetType type, double reserve)
         {
@@ -72,7 +78,9 @@ namespace PlanetTrader.Core
         }
 
         public Resource Resource => Type.Resource;
-        public bool IsDepleted => Reserve <= 1e-9;
+        /// <summary>Основное месторождение выработано и восстанавливается.</summary>
+        public bool IsDepleted => Reserve <= 1e-9 || RegenTurnsLeft > 0;
+        public bool IsRegenerating => RegenTurnsLeft > 0;
         public bool IsProducing => Mine == MineState.Working && AccidentTurnsLeft == 0 && !IsDepleted;
 
         /// <summary>Содержание без множителя за число планет. Выработанная планета обходится дешевле.</summary>
@@ -105,22 +113,33 @@ namespace PlanetTrader.Core
         public bool SoldAtAuction => Owner == Owner.Registry && !FoundByProbe && !Inhabited;
 
         /// <summary>
-        /// Рыночная стоимость: дисконтированный чистый доход от оставшейся добычи
-        /// по базовым ценам, минус стоимость шахты, если её ещё нет. Не ниже нуля.
+        /// Рыночная стоимость. Месторождения не кончаются, а восстанавливаются, поэтому это бесконечный доход:
+        /// средняя за цикл «добыча + восстановление» выручка минус содержание, делённые на ставку дисконтирования.
+        /// Пока основное месторождение восстанавливается, стоимость дисконтируется на оставшиеся ходы.
+        /// Дополнительные месторождения с экстракторами добавляют свою среднюю выручку.
         /// </summary>
-        public double MarketValue(Balance b) => ValueWithReserve(b, Reserve);
+        public double MarketValue(Balance b) => ValueWithCapacity(b, InitialReserve);
 
         /// <summary>Стоимость по оценке реестра — так планету видят все, кто её не разведал.</summary>
-        public double EstimatedValue(Balance b) => ValueWithReserve(b, EstimatedReserve);
+        public double EstimatedValue(Balance b) => ValueWithCapacity(b, EstimatedInitialReserve);
 
-        public double ValueWithReserve(Balance b, double reserve)
+        /// <summary>Средняя добыча за цикл: месторождение capacity, добыча output, восстановление regen ходов.</summary>
+        public static double CycleAverage(double capacity, double output, double regen)
         {
-            if (reserve <= 1e-9) return 0;
+            if (capacity <= 1e-9 || output <= 0) return 0;
+            double mining = capacity / output;
+            return output * mining / (mining + regen);
+        }
+
+        public double ValueWithCapacity(Balance b, double capacity)
+        {
             double r = b.DiscountRate;
-            double n = reserve / Type.OutputPerTurn;
-            double net = Type.OutputPerTurn * b.BasePrice(Resource) - Type.Upkeep;
-            double annuity = (1 - Math.Pow(1 + r, -n)) / r;
-            double value = net * annuity;
+            double revenue = CycleAverage(capacity, Type.OutputPerTurn, b.RegenTurns[(int)Resource]) * b.BasePrice(Resource);
+            foreach (var d in ExtraDeposits)
+                if (d.HasExtractor)
+                    revenue += CycleAverage(d.Capacity, d.OutputPerTurn, b.RegenTurns[(int)d.Resource]) * b.BasePrice(d.Resource);
+            double value = (revenue - Type.Upkeep) / r;
+            if (RegenTurnsLeft > 0) value *= Math.Pow(1 + r, -RegenTurnsLeft);
             if (Mine == MineState.None) value -= Type.MineCost;
             return Math.Max(0, value);
         }

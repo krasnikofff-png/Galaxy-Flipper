@@ -17,8 +17,8 @@ namespace PlanetTrader.Client
         const float SidePanelWidth = 560, Gap = 10, TopBarHeight = 52, EventBarHeight = 30, LogHeight = 190;
         const int MaxLogLines = 200;
 
-        enum Tab { Planet, Market, Orders, Finance, Magnates }
-        static readonly string[] TabNames = { "Планета", "Биржа", "Заказы", "Финансы", "Магнаты" };
+        enum Tab { Planet, Market, Orders, Finance, Development, Magnates }
+        static readonly string[] TabNames = { "Планета", "Биржа", "Заказы", "Финансы", "Развитие", "Магнаты" };
 
         /// <summary>Сколько секунд длится «ход соперников» после нажатия «Конец хода».</summary>
         const float RivalsTurnSeconds = 1.2f;
@@ -40,7 +40,7 @@ namespace PlanetTrader.Client
         /// <summary>Квадрат карты на экране: координаты 0..1 планет растягиваются на него.</summary>
         Rect _mapArea;
 
-        GUIStyle _text, _small, _title, _button, _mapLabel, _logText, _header;
+        GUIStyle _text, _small, _title, _button, _mapLabel, _logText, _header, _tooltipText;
         bool _stylesReady;
 
         /// <summary>
@@ -154,7 +154,7 @@ namespace PlanetTrader.Client
             GUI.DrawTexture(new Rect(0, 0, width, height), Texture2D.whiteTexture);
             GUI.color = old;
 
-            var r = new Rect(width / 2 - 230, height / 2 - 95, 460, 190);
+            var r = new Rect(width / 2 - 330, height / 2 - 150, 660, 300);
             GUI.Box(r, GUIContent.none);
             GUI.Box(r, GUIContent.none);
             float t = Mathf.Clamp01((Time.unscaledTime - _rivalsTurnStarted) / RivalsTurnSeconds);
@@ -169,6 +169,8 @@ namespace PlanetTrader.Client
                 var m = magnates[i];
                 string state = _game.Turn < m.QuietUntilTurn ? "отбивается от слухов" : i < current ? "походил(а)" : i == current ? "думает" : "ждёт";
                 GUILayout.Label($"{m.Name}, {m.PersonalityName}: {state}", _text);
+                var said = _game.RecentRemarks.LastOrDefault(x => x.MagnateId == m.Id && x.Turn >= _game.Turn - 3);
+                if (said != null) GUILayout.Label($"   <i>«{said.Text}»</i>", _small);
             }
             GUILayout.FlexibleSpace();
             var bar = GUILayoutUtility.GetRect(100, 8, GUILayout.ExpandWidth(true));
@@ -475,6 +477,8 @@ namespace PlanetTrader.Client
             if (p.Knowledge != Knowledge.Silhouette && p.Inhabited) marks += " · жители";
             switch (p.Owner)
             {
+                case Owner.Player when p.IsRegenerating:
+                    return $"ВЫ · восст. {p.RegenTurnsLeft} х.";
                 case Owner.Player:
                     string people = p.Inhabited ? (p.OnStrike ? " · забастовка" : $" · лоял. {Mathf.RoundToInt((float)p.Loyalty)}") : "";
                     return (p.IsDepleted ? "ВЫ · пусто" : "ВЫ") + people + marks.Replace(" · жители", "");
@@ -500,8 +504,8 @@ namespace PlanetTrader.Client
         float LegendItem(float x, float y, Color color, string text)
         {
             DrawCircle(new Vector2(x + 7, y + 11), 6, color);
-            var size = _small.CalcSize(new GUIContent(text));
-            GUI.Label(new Rect(x + 17, y + 1, size.x + 4, 22), text, _small);
+            var size = _mapLabel.CalcSize(new GUIContent(text));
+            GUI.Label(new Rect(x + 17, y + 1, size.x + 4, 22), text, _mapLabel);
             return x + 17 + size.x + 16;
         }
 
@@ -531,6 +535,7 @@ namespace PlanetTrader.Client
                 case Tab.Market: DrawMarketTab(); break;
                 case Tab.Orders: DrawOrdersTab(); break;
                 case Tab.Finance: DrawFinanceTab(); break;
+                case Tab.Development: DrawDevelopmentTab(); break;
                 case Tab.Magnates: DrawMagnatesTab(); break;
             }
             GUILayout.EndScrollView();
@@ -590,6 +595,7 @@ namespace PlanetTrader.Client
                 else
                     Line("Содержание", $"{Fmt.Money(p.Type.Upkeep)} за ход, без множителя");
                 Line(exact ? "Рыночная стоимость" : "Стоимость по оценке", Fmt.Money(g.KnownValue(p) ?? 0));
+                DrawDeposits(p, exact);
                 if (p.Inhabited) Line("Жители", p.Owner == Owner.Player ? "есть, см. ниже" : "есть: планету продают сами жители");
                 if (p.Knowledge == Knowledge.Explored || p.Owner == Owner.Player)
                 {
@@ -799,6 +805,89 @@ namespace PlanetTrader.Client
             }
         }
 
+        /// <summary>Дерево технологий: что изучено, что идёт, что можно начать.</summary>
+        void DrawDevelopmentTab()
+        {
+            var g = _game;
+            GUILayout.Label("Исследования", _header);
+            if (g.CurrentResearch != null)
+            {
+                var r = g.CurrentResearch;
+                Line("Идёт", $"«{r.Technology.Name}», ещё {r.TurnsLeft} х.");
+                DrawBar(1 - r.TurnsLeft / (float)r.Technology.Turns);
+            }
+            else
+                GUILayout.Label("Сейчас ничего не исследуется. Одно исследование за раз, начало стоит действие.", _small);
+            GUILayout.Space(8);
+
+            foreach (var t in g.Balance.Technologies)
+            {
+                GUILayout.BeginVertical(GUI.skin.box);
+                string state = g.IsResearched(t.Id) ? "<color=#7be38b>изучено</color>"
+                    : g.CurrentResearch?.Technology == t ? "<color=#ffd27a>исследуется</color>"
+                    : "";
+                GUILayout.Label($"<b>{t.Name}</b> {state}", _text);
+                GUILayout.Label(t.Description, _small);
+                if (!g.IsResearched(t.Id) && g.CurrentResearch?.Technology != t)
+                {
+                    var missing = t.Requires.Where(x => !g.IsResearched(x)).Select(x => g.Balance.Technologies.First(y => y.Id == x).Name).ToList();
+                    if (missing.Count > 0)
+                        GUILayout.Label("Сначала: " + string.Join(", ", missing), _small);
+                    else
+                    {
+                        string id = t.Id;
+                        if (ActionButton($"Исследовать за {Fmt.Money(t.Cost)}, {t.Turns} х. · 1 действие",
+                                g.CurrentResearch == null && g.ActionsLeft > 0 && g.Money >= t.Cost))
+                            Act(() => g.StartResearch(id), $"Начато исследование «{t.Name}».");
+                    }
+                }
+                GUILayout.EndVertical();
+            }
+        }
+
+        /// <summary>Основное и дополнительные месторождения планеты: что добывается, что восстанавливается.</summary>
+        void DrawDeposits(Planet p, bool exact)
+        {
+            var g = _game;
+            var b = g.Balance;
+            GUILayout.Space(6);
+            GUILayout.Label("Месторождения", _header);
+            string main = p.IsRegenerating
+                ? $"восстанавливается, ещё {p.RegenTurnsLeft} из {p.RegenTotal} х."
+                : $"добыча {Fmt.Amount(p.Type.OutputPerTurn * (p.Owner == Owner.Player ? 1 + g.OutputBonus : 1))} за ход";
+            Line($"{p.Resource.RuName()} (основное)", $"{main}; после истощения восстанавливается за {b.RegenTurns[(int)p.Resource]} х.");
+            if (!exact)
+            {
+                GUILayout.Label("Дополнительные месторождения покажет полная разведка.", _small);
+                return;
+            }
+            if (p.ExtraDeposits.Count == 0)
+            {
+                GUILayout.Label("Других месторождений нет.", _small);
+                return;
+            }
+            for (int i = 0; i < p.ExtraDeposits.Count; i++)
+            {
+                var d = p.ExtraDeposits[i];
+                string state = d.IsRegenerating ? $"восстанавливается, ещё {d.RegenTurnsLeft} х."
+                    : d.HasExtractor ? (g.IsUnlocked(d.Resource) ? $"добывается, запас {Fmt.Amount(d.Reserve)} из {Fmt.Amount(d.Capacity)}" : "экстрактор есть, нет технологии")
+                    : $"запас {Fmt.Amount(d.Capacity)}";
+                Line($"{d.Resource.RuName()} (доп.)", $"{Fmt.Amount(d.OutputPerTurn)} за ход; {state}; восстановление {b.RegenTurns[(int)d.Resource]} х.");
+                if (p.Owner == Owner.Player && !d.HasExtractor)
+                {
+                    int index = i;
+                    double cost = g.ExtractorCost(d);
+                    if (!g.IsUnlocked(d.Resource))
+                    {
+                        var tech = b.Technologies.FirstOrDefault(t => t.UnlocksResource == d.Resource);
+                        GUILayout.Label($"Чтобы добывать, нужна технология «{tech?.Name}» (вкладка «Развитие»).", _small);
+                    }
+                    else if (ActionButton($"Поставить экстрактор за {Fmt.Money(cost)} · 1 действие", g.ActionsLeft > 0 && g.Money >= cost))
+                        Act(() => g.BuildExtractor(p.Id, index), $"Экстрактор на {p.Type.Name} #{p.Id}: {d.Resource.RuName()}.");
+                }
+            }
+        }
+
         void DrawMagnatesTab()
         {
             var g = _game;
@@ -809,6 +898,9 @@ namespace PlanetTrader.Client
             GUILayout.Label("Грязные дела её портят, выполненные заказы чинят, со временем она возвращается к 50. " +
                             "От репутации зависят согласие жителей и число заказов.", _small);
             if (g.FinesPaid > 0) Line("Штрафы реестра", Fmt.Money(g.FinesPaid));
+            int kindness = g.Kindness;
+            Line("Как вы обходитесь с жителями", kindness > 0 ? $"<color=#7be38b>добряк ({kindness})</color>" : kindness < 0 ? $"<color=#ff8a7a>живодёр ({kindness})</color>" : "пока никак");
+            GUILayout.Label("Магнаты помнят ваши поступки с жителями. Матильда не подкупает жителей у заботливых, Гуго щадит «родственную душу».", _small);
             Line("Внимание магнатов", $"{Fmt.Percent(g.MagnateAttention)}: чем больше у вас планет, тем чаще пакости");
             GUILayout.Space(10);
 
@@ -818,10 +910,14 @@ namespace PlanetTrader.Client
                 int planets = g.AllPlanets.Count(p => p.Owner == Owner.Ai && p.MagnateId == m.Id);
                 GUILayout.Label($"<b>{m.Name}</b>, {m.PersonalityName}. Планет: {planets}.", _text);
                 GUILayout.Label(m.Personality == Personality.Greedy
-                    ? "Скупает выгодные планеты, щедро ставит на аукционах, подкупает жителей с низкой лояльностью."
-                    : "Непредсказуема: ставки вразброс, распускает слухи, переманивает заказчиков и менеджеров.", _small);
+                    ? "Скупает выгодные планеты, щедро ставит на аукционах, подкупает жителей с низкой лояльностью. Хвалит жёсткость с жителями."
+                    : m.Personality == Personality.Chaotic
+                        ? "Непредсказуема: ставки вразброс, распускает слухи, переманивает заказчиков и менеджеров."
+                        : "Осторожна: ставит скромно, пакостит редко, переманивает заказчиков. Ценит заботу о жителях.", _small);
                 if (g.Turn < m.QuietUntilTurn)
                     GUILayout.Label($"Отбивается от ваших слухов до хода {m.QuietUntilTurn}: не покупает и не пакостит.", _small);
+                var said = g.RecentRemarks.LastOrDefault(x => x.MagnateId == m.Id);
+                if (said != null) GUILayout.Label($"<i>«{said.Text}»</i> (ход {said.Turn})", _small);
                 int id = m.Id;
                 if (ActionButton($"Распустить слух о магнате за {Fmt.Money(b.PlayerRumorCost)}: {b.PlayerRumorQuietTurns} х. тишины · 1 действие",
                         g.ActionsLeft > 0 && g.Money >= b.PlayerRumorCost))
@@ -1082,12 +1178,12 @@ namespace PlanetTrader.Client
         {
             if (string.IsNullOrEmpty(GUI.tooltip)) return;
             var content = new GUIContent(GUI.tooltip);
-            var size = _small.CalcSize(content) + new Vector2(16, 10);
+            var size = _tooltipText.CalcSize(content) + new Vector2(16, 10);
             var mouse = Event.current.mousePosition;
             var r = new Rect(mouse.x + 16, mouse.y + 12, size.x, size.y);
             GUI.Box(r, GUIContent.none);
             GUI.Box(r, GUIContent.none);
-            GUI.Label(new Rect(r.x + 8, r.y + 5, size.x, size.y), content, _small);
+            GUI.Label(new Rect(r.x + 8, r.y + 5, size.x, size.y), content, _tooltipText);
         }
 
         // ------------------------------------------------------------------
@@ -1098,13 +1194,14 @@ namespace PlanetTrader.Client
         {
             if (_stylesReady) return;
             _text = new GUIStyle(GUI.skin.label) { fontSize = 16, wordWrap = true, richText = true };
-            _small = new GUIStyle(GUI.skin.label) { fontSize = 13, wordWrap = false, richText = true };
+            _small = new GUIStyle(GUI.skin.label) { fontSize = 13, wordWrap = true, richText = true };
             _small.normal.textColor = new Color(0.75f, 0.78f, 0.85f);
             _title = new GUIStyle(_text) { fontSize = 24, fontStyle = FontStyle.Bold };
             _header = new GUIStyle(_text) { fontSize = 17, fontStyle = FontStyle.Bold };
             _header.normal.textColor = new Color(0.6f, 0.75f, 1f);
             _button = new GUIStyle(GUI.skin.button) { fontSize = 15, wordWrap = false };
-            _mapLabel = new GUIStyle(_small) { alignment = TextAnchor.UpperCenter, fontSize = 12 };
+            _mapLabel = new GUIStyle(_small) { alignment = TextAnchor.UpperCenter, fontSize = 12, wordWrap = false };
+            _tooltipText = new GUIStyle(_small) { wordWrap = false };
             _logText = new GUIStyle(_text) { fontSize = 14 };
             _stylesReady = true;
         }

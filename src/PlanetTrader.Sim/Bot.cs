@@ -9,8 +9,8 @@ namespace PlanetTrader.Sim
     public sealed class Strategy
     {
         public string Name;
-        /// <summary>Продаёт выработанные и почти выработанные планеты.</summary>
-        public bool SellsSpentPlanets;
+        /// <summary>Развивает планеты: исследует технологии, ставит экстракторы на дополнительные месторождения.</summary>
+        public bool Develops;
         /// <summary>Берёт кредит, чтобы купить выгодную планету.</summary>
         public bool UsesCredit;
         /// <summary>Перед покупкой полностью разведывает планету зондом, а не верит оценке реестра.</summary>
@@ -19,12 +19,12 @@ namespace PlanetTrader.Sim
         public bool CaresForPeople;
 
         public static readonly Strategy Passive = new Strategy { Name = "Пассивный", Explores = true, CaresForPeople = true };
-        public static readonly Strategy Active = new Strategy { Name = "Активный", SellsSpentPlanets = true, Explores = true, CaresForPeople = true };
-        public static readonly Strategy ActiveCredit = new Strategy { Name = "Активный + кредит", SellsSpentPlanets = true, UsesCredit = true, Explores = true, CaresForPeople = true };
+        public static readonly Strategy Active = new Strategy { Name = "Активный", Develops = true, Explores = true, CaresForPeople = true };
+        public static readonly Strategy ActiveCredit = new Strategy { Name = "Активный + кредит", Develops = true, UsesCredit = true, Explores = true, CaresForPeople = true };
         /// <summary>Для проверки, окупается ли разведка: тот же активный, но покупает по оценке реестра.</summary>
-        public static readonly Strategy ActiveNoScouting = new Strategy { Name = "Активный без разведки", SellsSpentPlanets = true, CaresForPeople = true };
+        public static readonly Strategy ActiveNoScouting = new Strategy { Name = "Активный без разведки", Develops = true, CaresForPeople = true };
         /// <summary>Для проверки этапа 4: тот же активный, но жителей не замечает.</summary>
-        public static readonly Strategy ActiveIgnoresPeople = new Strategy { Name = "Активный, жители побоку", SellsSpentPlanets = true, Explores = true };
+        public static readonly Strategy ActiveIgnoresPeople = new Strategy { Name = "Активный, жители побоку", Develops = true, Explores = true };
 
         public static readonly Strategy[] All = { Passive, Active, ActiveCredit };
     }
@@ -64,7 +64,7 @@ namespace PlanetTrader.Sim
             FulfillOrders(g);
             if (_s.CaresForPeople) ManagePeople(g);
             SellResources(g);
-            if (_s.SellsSpentPlanets) SellSpentPlanets(g);
+            if (_s.Develops) Develop(g);
             BuildMines(g);
             BuyPlanets(g);
             if (_s.Explores) ExploreAhead(g);
@@ -151,16 +151,54 @@ namespace PlanetTrader.Sim
             }
         }
 
-        void SellSpentPlanets(Game g)
+        /// <summary>
+        /// Развитие: экстракторы на открытых месторождениях, затем следующее исследование —
+        /// сначала то, что открывает ресурсы своих дополнительных месторождений.
+        /// </summary>
+        void Develop(Game g)
         {
             foreach (var p in g.PlayerPlanets.ToList())
-            {
-                if (g.ActionsLeft == 0) { _ranOutOfActions = true; return; }
-                // Продаём выработанные и — на пике ажиотажа — те, что событие сделало дорогими.
-                double hype = g.CurrentEvent?.Event.PlanetSale(p.Resource) ?? 1;
-                if ((p.Mine == MineState.Working && p.RemainingTurns < 2) || (hype >= 1.3 && !p.IsDepleted))
-                    g.SellPlanet(p.Id);
-            }
+                for (int i = 0; i < p.ExtraDeposits.Count; i++)
+                {
+                    var d = p.ExtraDeposits[i];
+                    if (d.HasExtractor || !g.IsUnlocked(d.Resource)) continue;
+                    if (g.ActionsLeft == 0) { _ranOutOfActions = true; return; }
+                    if (g.Money - g.ExtractorCost(d) < Buffer(g)) return;
+                    g.BuildExtractor(p.Id, i);
+                }
+
+            if (g.CurrentResearch != null || g.ActionsLeft == 0 || g.PlayerPlanetCount < 3) return;
+            var tech = g.Balance.Technologies
+                .Where(g.CanResearch)
+                .Select(t => (tech: t, value: TechValue(g, t, 0)))
+                .Where(x => x.value >= 1.5 * x.tech.Cost)
+                .OrderByDescending(x => x.value / x.tech.Cost)
+                .Select(x => x.tech)
+                .FirstOrDefault();
+            if (tech != null && g.Money - tech.Cost >= Buffer(g) + 2000) g.StartResearch(tech.Id);
+        }
+
+        /// <summary>
+        /// Сколько технология принесёт за 40 ходов на нынешних планетах, плюс половина пользы тех,
+        /// что она открывает дальше.
+        /// </summary>
+        static double TechValue(Game g, Technology t, int depth)
+        {
+            const double horizon = 40;
+            var b = g.Balance;
+            double revenue = g.PlayerPlanets.Where(p => p.Mine == MineState.Working)
+                .Sum(p => Planet.CycleAverage(p.InitialReserve, p.Type.OutputPerTurn, b.RegenTurns[(int)p.Resource]) * b.BasePrice(p.Resource));
+            double value = 0;
+            if (t.UnlocksResource.HasValue)
+                value += g.PlayerPlanets.SelectMany(p => p.ExtraDeposits).Where(d => d.Resource == t.UnlocksResource.Value)
+                    .Sum(d => Planet.CycleAverage(d.Capacity, d.OutputPerTurn, b.RegenTurns[(int)d.Resource]) * b.BasePrice(d.Resource) * horizon - g.ExtractorCost(d));
+            value += t.OutputBonus * revenue * horizon;
+            value += (1 - t.RegenFactor) * 0.1 * revenue * horizon;
+            value += t.LoyaltyBonus * g.PlayerPlanets.Count(p => p.Inhabited) * 150;
+            if (depth < 2)
+                foreach (var next in b.Technologies.Where(x => x.Requires.Contains(t.Id)))
+                    value += 0.5 * Math.Max(0, TechValue(g, next, depth + 1) - next.Cost);
+            return value;
         }
 
         void BuildMines(Game g)
@@ -185,13 +223,17 @@ namespace PlanetTrader.Sim
             int n = g.UpkeepCurvePlanets;
             double baseUpkeep = g.PlayerPlanets.Sum(x => x.BaseUpkeep(b));
             double extraUpkeep = (baseUpkeep + p.Type.Upkeep) * b.UpkeepMultiplier(n + 1) - baseUpkeep * b.UpkeepMultiplier(n);
-            double net = p.Type.OutputPerTurn * b.BasePrice(p.Resource) - extraUpkeep;
-            double shipping = g.ShippingCost(p.Resource, p.Type.OutputPerTurn, g.DistanceToExchange(p));
+            // Месторождения восстанавливаются: считаем средний за цикл доход на горизонте в 40 ходов.
+            double capacity = known.Value * p.InitialReserve / Math.Max(1, p.Reserve);
+            double avgOutput = Planet.CycleAverage(capacity, p.Type.OutputPerTurn, b.RegenTurns[(int)p.Resource]);
+            double net = avgOutput * b.BasePrice(p.Resource) - extraUpkeep;
+            double shipping = g.ShippingCost(p.Resource, avgOutput, g.DistanceToExchange(p));
             double bonus = p.Knowledge == Knowledge.Explored && p.HasUnlootedRuins ? p.RuinsValue : 0;
             double cost = p.ListPrice(b) + (p.Mine == MineState.None ? p.Type.MineCost : 0);
             // У обитаемых планет ещё и налог; заботливый бот рассчитывает на низкий.
             if (p.Inhabited) net += b.TaxIncome[(int)TaxLevel.Low];
-            return ((net - shipping) * known.Value / p.Type.OutputPerTurn + bonus) / cost;
+            const double horizon = 40;
+            return ((net - shipping) * horizon + bonus) / cost;
         }
 
         void BuyPlanets(Game g)

@@ -58,7 +58,7 @@ namespace PlanetTrader.Core
 
         // --- Содержание: кривая с полкой ---
         public double UpkeepCurveA = 1.0;
-        public double UpkeepCurveK = 1.336;
+        public double UpkeepCurveK = 1.6;
         public double UpkeepCurveP = 5;
         public int UpkeepShelfStart = 8;
         public int UpkeepShelfEnd = 13;
@@ -78,7 +78,7 @@ namespace PlanetTrader.Core
 
         // --- Биржа ---
         /// <summary>Цена падает на SalesImpact × (продано / глубина рынка).</summary>
-        public double SalesImpact = 0.10;
+        public double SalesImpact = 0.15;
         public double PriceRecovery = 0.15;
         public double MarketNoise = 0.08;
         /// <summary>Нижний предел цены как доля базовой (допущение).</summary>
@@ -171,7 +171,19 @@ namespace PlanetTrader.Core
                 trickWeights: new[] { 0.5, 0.2, 0.3, 0.0 }),
             new Magnate(1, "Зизи Квазар", Personality.Chaotic, trickChance: 0.30, auctionInterest: 0.40, bidMin: 0.80, bidMax: 1.30,
                 trickWeights: new[] { 0.25, 0.35, 0.25, 0.15 }),
+            new Magnate(2, "Матильда Ласкова", Personality.Cautious, trickChance: 0.12, auctionInterest: 0.35, bidMin: 0.90, bidMax: 1.15,
+                trickWeights: new[] { 0.3, 0.2, 0.5, 0.0 }),
         };
+        /// <summary>Шанс за ход, что магнат выскажется о ваших поступках с жителями.</summary>
+        public double RemarkChance = 0.3;
+        /// <summary>О поступках за сколько последних ходов магнаты вспоминают.</summary>
+        public int RemarkMemoryTurns = 8;
+        /// <summary>Как давно поступки считаются в общей репутации «добряк или живодёр».</summary>
+        public int KindnessMemoryTurns = 40;
+        /// <summary>Осторожная не подкупает жителей у игрока с добротой от этого уровня.</summary>
+        public int CautiousSparesKindness = 5;
+        /// <summary>Жадный реже пакостит «родственной душе»: игроку с добротой до этого уровня.</summary>
+        public int GreedyLikesKindness = -5;
         /// <summary>Магнаты замечают игрока по мере роста: шанс пакости полный, когда у него столько планет.</summary>
         public int MagnateAttentionPlanets = 6;
         /// <summary>Ставки игрока на аукционе: доля базовой цены реестра.</summary>
@@ -251,6 +263,34 @@ namespace PlanetTrader.Core
         /// <summary>Бунт: бастующие жители с лояльностью ниже этой громят шахту. Страховка не платит.</summary>
         public double RiotBelowLoyalty = 15;
         public double RiotChance = 0.2;
+
+        // --- Развитие планет (этап 7, всё — допущения) ---
+        /// <summary>
+        /// За сколько ходов месторождение восстанавливается после истощения, по ресурсам:
+        /// биомасса отрастает быстро, квантий — очень долго. Разные сроки — чтобы всё не кончалось разом.
+        /// </summary>
+        public int[] RegenTurns = { 10, 24, 14, 6, 32, 45 };
+        /// <summary>Шанс одного и двух дополнительных месторождений у планеты.</summary>
+        public double OneExtraDepositChance = 0.5;
+        public double TwoExtraDepositsChance = 0.2;
+        /// <summary>Добыча доп. месторождения — доля от обычной добычи этого ресурса.</summary>
+        public double ExtraOutputMin = 0.2, ExtraOutputMax = 0.35;
+        /// <summary>Запас доп. месторождения в ходах его добычи.</summary>
+        public double ExtraCapacityTurnsMin = 8, ExtraCapacityTurnsMax = 14;
+        /// <summary>Экстрактор для доп. месторождения: доля стоимости обычной шахты этого ресурса.</summary>
+        public double ExtractorCostShare = 0.4;
+        public Technology[] Technologies =
+        {
+            new Technology("ice", "Ледоколы", 800, 3, "Добыча льда на дополнительных месторождениях.") { UnlocksResource = Resource.Ice },
+            new Technology("metal", "Буровые", 1000, 3, "Добыча металла на дополнительных месторождениях.") { UnlocksResource = Resource.Metal },
+            new Technology("gas", "Газовые ловушки", 1000, 3, "Добыча газа на дополнительных месторождениях.") { UnlocksResource = Resource.Gas },
+            new Technology("social", "Социология", 1500, 4, "Жители всех ваших планет +1 лояльности за ход.") { LoyaltyBonus = 1 },
+            new Technology("biomass", "Оранжереи", 1500, 4, "Добыча биомассы на дополнительных месторождениях.") { UnlocksResource = Resource.Biomass, Requires = new[] { "ice" } },
+            new Technology("enrich", "Обогащение руды", 2500, 5, "+15% добычи на всех ваших планетах.") { OutputBonus = 0.15, Requires = new[] { "metal" } },
+            new Technology("regen", "Ускоренная регенерация", 2500, 5, "Месторождения на ваших планетах восстанавливаются на 30% быстрее.") { RegenFactor = 0.7, Requires = new[] { "biomass" } },
+            new Technology("crystals", "Кристаллические резонаторы", 3500, 6, "Добыча кристаллов на дополнительных месторождениях.") { UnlocksResource = Resource.Crystals, Requires = new[] { "enrich" } },
+            new Technology("quantium", "Квантовые ловушки", 5000, 7, "Добыча квантия на дополнительных месторождениях.") { UnlocksResource = Resource.Quantium, Requires = new[] { "crystals", "gas" } },
+        };
 
         // --- Карта и доставка (допущения) ---
         /// <summary>Где на карте галактическая биржа.</summary>

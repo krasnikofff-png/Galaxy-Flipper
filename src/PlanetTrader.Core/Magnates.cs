@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+
 namespace PlanetTrader.Core
 {
     public enum Personality
@@ -6,6 +8,8 @@ namespace PlanetTrader.Core
         Greedy,
         /// <summary>Непредсказуем: ставки вразброс, слухи, переманивает заказчиков и менеджеров.</summary>
         Chaotic,
+        /// <summary>Осторожна и благородна: ставит скромно, пакостит редко, заботливых не трогает.</summary>
+        Cautious,
     }
 
     public enum TrickKind
@@ -31,6 +35,8 @@ namespace PlanetTrader.Core
         public double[] TrickWeights;
         /// <summary>До этого хода магнат отбивается от слухов: не покупает и не пакостит.</summary>
         public int QuietUntilTurn;
+        /// <summary>Поступки игрока, о которых магнат уже высказался.</summary>
+        public readonly HashSet<int> CommentedDeeds = new HashSet<int>();
 
         public Magnate(int id, string name, Personality personality, double trickChance, double auctionInterest,
             double bidMin, double bidMax, double[] trickWeights)
@@ -45,7 +51,8 @@ namespace PlanetTrader.Core
             TrickWeights = trickWeights;
         }
 
-        public string PersonalityName => Personality == Personality.Greedy ? "жадный" : "хаотичная";
+        public string PersonalityName =>
+            Personality == Personality.Greedy ? "жадный" : Personality == Personality.Chaotic ? "хаотичная" : "осторожная";
 
         /// <summary>Своя копия на партию: у магната есть состояние, а баланс общий.</summary>
         public Magnate Clone() => new Magnate(Id, Name, Personality, TrickChance, AuctionInterest, BidMin, BidMax, (double[])TrickWeights.Clone());
