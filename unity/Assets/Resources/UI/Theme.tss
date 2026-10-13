@@ -1,0 +1,82 @@
+/* Свой минимальный набор вместо стандартной темы Unity: каркас документа и прокрутки. */
+
+:root {
+    -unity-font-definition: url("project://database/Assets/Resources/UI/Fonts/Inter-Regular.ttf");
+    font-size: 16px;
+    color: #e6e9f0;
+}
+
+.unity-ui-document__root {
+    position: absolute;
+    left: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+}
+
+/* Прокрутка */
+
+.unity-scroll-view__content-and-vertical-scroll-container {
+    flex-direction: row;
+    flex-grow: 1;
+    flex-shrink: 1;
+}
+
+.unity-scroll-view__content-viewport {
+    flex-grow: 1;
+    flex-shrink: 1;
+    overflow: hidden;
+}
+
+.unity-scroll-view__content-container {
+    flex-shrink: 0;
+}
+
+.unity-scroller--horizontal {
+    display: none;
+}
+
+.unity-scroller--vertical {
+    width: 8px;
+    margin-left: 4px;
+}
+
+.unity-scroller__low-button,
+.unity-scroller__high-button {
+    display: none;
+}
+
+.unity-scroller__slider {
+    flex-grow: 1;
+    margin: 0;
+}
+
+.unity-base-slider__input,
+.unity-base-slider__drag-container {
+    flex-grow: 1;
+}
+
+.unity-base-slider__tracker {
+    position: absolute;
+    left: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    border-radius: 4px;
+    background-color: rgba(255, 255, 255, 0.05);
+}
+
+.unity-base-slider__dragger {
+    position: absolute;
+    width: 100%;
+    border-radius: 4px;
+    background-color: rgba(150, 170, 210, 0.4);
+}
+
+.unity-base-slider__dragger:hover {
+    background-color: rgba(170, 190, 230, 0.6);
+}
+
+.unity-base-slider__dragger-border {
+    display: none;
+}

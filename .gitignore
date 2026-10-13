@@ -501,6 +501,8 @@ unity/[Mm]emoryCaptures/
 unity/*.csproj
 unity/*.sln
 !unity/Assets/**/*.meta
+# Темы UI Toolkit (правило *.tss выше — для Tabs Studio)
+!unity/Assets/**/*.tss
 
 # Резервные копии Blender
 *.blend1
