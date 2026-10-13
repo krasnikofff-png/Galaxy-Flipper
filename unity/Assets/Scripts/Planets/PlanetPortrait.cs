@@ -72,7 +72,8 @@ namespace PlanetTrader.Visuals
             var toViewer = Quaternion.AngleAxis(yaw, up) * Vector3.ProjectOnPlane(-root.forward, up).normalized;
             float e = elevation * Mathf.Deg2Rad;
             var closePos = focus + (toViewer * Mathf.Cos(e) + up * Mathf.Sin(e)) * (CloseUpRadius * zoom);
-            var closeRot = Quaternion.LookRotation(focus + up * 0.1f - closePos, up);
+            // Взгляд чуть выше основания построек; чем ближе камера, тем ниже — иначе крупный план уходит в небо.
+            var closeRot = Quaternion.LookRotation(focus + up * (0.1f * Mathf.Min(1, zoom)) - closePos, up);
             // Камера летит по дуге вокруг центра планеты, а не напрямую — так она не проходит сквозь планету.
             var pos = center + Vector3.Slerp(wholePos - center, closePos - center, t);
             camera.SetPositionAndRotation(pos, Quaternion.Slerp(wholeRot, closeRot, t));

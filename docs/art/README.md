@@ -85,6 +85,8 @@ unity run "$PWD/unity" -- -executeMethod PlanetTrader.EditorTools.PlanetSnapshot
 # видео: кадры четырёх планет со всеми постройками в движении и склейка в GIF
 unity run "$PWD/unity" -- -executeMethod PlanetTrader.EditorTools.PlanetSnapshots.RenderBuildingsAnimationFromCommandLine -frameDir /tmp/frames -frames 90 -fps 15   # -events — беды вместо построек
 python3 tools/buildings/frames_to_gif.py /tmp/frames /tmp/buildings.gif 1200 15
+# крупный план одной модели в движении (пикет, карантин, авария…), лицом к камере
+unity run "$PWD/unity" -- -executeMethod PlanetTrader.EditorTools.PlanetSnapshots.RenderCloseUpFromCommandLine -model picket -frameDir /tmp/picket
 # сборка игры для macOS в unity/Build
 unity run "$PWD/unity" -- -executeMethod PlanetTrader.EditorTools.BuildTools.BuildMac -buildOut Build/PlanetTrader.app
 # запуск со снимком экрана через 10 секунд; -autoShotReveal разведывает все планеты сектора и выбирает вашу,

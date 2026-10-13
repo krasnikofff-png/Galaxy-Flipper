@@ -1016,27 +1016,56 @@ def van(x, y, z, angle, color, cross=None, beacon=BLUE_GLOW):
             cyl(0.045, 0.035, at((wx, wy, 0.045)), ASPHALT, shine=0.1, segs=12, rot=(math.pi / 2, 0, angle))
 
 
-def person(x, y, z, clothes, h=0.32, arm_up=False):
-    """Человечек: ноги, туловище, руки, голова."""
-    for dy in (-0.022, 0.022):
-        rod((x, y + dy, z), (x, y + dy, z + h * 0.4), 0.014, DARK, segs=5)
-    cyl(0.05, h * 0.36, (x, y, z + h * 0.38), clothes, shine=0.15, segs=10, r2=0.042)
-    sphere(0.045, (x, y, z + h * 0.86), SKIN, shine=0.1, u=10, v=6)
-    for side in (-1, 1):
-        end = (x, y + side * 0.07, z + h * (0.95 if arm_up and side > 0 else 0.45))
-        rod((x, y + side * 0.045, z + h * 0.7), end, 0.012, clothes, segs=5)
+HAIR = [(0.25, 0.17, 0.1), (0.1, 0.08, 0.07), (0.6, 0.45, 0.25), (0.45, 0.2, 0.1), (0.7, 0.7, 0.72)]
+PANTS = [(0.18, 0.2, 0.28), (0.3, 0.27, 0.22), (0.22, 0.22, 0.22)]
+
+
+def person(x, y, z, clothes, h=0.34, arm_up=False, facing=0.0, helmet=None, look=0):
+    """Человечек лицом к −Y (повёрнут на facing): ботинки, брюки, туловище, руки с ладонями, голова с глазами
+    и открытым ртом, волосы или каска. arm_up — вскинутый кулак. look — номер варианта причёски и брюк."""
+    with transformed(mat((x, y, z), (0, 0, facing))):
+        pants = PANTS[look % len(PANTS)]
+        for sx in (-0.024, 0.024):
+            box((0.034, 0.055, 0.022), (sx, -0.008, 0.011), DARK, bevel=0.006)
+            rod((sx, 0, 0.02), (sx, 0, h * 0.44), 0.017, pants, segs=6)
+        cyl(0.055, h * 0.36, (0, 0, h * 0.42), clothes, shine=0.15, segs=12, r2=0.047)
+        cyl(0.05, 0.02, (0, 0, h * 0.42), DARK, segs=12)
+        rod((0, 0, h * 0.76), (0, 0, h * 0.82), 0.02, SKIN, segs=6)
+        head = Vector((0, 0, h * 0.9))
+        sphere(0.052, tuple(head), SKIN, shine=0.1, u=14, v=9)
+        for sx in (-0.018, 0.018):
+            sphere(0.008, tuple(head + Vector((sx, -0.046, 0.01))), DARK, shine=0.5, u=6, v=4)
+        box((0.022, 0.008, 0.014), tuple(head + Vector((0, -0.048, -0.022))), (0.35, 0.08, 0.08), bevel=0)
+        if helmet:
+            dome(0.058, tuple(head + Vector((0, 0, 0.005))), helmet, shine=0.6, u=14, v=6, height=0.8)
+            cyl(0.07, 0.006, tuple(head + Vector((0, -0.006, 0.0))), helmet, shine=0.6, segs=14)
+        else:
+            # Шапка волос: чуть больше головы, сдвинута вверх — спереди видна чёлка.
+            dome(0.057, tuple(head + Vector((0, 0.004, 0.012))), HAIR[look % len(HAIR)], shine=0.2, u=14, v=6, height=0.85)
+            sphere(0.05, tuple(head + Vector((0, 0.012, -0.004))), HAIR[look % len(HAIR)], shine=0.2, u=12, v=8, scale=(1.05, 1, 0.9))
+        shoulder_y = 0.0
+        for side in (-1, 1):
+            sh = Vector((side * 0.06, shoulder_y, h * 0.74))
+            if arm_up and side > 0:
+                hand = Vector((side * 0.085, -0.02, h * 1.12))
+            else:
+                hand = Vector((side * 0.075, -0.03, h * 0.47))
+            rod(tuple(sh), tuple(hand), 0.015, clothes, segs=6)
+            sphere(0.02 if arm_up and side > 0 else 0.017, tuple(hand), SKIN, u=8, v=5)
 
 
 def placard(x, y, z, lean=0.0):
-    """Плакат на палке: белый щит с красной полосой и «текстом»."""
-    rod((x, y, z), (x, y, z + 0.35), 0.008, WOOD, segs=4)
-    m = mat((x, y, z + 0.38), (0, 0, lean))
+    """Плакат на палке лицом к −Y: белый щит с красной полосой и «текстом»."""
+    rod((x, y, z), (x, y, z + 0.36), 0.008, WOOD, segs=4)
+    m = mat((x, y, z + 0.4), (0, lean, 0))
+
     def at(p):
         return tuple(m @ Vector(p))
-    box((0.006, 0.2, 0.13), at((0, 0, 0)), WHITE, shine=0.1, rot=(0, 0, lean), bevel=0)
-    box((0.008, 0.2, 0.025), at((0, 0, 0.045)), RED, shine=0.1, rot=(0, 0, lean), bevel=0)
+
+    box((0.21, 0.008, 0.14), at((0, 0, 0)), WHITE, shine=0.1, rot=(0, lean, 0), bevel=0)
+    box((0.21, 0.01, 0.028), at((0, -0.001, 0.05)), RED, shine=0.1, rot=(0, lean, 0), bevel=0)
     for k in range(3):
-        box((0.008, 0.14 - k * 0.03, 0.01), at((0, 0, 0.005 - k * 0.025)), DARK, rot=(0, 0, lean), bevel=0)
+        box((0.15 - k * 0.035, 0.01, 0.011), at((0, -0.001, 0.008 - k * 0.026)), DARK, rot=(0, lean, 0), bevel=0)
 
 
 def accident():
@@ -1071,8 +1100,8 @@ def accident():
             box((0.07, 0.012, 0.05), tuple(mb @ Vector((-0.105 + k * 0.07, 0, 0.12))), HAZARD if k % 2 else WHITE, rot=(0, 0, a), bevel=0)
     rod((0.95, 0.1, z0), (0.95, 0.1, z0 + 0.45), 0.012, STEEL, segs=5)
     sphere(0.035, (0.95, 0.1, z0 + 0.48), EMBER, LIGHT, u=10, v=6)
-    person(-0.05, -0.62, z0, FIRE_RED, h=0.3)
-    person(0.2, -0.35, z0, FIRE_RED, h=0.3, arm_up=True)
+    person(-0.05, -0.62, z0, FIRE_RED, h=0.32, facing=-2.2, helmet=HAZARD)
+    person(0.2, -0.35, z0, FIRE_RED, h=0.32, arm_up=True, facing=-2.6, helmet=HAZARD)
 
 
 def wreck():
@@ -1132,34 +1161,43 @@ def crater():
 
 
 def picket():
-    """Забастовка: жители с плакатами (машут ими в такт), транспарант на двух шестах, горящая бочка."""
-    cyl(0.75, 0.03, (0, 0, 0), CONCRETE, shine=0.05, segs=12, smooth=False)
-    z0 = 0.03
-    spots = [(-0.4, -0.2), (-0.2, -0.32), (0.02, -0.36), (0.25, -0.3), (0.42, -0.15), (0.1, -0.05), (-0.25, 0.05)]
-    for i, (x, y) in enumerate(spots):
-        person(x, y, z0, CLOTHES[i % len(CLOTHES)], arm_up=i % 2 == 0)
-    with moving("placards", (0, -0.2, z0 + 0.3)):
-        for i, (x, y) in enumerate(spots):
-            if i % 2 == 0:
-                placard(x, y + 0.07, z0 + 0.25, lean=0.15 * (i - 3))
-    # Транспарант.
-    for x in (-0.45, 0.45):
-        rod((x, 0.3, z0), (x, 0.3, z0 + 0.62), 0.012, WOOD, segs=5)
-    box((0.86, 0.008, 0.18), (0, 0.3, z0 + 0.5), RED, shine=0.15, bevel=0)
+    """Забастовка: рабочие в касках и жители кричат и вскидывают кулаки, плакаты поднимают в такт,
+    за ними транспарант на двух шестах, сбоку горящая бочка."""
+    cyl(0.75, 0.07, (0, 0, 0), CONCRETE, shine=0.05, segs=14, bevel=0.01, smooth=False)
+    z0 = 0.07
+    crowd = [(-0.42, -0.12, 0.25), (-0.22, -0.28, 0.1), (0.0, -0.34, 0.0), (0.22, -0.28, -0.1), (0.42, -0.12, -0.25),
+             (-0.3, 0.05, 0.15), (-0.08, -0.06, 0.05), (0.15, -0.04, -0.05), (0.33, 0.06, -0.15)]
+    holders = []
+    for i, (x, y, f) in enumerate(crowd):
+        has_placard = i in (0, 2, 4, 6, 8)
+        person(x, y, z0, CLOTHES[i % len(CLOTHES)], h=0.34 + 0.03 * ((i * 7) % 3 - 1), arm_up=not has_placard and i % 2 == 1,
+               facing=f, helmet=HAZARD if i % 3 != 1 else None, look=i)
+        if has_placard:
+            holders.append((x + 0.075 * math.cos(f), y + 0.075 * math.sin(f) - 0.03, f))
+    with moving("placards", (0, -0.15, z0 + 0.3)):
+        for (x, y, f) in holders:
+            placard(x, y, z0 + 0.16, lean=0.12 * math.sin(x * 9))
+    for x in (-0.48, 0.48):
+        rod((x, 0.3, z0), (x, 0.3, z0 + 0.68), 0.013, WOOD, segs=6)
+        sphere(0.02, (x, 0.3, z0 + 0.69), GOLD, shine=0.7, u=8, v=5)
+    box((0.92, 0.01, 0.2), (0, 0.3, z0 + 0.55), RED, shine=0.15, bevel=0)
     for k in range(3):
-        box((0.6 - k * 0.12, 0.01, 0.025), (0, 0.3, z0 + 0.55 - k * 0.045), WHITE, shine=0.1, bevel=0)
-    # Горящая бочка.
-    cyl(0.07, 0.16, (0.45, 0.1, z0), (0.45, 0.25, 0.15), shine=0.3, segs=12)
-    for bz in (0.04, 0.12):
-        cyl(0.073, 0.012, (0.45, 0.1, z0 + bz), DARK, segs=12)
-    emitter("fire", (0.45, 0.1, z0 + 0.17))
-    emitter("smoke_small", (0.45, 0.1, z0 + 0.3))
+        box((0.64 - k * 0.13, 0.014, 0.028), (0, 0.293, z0 + 0.6 - k * 0.05), WHITE, shine=0.1, bevel=0)
+    bx, by = 0.6, -0.3
+    cyl(0.07, 0.17, (bx, by, z0), (0.45, 0.25, 0.15), shine=0.3, segs=14)
+    for bz in (0.04, 0.13):
+        cyl(0.073, 0.012, (bx, by, z0 + bz), DARK, segs=14)
+    for k in range(4):
+        a = k * 1.6
+        box((0.05, 0.012, 0.012), (bx + 0.03 * math.cos(a), by + 0.03 * math.sin(a), z0 + 0.175), WOOD, rot=(0.3, 0.2, a), bevel=0)
+    emitter("fire_small", (bx, by, z0 + 0.17))
+    emitter("smoke_small", (bx, by, z0 + 0.3))
 
 
 def quarantine():
     """Карантин: две медицинские палатки с крестами, лента ограждения на столбиках, скорая с мигалкой, медик."""
-    cyl(0.95, 0.03, (0, 0, 0), CONCRETE, shine=0.05, segs=14, smooth=False)
-    z0 = 0.03
+    cyl(0.95, 0.07, (0, 0, 0), CONCRETE, shine=0.05, segs=14, bevel=0.01, smooth=False)
+    z0 = 0.07
     for (x, y, a) in ((-0.3, 0.15, 0.2), (0.3, 0.25, -0.3)):
         prism_tri(0.5, 0.36, 0.65, (x, y, z0), WHITE, shine=0.2, yaw=a)
         m = mat((x, y, z0), (0, 0, a))
@@ -1178,8 +1216,8 @@ def quarantine():
         if k != 11:
             rod((x, y, z0 + 0.14), (0.82 * math.cos(a2), 0.82 * math.sin(a2), z0 + 0.14), 0.005, RED if k % 2 else WHITE, segs=3)
     van(0.45, -0.45, z0, math.radians(-30), WHITE, cross=RED)
-    person(0.0, -0.35, z0, WHITE)
-    person(-0.6, -0.25, z0, (0.7, 0.85, 0.75))
+    person(0.0, -0.35, z0, WHITE, look=1)
+    person(-0.6, -0.25, z0, (0.7, 0.85, 0.75), facing=0.8, look=2)
     box((0.02, 0.18, 0.13), (-0.75, -0.55, z0 + 0.25), WHITE, shine=0.1, rot=(0, 0, 0.6), bevel=0)
     rod((-0.75, -0.55, z0), (-0.75, -0.55, z0 + 0.19), 0.008, STEEL, segs=4)
     box((0.024, 0.03, 0.1), (-0.75, -0.55, z0 + 0.25), RED, rot=(0, 0, 0.6), bevel=0)

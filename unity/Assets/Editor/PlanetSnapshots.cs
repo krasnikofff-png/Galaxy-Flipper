@@ -79,6 +79,119 @@ namespace PlanetTrader.EditorTools
         }
 
         /// <summary>
+        /// Крупный план одной модели в движении (например, пикета): камера у самой модели, медленно смещается.
+        /// unity run … -executeMethod PlanetTrader.EditorTools.PlanetSnapshots.RenderCloseUpFromCommandLine -model picket -frameDir папка
+        /// </summary>
+        public static void RenderCloseUpFromCommandLine()
+        {
+            var args = System.Environment.GetCommandLineArgs();
+            string dir = "frames", model = "picket";
+            int frames = 60;
+            for (int i = 0; i < args.Length - 1; i++)
+            {
+                if (args[i] == "-frameDir") dir = args[i + 1];
+                if (args[i] == "-model") model = args[i + 1];
+                if (args[i] == "-frames") frames = int.Parse(args[i + 1]);
+            }
+            int code = 0;
+            try { RenderCloseUp(dir, model, frames, 15); }
+            catch (System.Exception e) { Debug.LogException(e); code = 1; }
+            EditorApplication.Exit(code);
+        }
+
+        public static void RenderCloseUp(string dir, string model, int frames, float fps)
+        {
+            const int w = 1200, h = 700;
+            Directory.CreateDirectory(dir);
+            var root = new GameObject("Крупный план") { hideFlags = HideFlags.DontSave };
+            var skyTex = PlanetShowcase.BakeSky(2048, 777);
+            var skyMat = new Material(Shader.Find("PlanetTrader/PlanetSky"));
+            try
+            {
+                var cam = new GameObject("Камера").AddComponent<Camera>();
+                cam.transform.SetParent(root.transform, false);
+                cam.clearFlags = CameraClearFlags.SolidColor;
+                cam.backgroundColor = Color.black;
+                cam.fieldOfView = 30;
+                cam.nearClipPlane = 0.005f;
+                cam.farClipPlane = 100;
+                cam.enabled = false;
+                var sun = new GameObject("Солнце").AddComponent<Light>();
+                sun.transform.SetParent(root.transform, false);
+                sun.type = LightType.Directional;
+                sun.color = new Color(1f, 0.97f, 0.92f);
+                sun.intensity = 1.1f;
+                sun.transform.rotation = Quaternion.LookRotation(-new Vector3(-0.5f, 0.4f, -0.78f).normalized);
+                skyMat.SetTexture("_MainTex", skyTex);
+                var sky = new GameObject("Небо").transform;
+                sky.SetParent(root.transform, false);
+                sky.localScale = Vector3.one * 40;
+                sky.gameObject.AddComponent<MeshFilter>().sharedMesh = SphereMesh.Build(64, 32);
+                sky.gameObject.AddComponent<MeshRenderer>().sharedMaterial = skyMat;
+
+                var pivot = new GameObject("Ось").transform;
+                pivot.SetParent(root.transform, false);
+                pivot.localRotation = Quaternion.Euler(14, 0, 0);
+                var view = new GameObject("Планета").AddComponent<PlanetView>();
+                view.transform.SetParent(pivot, false);
+                view.transform.localRotation = Quaternion.Euler(0, 0, 18);
+                view.Look = PlanetLook.Jungle;
+                view.Seed = 11;
+                view.Resolution = 2048;
+                view.Rebuild();
+                var buildings = new PlanetBuildings();
+                buildings.Sync(view, new PlanetStructures
+                {
+                    Mine = MineLook.Idle, Settlement = true, School = true, Strike = true, Epidemic = true, Accident = true,
+                    Accent = new Color(0.35f, 0.95f, 0.45f),
+                });
+                Transform target = null;
+                foreach (Transform t in view.Surface)
+                    if (t.name == model) target = t;
+                if (target == null) throw new System.Exception($"Нет модели {model} на планете");
+                view.TurnToward(target.localPosition.normalized, PlanetPortrait.FacingDir);
+                var focus = target.position;
+                // Лицом модели (−Y в Blender, +Z в Unity) — к камере.
+                var up = (focus - view.transform.position).normalized;
+                var toViewer = Vector3.ProjectOnPlane(-root.transform.forward, up);
+                var front = Vector3.ProjectOnPlane(target.TransformDirection(Vector3.forward), up);
+                target.Rotate(up, Vector3.SignedAngle(front, toViewer, up), Space.World);
+                var motions = root.GetComponentsInChildren<BuildingMotion>();
+                var smokes = root.GetComponentsInChildren<SmokeEmitter>();
+
+                var rt = new RenderTexture(w, h, 24, RenderTextureFormat.ARGB32) { antiAliasing = 8 };
+                cam.targetTexture = rt;
+                var frame = new Texture2D(w, h, TextureFormat.RGB24, false);
+                for (int f = 0; f < frames; f++)
+                {
+                    float t = f / fps;
+                    foreach (var m in motions) m.Pose(t);
+                    foreach (var sm in smokes) sm.Pose(t);
+                    float sweep = f / (float)Mathf.Max(1, frames - 1);
+                    PlanetPortrait.PlaceCamera(cam.transform, root.transform, 1, focus, view.transform.position,
+                        yaw: -25 + 50 * sweep, elevation: 18, zoom: 0.3f);
+                    sky.position = cam.transform.position;
+                    cam.Render();
+                    RenderTexture.active = rt;
+                    frame.ReadPixels(new Rect(0, 0, w, h), 0, 0);
+                    RenderTexture.active = null;
+                    frame.Apply();
+                    File.WriteAllBytes(Path.Combine(dir, $"frame_{f:000}.png"), frame.EncodeToPNG());
+                }
+                Object.DestroyImmediate(frame);
+                cam.targetTexture = null;
+                rt.Release();
+                Object.DestroyImmediate(rt);
+            }
+            finally
+            {
+                Object.DestroyImmediate(root);
+                Object.DestroyImmediate(skyTex);
+                Object.DestroyImmediate(skyMat);
+            }
+        }
+
+        /// <summary>
         /// Что стоит на i-й планете видео. Обычно — все постройки (на ледяной шахта строится).
         /// events — беды: джунгли и газ — авария, забастовка и эпидемия; скалистая — метеорит; ледяная — бунт.
         /// </summary>
