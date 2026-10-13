@@ -18,7 +18,7 @@ namespace PlanetTrader.Client
         const int MaxLogLines = 200;
 
         enum Tab { Planet, Market, Orders, Finance }
-        static readonly string[] TabNames = { "Планета", "Биржа", "Заказы", "Финансы" };
+        static readonly string[] TabNames = { "Планета", "Биржа", "Заказы и просьбы", "Финансы" };
 
         Core.Game _game;
         int _selectedId = -1;
@@ -148,6 +148,7 @@ namespace PlanetTrader.Client
             var report = _game.EndTurn();
             string line = $"— Ход {report.Turn} завершён. Расходы {Fmt.Money(report.TotalCosts)}";
             if (report.InsurancePayout > 0) line += $", страховка выплатила {Fmt.Money(report.InsurancePayout)}";
+            if (report.Taxes > 0) line += $", налоги принесли {Fmt.Money(report.Taxes)}";
             Log(line + ".");
             foreach (var e in report.Events) Log(e);
             if (report.Seizures > 0) Log("Денег не хватило: недостача ушла в долг, а долг превысил кредитный лимит.");
@@ -363,10 +364,12 @@ namespace PlanetTrader.Client
         {
             string marks = "";
             if (p.Knowledge == Knowledge.Explored && p.HasUnlootedRuins) marks += " · руины";
-            if (p.Knowledge == Knowledge.Explored && p.Inhabited) marks += " · жители";
+            if (p.Knowledge != Knowledge.Silhouette && p.Inhabited) marks += " · жители";
             switch (p.Owner)
             {
-                case Owner.Player: return (p.IsDepleted ? "ВЫ · пусто" : "ВЫ") + marks;
+                case Owner.Player:
+                    string people = p.Inhabited ? (p.OnStrike ? " · забастовка" : $" · лоял. {Mathf.RoundToInt((float)p.Loyalty)}") : "";
+                    return (p.IsDepleted ? "ВЫ · пусто" : "ВЫ") + people + marks.Replace(" · жители", "");
                 case Owner.Ai: return "ИИ";
                 default: return p.IsDepleted ? null : Fmt.Money(p.ListPrice(_game.Balance)) + marks;
             }
@@ -477,12 +480,12 @@ namespace PlanetTrader.Client
                 else
                     Line("Содержание", $"{Fmt.Money(p.Type.Upkeep)} за ход, без множителя");
                 Line(exact ? "Рыночная стоимость" : "Стоимость по оценке", Fmt.Money(g.KnownValue(p) ?? 0));
+                if (p.Inhabited) Line("Жители", p.Owner == Owner.Player ? "есть, см. ниже" : "есть: планету продают сами жители");
                 if (p.Knowledge == Knowledge.Explored || p.Owner == Owner.Player)
                 {
                     var surprises = new List<string>();
                     if (p.HasUnlootedRuins) surprises.Add($"руины с артефактами на {Fmt.Money(p.RuinsValue)}");
                     if (p.RuinsLooted) surprises.Add("руины разграблены");
-                    if (p.Inhabited) surprises.Add("жители (появятся на этапе 4)");
                     if (p.Reserve < 0.6 * p.EstimatedReserve) surprises.Add("подвох: реестр завысил запас");
                     Line("Сюрпризы", surprises.Count == 0 ? "нет" : string.Join(", ", surprises));
                 }
@@ -503,9 +506,14 @@ namespace PlanetTrader.Client
                     GUILayout.Label($"Цена {Fmt.Money(price)} ({note}). Реестр считает цену по своей оценке запаса.", _text);
                     if (p.Mine == MineState.None)
                         GUILayout.Label($"Потом шахта: {Fmt.Money(p.Type.MineCost)} и {b.MineBuildTurns} хода постройки.", _small);
-                    string blind = silhouette ? " вслепую" : exact ? "" : " по оценке";
-                    if (ActionButton($"Купить{blind} за {Fmt.Money(price)} · 1 действие", g.ActionsLeft > 0 && g.Money >= price))
-                        Act(() => g.BuyPlanet(p.Id), $"Куплена планета {p.Type.Name} #{p.Id} за {Fmt.Money(price)}.");
+                    if (p.Inhabited && !silhouette)
+                        DrawNegotiation(p);
+                    else
+                    {
+                        string blind = silhouette ? " вслепую" : exact ? "" : " по оценке";
+                        if (ActionButton($"Купить{blind} за {Fmt.Money(price)} · 1 действие", g.ActionsLeft > 0 && g.Money >= price))
+                            Act(() => g.BuyPlanet(p.Id), $"Куплена планета {p.Type.Name} #{p.Id} за {Fmt.Money(price)}.");
+                    }
                     DrawExploreButtons(p);
                     break;
 
@@ -518,6 +526,7 @@ namespace PlanetTrader.Client
                     }
                     if (p.IsDepleted)
                         GUILayout.Label("Планета выработана, но содержание за неё идёт. Продайте её, чтобы от него избавиться.", _text);
+                    if (p.Inhabited) DrawPeople(p);
                     double sale = g.SalePrice(p);
                     if (ActionButton($"Продать за {Fmt.Money(sale)} (комиссия {Fmt.Percent(b.ResaleCommission)}) · 1 действие", g.ActionsLeft > 0))
                         Act(() => g.SellPlanet(p.Id), $"Продана планета {p.Type.Name} #{p.Id} за {Fmt.Money(sale)}.");
@@ -528,6 +537,113 @@ namespace PlanetTrader.Client
                     DrawExploreButtons(p);
                     break;
             }
+        }
+
+        static readonly double[] OfferShares = { 0.8, 0.9, 1.0, 1.1 };
+
+        /// <summary>Торг с жителями: несколько цен с шансом согласия и сделка «за школу».</summary>
+        void DrawNegotiation(Planet p)
+        {
+            var g = _game;
+            if (g.Turn < p.NoTalksUntilTurn)
+            {
+                GUILayout.Label($"Жители обиделись после отказа и не разговаривают до хода {p.NoTalksUntilTurn}.", _text);
+                return;
+            }
+            GUILayout.Label("Планету продают сами жители. Чем щедрее предложение, тем охотнее согласятся и тем выше будет их лояльность. Отказ тратит действие.", _small);
+            var offers = OfferShares.Select(x => new Offer(x)).ToList();
+            offers.Add(new Offer(1, withSchool: true));
+            foreach (var o in offers)
+            {
+                double cost = g.OfferCost(p, o);
+                string what = o.WithSchool
+                    ? $"Сделка «за школу»: {Fmt.Money(g.OfferPrice(p, o))} + школа {Fmt.Money(g.Balance.SchoolCost)}"
+                    : $"Предложить {Fmt.Percent(o.PriceShare)} цены: {Fmt.Money(cost)}";
+                string text = $"{what} · согласятся с шансом {Fmt.Percent(g.OfferChance(p, o))}";
+                var offer = o;
+                int id = p.Id;
+                if (ActionButton(text, g.ActionsLeft > 0 && g.Money >= cost))
+                    Later(() =>
+                    {
+                        if (Do(g.MakeOffer(id, offer, out bool accepted)) && accepted)
+                            Log($"Сделка с жителями #{id}: планета ваша за {Fmt.Money(g.OfferPrice(g.GetPlanet(id), offer))}.");
+                    });
+            }
+        }
+
+        /// <summary>Лояльность, налог, зарплаты, праздник, школа и просьбы жителей своей планеты.</summary>
+        void DrawPeople(Planet p)
+        {
+            var g = _game;
+            var b = g.Balance;
+            GUILayout.Space(8);
+            GUILayout.Label("Жители", _header);
+            double delta = g.LoyaltyChangePerTurn(p);
+            string trend = delta >= 0 ? $"<color=#7be38b>+{Fmt.Amount(delta)}</color>" : $"<color=#ff8a7a>{Fmt.Amount(delta)}</color>";
+            Line("Лояльность", $"{Mathf.RoundToInt((float)p.Loyalty)} из 100, за ход {trend}");
+            DrawBar((float)(p.Loyalty / 100));
+            if (p.OnStrike)
+                GUILayout.Label($"<color=#ff8a7a>Забастовка: ни добычи, ни налогов, пока лояльность не поднимется до {Fmt.Amount(b.StrikeEndsAt)}.</color>", _text);
+            else
+                GUILayout.Label($"Ниже {Fmt.Amount(b.StrikeBelow)} — забастовка. Шахта снижает лояльность на {Fmt.Amount(b.LoyaltyMiningDrain)} за ход.", _small);
+
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("Налог", _text, GUILayout.Width(80));
+            var taxNames = new[]
+            {
+                "нет",
+                $"низкий +{Fmt.Money(b.TaxIncome[1])} ({Fmt.Amount(b.TaxLoyalty[1])})",
+                $"высокий +{Fmt.Money(b.TaxIncome[2])} ({Fmt.Amount(b.TaxLoyalty[2])})",
+            };
+            int tax = GUILayout.Toolbar((int)p.Tax, taxNames, _button, GUILayout.Height(30));
+            if (tax != (int)p.Tax)
+            {
+                int id = p.Id;
+                Later(() => Do(g.SetTax(id, (TaxLevel)tax)));
+            }
+            GUILayout.EndHorizontal();
+
+            bool wages = GUILayout.Toggle(p.PaysWages, $" Платить зарплаты: {Fmt.Money(b.WagesCost)} за ход, лояльность +{Fmt.Amount(b.WagesLoyalty)} за ход", _text);
+            if (wages != p.PaysWages)
+            {
+                int id = p.Id;
+                Later(() => Do(g.SetWages(id, wages)));
+            }
+
+            if (ActionButton($"Праздник за {Fmt.Money(b.FestivalCost)}: лояльность +{Fmt.Amount(b.FestivalLoyalty)} · 1 действие", g.ActionsLeft > 0 && g.Money >= b.FestivalCost))
+                Act(() => g.HoldFestival(p.Id), $"Праздник на {p.Type.Name} #{p.Id}.");
+            if (!p.HasSchool && ActionButton($"Построить школу за {Fmt.Money(b.SchoolCost)}: +{Fmt.Amount(b.SchoolLoyalty)} лояльности каждый ход · 1 действие",
+                    g.ActionsLeft > 0 && g.Money >= b.SchoolCost))
+                Act(() => g.BuildSchool(p.Id), $"Построена школа на {p.Type.Name} #{p.Id}.");
+            if (p.HasSchool) GUILayout.Label("Школа построена.", _small);
+
+            foreach (var r in g.Requests.Where(r => r.PlanetId == p.Id).ToList())
+                DrawRequest(r, p);
+        }
+
+        void DrawRequest(ResidentRequest r, Planet p)
+        {
+            var g = _game;
+            var b = g.Balance;
+            int left = r.DeadlineTurn - g.Turn;
+            GUILayout.BeginVertical(GUI.skin.box);
+            if (r.Kind == RequestKind.School)
+            {
+                GUILayout.Label($"<b>{p.Type.Name} #{p.Id}</b>: жители просят школу. Осталось ходов: {left}. " +
+                                $"Выполните — лояльность +{Fmt.Amount(b.RequestLoyaltyReward)}, нет — −{Fmt.Amount(b.RequestLoyaltyPenalty)}.", _small);
+                if (ActionButton($"Построить школу за {Fmt.Money(b.SchoolCost)} · 1 действие", g.ActionsLeft > 0 && g.Money >= b.SchoolCost))
+                    Act(() => g.BuildSchool(p.Id), $"Построена школа на {p.Type.Name} #{p.Id}.");
+            }
+            else
+            {
+                double have = g.Stock(r.Resource);
+                GUILayout.Label($"<b>{p.Type.Name} #{p.Id}</b>: жители просят {Fmt.Amount(r.Amount)} ({r.Resource.RuName()}). Осталось ходов: {left}. " +
+                                $"На складе {Fmt.Amount(have)}. Выполните — лояльность +{Fmt.Amount(b.RequestLoyaltyReward)}, нет — −{Fmt.Amount(b.RequestLoyaltyPenalty)}.", _small);
+                int id = r.Id;
+                if (ActionButton("Отдать со склада биржи", have >= r.Amount))
+                    Act(() => g.FulfillRequest(id), "Просьба жителей выполнена.");
+            }
+            GUILayout.EndVertical();
         }
 
         /// <summary>Кнопки полной разведки — по одной на тип зонда, с ценой и сроком.</summary>
@@ -617,6 +733,17 @@ namespace PlanetTrader.Client
         void DrawOrdersTab()
         {
             var g = _game;
+            if (g.Requests.Count > 0)
+            {
+                GUILayout.Label("Просьбы жителей", _header);
+                foreach (var r in g.Requests.ToList())
+                {
+                    var p = g.GetPlanet(r.PlanetId);
+                    if (p != null) DrawRequest(r, p);
+                }
+                GUILayout.Space(10);
+                GUILayout.Label("Заказы", _header);
+            }
             if (g.Orders.Count == 0)
             {
                 GUILayout.Label("Заказов пока нет. Новые появляются примерно каждые два хода.", _text);
@@ -700,7 +827,9 @@ namespace PlanetTrader.Client
             Line("Проценты", Fmt.Money(g.Debt * b.InterestPerTurn));
             Line("Страховка", Fmt.Money(g.InsurancePerTurn));
             Line("Доставка на биржу", Fmt.Money(g.ShippingPerTurn));
+            Line("Зарплаты жителям", Fmt.Money(g.WagesPerTurn));
             Line("<b>Итого</b>", $"<b>{Fmt.Money(g.CostsPerTurn)}</b>");
+            Line("Налоги с жителей", $"+{Fmt.Money(g.TaxesPerTurn)} за ход");
         }
 
         // ------------------------------------------------------------------

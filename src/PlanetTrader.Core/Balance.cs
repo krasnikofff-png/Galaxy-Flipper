@@ -132,6 +132,38 @@ namespace PlanetTrader.Core
         public double RuinsMaxValue = 1200;
         public double InhabitedChance = 0.20;
 
+        // --- Жители (этап 4, всё — допущения) ---
+        /// <summary>Работающая шахта каждый ход снижает лояльность: выкачивание ресурсов.</summary>
+        public double LoyaltyMiningDrain = 2;
+        /// <summary>Налог за ход по уровням None, Low, High.</summary>
+        public double[] TaxIncome = { 0, 35, 80 };
+        /// <summary>Как налог меняет лояльность за ход по уровням None, Low, High.</summary>
+        public double[] TaxLoyalty = { 0, -1, -3 };
+        public double SchoolCost = 600;
+        public double SchoolLoyalty = 2;
+        public double WagesCost = 30;
+        public double WagesLoyalty = 2;
+        public double FestivalCost = 250;
+        public double FestivalLoyalty = 15;
+        /// <summary>Ниже — забастовка: ни добычи, ни налогов.</summary>
+        public double StrikeBelow = 30;
+        /// <summary>Забастовка кончается, когда лояльность поднимется до этого уровня.</summary>
+        public double StrikeEndsAt = 40;
+        public double RequestChancePerPlanet = 0.10;
+        public int RequestTurns = 5;
+        public double RequestLoyaltyReward = 20;
+        public double RequestLoyaltyPenalty = 10;
+        /// <summary>Шанс, что жители примут предложение, в зависимости от доли цены: 80% → 20%, 100% → 60%, 110% → 80%.</summary>
+        public double OfferChanceAtFullPrice = 0.60;
+        public double OfferChancePerShare = 2.0;
+        /// <summary>Сделка «за школу»: доля цены и шанс согласия.</summary>
+        public double SchoolDealShare = 0.75;
+        public double SchoolDealChance = 0.70;
+        /// <summary>Лояльность после покупки: 60 при полной цене, ±10 за каждые 10% цены.</summary>
+        public double LoyaltyAfterFairDeal = 60;
+        public double LoyaltyAfterSchoolDeal = 70;
+        public int RefusalCooldownTurns = 3;
+
         // --- Карта и доставка (допущения) ---
         /// <summary>Где на карте галактическая биржа.</summary>
         public double ExchangeX = 0.5, ExchangeY = 0.5;

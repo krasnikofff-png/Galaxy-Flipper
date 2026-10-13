@@ -30,12 +30,16 @@ namespace PlanetTrader.Core
         public double InsurancePayout;
         /// <summary>Доставка добытого на биржу.</summary>
         public double Shipping;
+        /// <summary>Зарплаты жителям.</summary>
+        public double Wages;
+        /// <summary>Налоги с жителей (доход).</summary>
+        public double Taxes;
         public int Accidents;
         /// <summary>Сколько планет забрали коллекторы.</summary>
         public int Seizures;
         public readonly List<string> Events = new List<string>();
 
-        public double TotalCosts => Upkeep + Salaries + Interest + Insurance + Shipping;
+        public double TotalCosts => Upkeep + Salaries + Interest + Insurance + Shipping + Wages;
     }
 
     /// <summary>
@@ -62,10 +66,12 @@ namespace PlanetTrader.Core
         readonly List<Order> _orders = new List<Order>();
         readonly List<Probe> _probes = new List<Probe>();
         readonly List<Shipment> _shipments = new List<Shipment>();
+        readonly List<ResidentRequest> _requests = new List<ResidentRequest>();
         readonly double[] _stock = new double[ResourceTypes.Count];
         int _nextPlanetId;
         int _nextOrderId;
         int _nextProbeId;
+        int _nextRequestId;
 
         /// <summary>
         /// Сообщения о том, что случилось во время действий игрока (например, нашлись руины при покупке).
@@ -89,6 +95,7 @@ namespace PlanetTrader.Core
         public IReadOnlyList<Order> Orders => _orders;
         public IReadOnlyList<Probe> Probes => _probes;
         public IReadOnlyList<Shipment> Shipments => _shipments;
+        public IReadOnlyList<ResidentRequest> Requests => _requests;
         public IEnumerable<Planet> PlayerPlanets => _planets.Where(p => p.Owner == Owner.Player);
         public int PlayerPlanetCount => _planets.Count(p => p.Owner == Owner.Player);
 
@@ -277,8 +284,13 @@ namespace PlanetTrader.Core
 
         public double InsurancePerTurn => Insured ? Balance.InsuranceRate * PlanetsValue : 0;
 
+        public double WagesPerTurn => PlayerPlanets.Count(p => p.Inhabited && p.PaysWages) * Balance.WagesCost;
+
+        /// <summary>Налоги за ход с небастующих планет.</summary>
+        public double TaxesPerTurn => PlayerPlanets.Where(p => p.Inhabited && !p.OnStrike).Sum(p => Balance.TaxIncome[(int)p.Tax]);
+
         public double CostsPerTurn =>
-            UpkeepPerTurn + Managers * Balance.ManagerSalary + Debt * Balance.InterestPerTurn + InsurancePerTurn + ShippingPerTurn;
+            UpkeepPerTurn + Managers * Balance.ManagerSalary + Debt * Balance.InterestPerTurn + InsurancePerTurn + ShippingPerTurn + WagesPerTurn;
 
         // ------------------------------------------------------------------
         // Действия, которые тратят очки действий
@@ -297,11 +309,22 @@ namespace PlanetTrader.Core
             var p = GetPlanet(planetId);
             if (p == null || p.Owner != Owner.Registry) return ActionResult.Fail("Планета не продаётся");
             if (p.IsDepleted) return ActionResult.Fail("Планета выработана");
+            if (p.Inhabited)
+            {
+                if (p.Knowledge == Knowledge.Silhouette) p.Knowledge = Knowledge.Scanned;
+                return ActionResult.Fail("Планета обитаема: её продают сами жители, сделайте им предложение");
+            }
             double price = p.ListPrice(Balance);
             if (Money < price) return ActionResult.Fail("Не хватает денег");
             var a = SpendAction();
             if (!a.Ok) return a;
 
+            Acquire(p, price);
+            return ActionResult.Success;
+        }
+
+        void Acquire(Planet p, double price)
+        {
             Money -= price;
             p.Owner = Owner.Player;
             p.BoughtOnTurn = Turn;
@@ -313,7 +336,213 @@ namespace PlanetTrader.Core
                 Notices.Add(DescribeExploration(p));
             }
             LootRuins(p, Notices);
+        }
+
+        // ------------------------------------------------------------------
+        // Жители
+        // ------------------------------------------------------------------
+
+        public double OfferPrice(Planet p, Offer o) =>
+            Math.Round(p.ListPrice(Balance) * (o.WithSchool ? Balance.SchoolDealShare : o.PriceShare));
+
+        /// <summary>Сколько денег нужно на сделку: цена и, если обещана школа, её постройка.</summary>
+        public double OfferCost(Planet p, Offer o) => OfferPrice(p, o) + (o.WithSchool ? Balance.SchoolCost : 0);
+
+        public double OfferChance(Planet p, Offer o)
+        {
+            if (o.WithSchool) return Balance.SchoolDealChance;
+            double chance = Balance.OfferChanceAtFullPrice + (o.PriceShare - 1) * Balance.OfferChancePerShare;
+            return Math.Min(0.95, Math.Max(0.05, chance));
+        }
+
+        /// <summary>
+        /// Предложение жителям, которые продают свою планету. Тратит действие, даже если откажут.
+        /// После отказа жители несколько ходов не разговаривают.
+        /// </summary>
+        public ActionResult MakeOffer(int planetId, Offer offer, out bool accepted)
+        {
+            accepted = false;
+            var p = GetPlanet(planetId);
+            if (p == null || p.Owner != Owner.Registry) return ActionResult.Fail("Планета не продаётся");
+            if (!p.Inhabited) return ActionResult.Fail("Планета необитаема, её продаёт реестр");
+            if (p.IsDepleted) return ActionResult.Fail("Планета выработана");
+            if (Turn < p.NoTalksUntilTurn) return ActionResult.Fail($"Жители обиделись и не разговаривают до хода {p.NoTalksUntilTurn}");
+            if (Money < OfferCost(p, offer)) return ActionResult.Fail("Не хватает денег");
+            var a = SpendAction();
+            if (!a.Ok) return a;
+
+            if (!_rng.Chance(OfferChance(p, offer)))
+            {
+                p.NoTalksUntilTurn = Turn + Balance.RefusalCooldownTurns;
+                Notices.Add($"Жители {p.Type.Name} #{p.Id} отказались и не будут разговаривать до хода {p.NoTalksUntilTurn}.");
+                return ActionResult.Success;
+            }
+
+            accepted = true;
+            Acquire(p, OfferPrice(p, offer));
+            if (offer.WithSchool)
+            {
+                Money -= Balance.SchoolCost;
+                p.Invested += Balance.SchoolCost;
+                p.HasSchool = true;
+                p.Loyalty = Balance.LoyaltyAfterSchoolDeal;
+            }
+            else
+                p.Loyalty = Clamp(Balance.LoyaltyAfterFairDeal + (offer.PriceShare - 1) * 100);
+            p.OnStrike = false;
+            Notices.Add($"Жители {p.Type.Name} #{p.Id} согласились. Лояльность {Math.Round(p.Loyalty)}.");
             return ActionResult.Success;
+        }
+
+        static double Clamp(double loyalty) => Math.Min(100, Math.Max(0, loyalty));
+
+        Planet OwnInhabited(int planetId, out ActionResult error)
+        {
+            var p = GetPlanet(planetId);
+            error = ActionResult.Success;
+            if (p == null || p.Owner != Owner.Player) error = ActionResult.Fail("Это не ваша планета");
+            else if (!p.Inhabited) error = ActionResult.Fail("На планете нет жителей");
+            return error.Ok ? p : null;
+        }
+
+        public ActionResult SetTax(int planetId, TaxLevel tax)
+        {
+            var p = OwnInhabited(planetId, out var error);
+            if (p == null) return error;
+            p.Tax = tax;
+            return ActionResult.Success;
+        }
+
+        public ActionResult SetWages(int planetId, bool on)
+        {
+            var p = OwnInhabited(planetId, out var error);
+            if (p == null) return error;
+            p.PaysWages = on;
+            return ActionResult.Success;
+        }
+
+        /// <summary>Праздник: разово поднимает лояльность.</summary>
+        public ActionResult HoldFestival(int planetId)
+        {
+            var p = OwnInhabited(planetId, out var error);
+            if (p == null) return error;
+            if (Money < Balance.FestivalCost) return ActionResult.Fail("Не хватает денег");
+            var a = SpendAction();
+            if (!a.Ok) return a;
+            Money -= Balance.FestivalCost;
+            p.Earned -= Balance.FestivalCost;
+            p.Loyalty = Clamp(p.Loyalty + Balance.FestivalLoyalty);
+            return ActionResult.Success;
+        }
+
+        /// <summary>Школа: навсегда добавляет лояльности каждый ход.</summary>
+        public ActionResult BuildSchool(int planetId)
+        {
+            var p = OwnInhabited(planetId, out var error);
+            if (p == null) return error;
+            if (p.HasSchool) return ActionResult.Fail("Школа уже есть");
+            if (Money < Balance.SchoolCost) return ActionResult.Fail("Не хватает денег");
+            var a = SpendAction();
+            if (!a.Ok) return a;
+            Money -= Balance.SchoolCost;
+            p.Invested += Balance.SchoolCost;
+            p.HasSchool = true;
+            foreach (var r in _requests.Where(r => r.PlanetId == p.Id && r.Kind == RequestKind.School).ToList())
+                CompleteRequest(r, p, Notices);
+            return ActionResult.Success;
+        }
+
+        /// <summary>Выполнить просьбу жителей: ресурс берётся со склада биржи, доставка бесплатна.</summary>
+        public ActionResult FulfillRequest(int requestId)
+        {
+            var r = _requests.FirstOrDefault(x => x.Id == requestId);
+            if (r == null) return ActionResult.Fail("Просьбы нет");
+            var p = GetPlanet(r.PlanetId);
+            if (r.Kind == RequestKind.School) return ActionResult.Fail("Жители просят школу — постройте её на планете");
+            if (_stock[(int)r.Resource] + 1e-9 < r.Amount) return ActionResult.Fail("Не хватает ресурса на складе биржи");
+            _stock[(int)r.Resource] -= r.Amount;
+            CompleteRequest(r, p, Notices);
+            return ActionResult.Success;
+        }
+
+        void CompleteRequest(ResidentRequest r, Planet p, List<string> events)
+        {
+            _requests.Remove(r);
+            p.Loyalty = Clamp(p.Loyalty + Balance.RequestLoyaltyReward);
+            events.Add($"Жители {p.Type.Name} #{p.Id} довольны: просьба выполнена, лояльность {Math.Round(p.Loyalty)}.");
+        }
+
+        /// <summary>Как изменится лояльность за ход: налог, выкачивание ресурсов, школа, зарплаты.</summary>
+        public double LoyaltyChangePerTurn(Planet p)
+        {
+            var b = Balance;
+            double delta = b.TaxLoyalty[(int)p.Tax];
+            if (p.Mine == MineState.Working && !p.IsDepleted && !p.OnStrike) delta -= b.LoyaltyMiningDrain;
+            if (p.HasSchool) delta += b.SchoolLoyalty;
+            if (p.PaysWages) delta += b.WagesLoyalty;
+            return delta;
+        }
+
+        /// <summary>Налоги, зарплаты, лояльность, забастовки и просьбы жителей за ход.</summary>
+        void UpdatePeople(TurnReport report)
+        {
+            var b = Balance;
+            foreach (var p in PlayerPlanets.Where(x => x.Inhabited))
+            {
+                if (!p.OnStrike)
+                {
+                    double tax = b.TaxIncome[(int)p.Tax];
+                    Money += tax;
+                    p.Earned += tax;
+                    report.Taxes += tax;
+                }
+                if (p.PaysWages)
+                {
+                    report.Wages += b.WagesCost;
+                    p.Earned -= b.WagesCost;
+                }
+
+                p.Loyalty = Clamp(p.Loyalty + LoyaltyChangePerTurn(p));
+
+                if (!p.OnStrike && p.Loyalty < b.StrikeBelow)
+                {
+                    p.OnStrike = true;
+                    report.Events.Add($"Забастовка на {p.Type.Name} #{p.Id}: лояльность {Math.Round(p.Loyalty)}, добычи и налогов нет.");
+                }
+                else if (p.OnStrike && p.Loyalty >= b.StrikeEndsAt)
+                {
+                    p.OnStrike = false;
+                    report.Events.Add($"Забастовка на {p.Type.Name} #{p.Id} закончилась.");
+                }
+            }
+
+            foreach (var r in _requests.Where(r => r.DeadlineTurn <= Turn).ToList())
+            {
+                _requests.Remove(r);
+                var p = GetPlanet(r.PlanetId);
+                if (p == null || p.Owner != Owner.Player) continue;
+                p.Loyalty = Clamp(p.Loyalty - b.RequestLoyaltyPenalty);
+                report.Events.Add($"Жители {p.Type.Name} #{p.Id} обижены: просьбу не выполнили, лояльность {Math.Round(p.Loyalty)}.");
+            }
+
+            foreach (var p in PlayerPlanets.Where(x => x.Inhabited).ToList())
+            {
+                if (_requests.Any(r => r.PlanetId == p.Id) || !_rng.Chance(b.RequestChancePerPlanet)) continue;
+                var r = new ResidentRequest { Id = _nextRequestId++, PlanetId = p.Id, DeadlineTurn = Turn + b.RequestTurns };
+                if (!p.HasSchool && _rng.Chance(0.3))
+                {
+                    r.Kind = RequestKind.School;
+                    report.Events.Add($"Жители {p.Type.Name} #{p.Id} просят построить школу за {b.RequestTurns} ходов.");
+                }
+                else
+                {
+                    r.Kind = RequestKind.Resource;
+                    r.Resource = ResourceTypes.All[_rng.Range(0, ResourceTypes.Count)];
+                    r.Amount = Math.Max(5, Math.Round(b.TypeOf(r.Resource).OutputPerTurn * _rng.Range(1.0, 3.0) / 5) * 5);
+                    report.Events.Add($"Жители {p.Type.Name} #{p.Id} просят {r.Amount} ({r.Resource.RuName()}) за {b.RequestTurns} ходов.");
+                }
+                _requests.Add(r);
+            }
         }
 
         public ActionResult BuildMine(int planetId)
@@ -354,6 +583,11 @@ namespace PlanetTrader.Core
         {
             p.Owner = Owner.Registry;
             p.FoundByProbe = false;
+            p.Tax = TaxLevel.None;
+            p.PaysWages = false;
+            p.OnStrike = false;
+            p.Loyalty = 50;
+            _requests.RemoveAll(r => r.PlanetId == p.Id);
         }
 
         // ------------------------------------------------------------------
@@ -479,7 +713,7 @@ namespace PlanetTrader.Core
             string line = $"Разведка {p.Type.Name} #{p.Id}: запас {Math.Round(p.Reserve)}, реестр оценивал в {Math.Round(p.EstimatedReserve)}";
             if (p.Reserve < 0.6 * p.EstimatedReserve) line += " — подвох, реестр сильно завысил запас";
             if (p.HasUnlootedRuins) line += $"; руины с артефактами на {Math.Round(p.RuinsValue)}";
-            if (p.Inhabited) line += "; планета обитаема";
+            if (p.Inhabited) line += "; планета обитаема, продают её сами жители";
             return line + ".";
         }
 
@@ -568,12 +802,14 @@ namespace PlanetTrader.Core
             ProducePlayer(report);
             ProduceAi();
             DeliverShipments();
+            UpdatePeople(report);
 
             // Расходы считаются по состоянию на конец хода. Доставка уже посчитана при добыче.
             report.Upkeep = UpkeepPerTurn;
             report.Salaries = Managers * Balance.ManagerSalary;
             report.Interest = Debt * Balance.InterestPerTurn;
             report.Insurance = InsurancePerTurn;
+            // Зарплаты жителям уже посчитаны в UpdatePeople.
             double multiplier = Balance.UpkeepMultiplier(UpkeepCurvePlanets);
             foreach (var p in PlayerPlanets)
                 p.Earned -= p.BaseUpkeep(Balance) * multiplier;
@@ -601,7 +837,7 @@ namespace PlanetTrader.Core
                     if (--p.BuildTurnsLeft <= 0) p.Mine = MineState.Working;
                     continue;
                 }
-                if (p.Mine != MineState.Working || p.IsDepleted) continue;
+                if (p.Mine != MineState.Working || p.IsDepleted || p.OnStrike) continue;
 
                 if (p.AccidentTurnsLeft == 0 && _rng.Chance(Balance.AccidentChance))
                 {

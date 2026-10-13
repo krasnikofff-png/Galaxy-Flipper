@@ -15,12 +15,16 @@ namespace PlanetTrader.Sim
         public bool UsesCredit;
         /// <summary>Перед покупкой полностью разведывает планету зондом, а не верит оценке реестра.</summary>
         public bool Explores;
+        /// <summary>Следит за лояльностью жителей: налоги по настроению, праздники, школы, просьбы.</summary>
+        public bool CaresForPeople;
 
-        public static readonly Strategy Passive = new Strategy { Name = "Пассивный", Explores = true };
-        public static readonly Strategy Active = new Strategy { Name = "Активный", SellsSpentPlanets = true, Explores = true };
-        public static readonly Strategy ActiveCredit = new Strategy { Name = "Активный + кредит", SellsSpentPlanets = true, UsesCredit = true, Explores = true };
+        public static readonly Strategy Passive = new Strategy { Name = "Пассивный", Explores = true, CaresForPeople = true };
+        public static readonly Strategy Active = new Strategy { Name = "Активный", SellsSpentPlanets = true, Explores = true, CaresForPeople = true };
+        public static readonly Strategy ActiveCredit = new Strategy { Name = "Активный + кредит", SellsSpentPlanets = true, UsesCredit = true, Explores = true, CaresForPeople = true };
         /// <summary>Для проверки, окупается ли разведка: тот же активный, но покупает по оценке реестра.</summary>
-        public static readonly Strategy ActiveNoScouting = new Strategy { Name = "Активный без разведки", SellsSpentPlanets = true };
+        public static readonly Strategy ActiveNoScouting = new Strategy { Name = "Активный без разведки", SellsSpentPlanets = true, CaresForPeople = true };
+        /// <summary>Для проверки этапа 4: тот же активный, но жителей не замечает.</summary>
+        public static readonly Strategy ActiveIgnoresPeople = new Strategy { Name = "Активный, жители побоку", SellsSpentPlanets = true, Explores = true };
 
         public static readonly Strategy[] All = { Passive, Active, ActiveCredit };
     }
@@ -58,6 +62,7 @@ namespace PlanetTrader.Sim
             _ranOutOfActions = false;
 
             FulfillOrders(g);
+            if (_s.CaresForPeople) ManagePeople(g);
             SellResources(g);
             if (_s.SellsSpentPlanets) SellSpentPlanets(g);
             BuildMines(g);
@@ -67,6 +72,34 @@ namespace PlanetTrader.Sim
         }
 
         static double Buffer(Game g) => CashBufferTurns * g.CostsPerTurn;
+
+        /// <summary>Что бот предлагает жителям: заботливый — сделку за школу, если хватает денег, иначе 90% цены.</summary>
+        Offer OfferFor(Game g, Planet p)
+        {
+            if (!_s.CaresForPeople) return new Offer(1.0);
+            var school = new Offer(1.0, withSchool: true);
+            return g.OfferCost(p, school) + Buffer(g) <= g.Money ? school : new Offer(0.9);
+        }
+
+        /// <summary>Налог по настроению, праздник при низкой лояльности, школа на долгоживущих планетах, просьбы.</summary>
+        void ManagePeople(Game g)
+        {
+            var b = g.Balance;
+            foreach (var r in g.Requests.ToList())
+            {
+                var p = g.GetPlanet(r.PlanetId);
+                if (r.Kind == RequestKind.Resource && g.Stock(r.Resource) >= r.Amount) g.FulfillRequest(r.Id);
+                else if (r.Kind == RequestKind.School && g.ActionsLeft > 0 && g.Money - b.SchoolCost >= Buffer(g)) g.BuildSchool(p.Id);
+            }
+            foreach (var p in g.PlayerPlanets.Where(x => x.Inhabited).ToList())
+            {
+                g.SetTax(p.Id, p.Loyalty >= 70 ? TaxLevel.High : p.Loyalty >= 50 ? TaxLevel.Low : TaxLevel.None);
+                if (!p.HasSchool && p.RemainingTurns > 15 && g.ActionsLeft > 0 && g.Money - b.SchoolCost >= Buffer(g))
+                    g.BuildSchool(p.Id);
+                if ((p.Loyalty < 45 || p.OnStrike) && g.ActionsLeft > 0 && g.Money - b.FestivalCost >= Buffer(g))
+                    g.HoldFestival(p.Id);
+            }
+        }
 
         static double IncomePerTurn(Game g) =>
             g.PlayerPlanets.Where(p => p.Mine == MineState.Working && !p.IsDepleted)
@@ -138,6 +171,8 @@ namespace PlanetTrader.Sim
             double shipping = g.ShippingCost(p.Resource, p.Type.OutputPerTurn, g.DistanceToExchange(p));
             double bonus = p.Knowledge == Knowledge.Explored && p.HasUnlootedRuins ? p.RuinsValue : 0;
             double cost = p.ListPrice(b) + (p.Mine == MineState.None ? p.Type.MineCost : 0);
+            // У обитаемых планет ещё и налог; заботливый бот рассчитывает на низкий.
+            if (p.Inhabited) net += b.TaxIncome[(int)TaxLevel.Low];
             return ((net - shipping) * known.Value / p.Type.OutputPerTurn + bonus) / cost;
         }
 
@@ -158,7 +193,7 @@ namespace PlanetTrader.Sim
                 double pickRatio = 0;
                 foreach (var p in g.PlanetsForSale)
                 {
-                    if (skip.Contains(p.Id)) continue;
+                    if (skip.Contains(p.Id) || (p.Inhabited && g.Turn < p.NoTalksUntilTurn)) continue;
                     double ratio = PaybackRatio(g, p);
                     if (ratio < MinPaybackRatio) continue;
                     anyGood = true;
@@ -186,7 +221,13 @@ namespace PlanetTrader.Sim
                 double shortfall = FullCost(g, pick) + Buffer(g) - g.Money;
                 if (shortfall > 0) g.TakeLoan(Math.Min(shortfall, g.AvailableCredit));
 
-                g.BuyPlanet(pick.Id);
+                if (pick.Inhabited)
+                {
+                    g.MakeOffer(pick.Id, OfferFor(g, pick), out bool accepted);
+                    if (!accepted) continue;
+                }
+                else
+                    g.BuyPlanet(pick.Id);
                 if (g.ActionsLeft == 0) break;
                 if (pick.Mine == MineState.None) g.BuildMine(pick.Id);
             }
@@ -270,8 +311,8 @@ namespace PlanetTrader.Sim
             return g.LaunchScan(bestType, bestX, bestY).Ok;
         }
 
-        static double FullCost(Game g, Planet p) =>
-            p.ListPrice(g.Balance) + (p.Mine == MineState.None ? p.Type.MineCost : 0);
+        double FullCost(Game g, Planet p) =>
+            (p.Inhabited ? g.OfferCost(p, OfferFor(g, p)) : p.ListPrice(g.Balance)) + (p.Mine == MineState.None ? p.Type.MineCost : 0);
 
         void ManageDebt(Game g)
         {

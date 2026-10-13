@@ -45,8 +45,16 @@ namespace PlanetTrader.Core
         /// <summary>Руины: разовая находка, достаётся владельцу разведанной планеты. 0 — руин нет.</summary>
         public double RuinsValue;
         public bool RuinsLooted;
-        /// <summary>Есть жители. Пока только отметка: лояльность появится на этапе 4.</summary>
+        /// <summary>Есть жители: у планеты лояльность, налоги, забастовки, а продают её сами жители.</summary>
         public bool Inhabited;
+        /// <summary>Лояльность жителей к владельцу, 0–100.</summary>
+        public double Loyalty = 50;
+        public TaxLevel Tax;
+        public bool HasSchool;
+        public bool PaysWages;
+        public bool OnStrike;
+        /// <summary>До какого хода жители не хотят разговаривать после отказа.</summary>
+        public int NoTalksUntilTurn;
 
         public Planet(int id, PlanetType type, double reserve)
         {

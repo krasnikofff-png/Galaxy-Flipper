@@ -472,3 +472,173 @@ public class ExplorationTests
         Assert.DoesNotContain(o, g.Orders);
     }
 }
+
+public class PeopleTests
+{
+    static Balance Quiet() => new Balance
+    {
+        AccidentChance = 0,
+        AiBuyChance = 0,
+        AiResaleChance = 0,
+        OrderChancePerTurn = 0,
+        DiscoveryChancePerTurn = 0,
+        MarketNoise = 0,
+        StartMoney = 100_000,
+        RequestChancePerPlanet = 0,
+        ShipSpeed = 100,
+        ShippingCostPerDistance = 0,
+    };
+
+    /// <summary>Покупает обитаемую планету с работающей шахтой по честной цене (жители точно согласны).</summary>
+    static Planet BuyInhabited(Game g)
+    {
+        var p = g.PlanetsForSale.First();
+        p.Inhabited = true;
+        p.Mine = MineState.Working;
+        p.RuinsValue = 0;
+        g.Balance.OfferChanceAtFullPrice = 1;
+        Assert.True(g.MakeOffer(p.Id, new Offer(1.0), out bool accepted).Ok);
+        Assert.True(accepted);
+        return p;
+    }
+
+    [Fact]
+    public void InhabitedPlanetIsNotSoldByRegistry()
+    {
+        var g = Game.New(Quiet(), 4);
+        var p = g.PlanetsForSale.First();
+        p.Inhabited = true;
+        Assert.False(g.BuyPlanet(p.Id).Ok);
+        Assert.Equal(Owner.Registry, p.Owner);
+    }
+
+    [Fact]
+    public void FairDealGivesStartingLoyalty()
+    {
+        var b = Quiet();
+        var g = Game.New(b, 4);
+        var p = BuyInhabited(g);
+        Assert.Equal(Owner.Player, p.Owner);
+        Assert.Equal(b.LoyaltyAfterFairDeal, p.Loyalty);
+    }
+
+    [Fact]
+    public void OfferChanceGrowsWithPrice()
+    {
+        var b = new Balance();
+        var g = Game.New(b, 4);
+        var p = g.PlanetsForSale.First();
+        Assert.Equal(0.2, g.OfferChance(p, new Offer(0.8)), 6);
+        Assert.Equal(0.6, g.OfferChance(p, new Offer(1.0)), 6);
+        Assert.Equal(0.8, g.OfferChance(p, new Offer(1.1)), 6);
+        Assert.Equal(b.SchoolDealChance, g.OfferChance(p, new Offer(1, withSchool: true)), 6);
+    }
+
+    [Fact]
+    public void RefusalBlocksTalksForAWhile()
+    {
+        for (ulong seed = 1; seed < 50; seed++)
+        {
+            var g = Game.New(Quiet(), seed);
+            var p = g.PlanetsForSale.First();
+            p.Inhabited = true;
+            Assert.True(g.MakeOffer(p.Id, new Offer(0.8), out bool accepted).Ok);
+            if (accepted) continue;
+            Assert.Equal(Owner.Registry, p.Owner);
+            Assert.False(g.MakeOffer(p.Id, new Offer(1.1), out _).Ok);
+            for (int i = 0; i < g.Balance.RefusalCooldownTurns; i++) g.EndTurn();
+            Assert.True(g.MakeOffer(p.Id, new Offer(1.1), out _).Ok);
+            return;
+        }
+        Assert.Fail("Жители ни разу не отказали при 20% шансе согласия");
+    }
+
+    [Fact]
+    public void MiningAndTaxesLowerLoyaltyAndTaxPays()
+    {
+        var b = Quiet();
+        var g = Game.New(b, 4);
+        var p = BuyInhabited(g);
+        g.SetTax(p.Id, TaxLevel.High);
+        double money = g.Money;
+        var report = g.EndTurn();
+        Assert.Equal(60 - b.LoyaltyMiningDrain - 3, p.Loyalty, 6);
+        Assert.Equal(b.TaxIncome[(int)TaxLevel.High], report.Taxes, 6);
+    }
+
+    [Fact]
+    public void LowLoyaltyStartsStrikeThatStopsMiningAndTaxes()
+    {
+        var b = Quiet();
+        var g = Game.New(b, 4);
+        var p = BuyInhabited(g);
+        p.Loyalty = b.StrikeBelow + 1;
+        g.SetTax(p.Id, TaxLevel.High);
+        g.EndTurn();
+        Assert.True(p.OnStrike);
+
+        double reserve = p.Reserve;
+        var report = g.EndTurn();
+        Assert.Equal(reserve, p.Reserve);
+        Assert.Equal(0, report.Taxes);
+
+        // Праздники поднимают лояльность, и забастовка кончается.
+        while (p.OnStrike)
+        {
+            Assert.True(g.HoldFestival(p.Id).Ok);
+            g.EndTurn();
+        }
+        Assert.True(p.Loyalty >= b.StrikeEndsAt);
+    }
+
+    [Fact]
+    public void SchoolAddsLoyaltyEveryTurn()
+    {
+        var b = Quiet();
+        var g = Game.New(b, 4);
+        var p = BuyInhabited(g);
+        Assert.True(g.BuildSchool(p.Id).Ok);
+        Assert.False(g.BuildSchool(p.Id).Ok);
+        g.EndTurn();
+        Assert.Equal(60 - b.LoyaltyMiningDrain + b.SchoolLoyalty, p.Loyalty, 6);
+    }
+
+    [Fact]
+    public void SchoolDealBuildsSchoolAndCostsMore()
+    {
+        var b = Quiet();
+        b.SchoolDealChance = 1;
+        var g = Game.New(b, 4);
+        var p = g.PlanetsForSale.First();
+        p.Inhabited = true;
+        p.RuinsValue = 0;
+        var offer = new Offer(1, withSchool: true);
+        double cost = g.OfferCost(p, offer);
+        double money = g.Money;
+        Assert.True(g.MakeOffer(p.Id, offer, out bool accepted).Ok);
+        Assert.True(accepted);
+        Assert.True(p.HasSchool);
+        Assert.Equal(b.LoyaltyAfterSchoolDeal, p.Loyalty);
+        Assert.Equal(money - cost, g.Money, 6);
+    }
+
+    [Fact]
+    public void RequestsRewardOrPunish()
+    {
+        var b = Quiet();
+        var g = Game.New(b, 4);
+        var p = BuyInhabited(g);
+        p.HasSchool = true; // чтобы просили ресурс, а не школу
+        b.RequestChancePerPlanet = 1;
+        g.EndTurn();
+        var r = g.Requests.Single();
+        Assert.Equal(RequestKind.Resource, r.Kind);
+
+        // Не выполнили — обида.
+        double before = p.Loyalty;
+        b.RequestChancePerPlanet = 0;
+        for (int i = 0; i < b.RequestTurns; i++) g.EndTurn();
+        Assert.Empty(g.Requests);
+        Assert.True(p.Loyalty < before - b.RequestLoyaltyPenalty + b.RequestTurns * b.SchoolLoyalty + 1e-6);
+    }
+}

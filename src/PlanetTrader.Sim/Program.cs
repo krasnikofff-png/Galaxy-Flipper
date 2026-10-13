@@ -20,6 +20,9 @@ namespace PlanetTrader.Sim
         public int TurnsActionsExhausted;
         public int Seizures;
         public bool TookCredit;
+        /// <summary>Сколько ходов-планет игрок владел обитаемыми и сколько из них они бастовали.</summary>
+        public int InhabitedTurns, StrikeTurns;
+        public double InhabitedInvested, InhabitedReturned;
         public readonly Dictionary<string, (double invested, double returned)> ByType = new Dictionary<string, (double, double)>();
     }
 
@@ -67,8 +70,9 @@ namespace PlanetTrader.Sim
 
             var results = Strategy.All.ToDictionary(s => s, s => RunMany(balance, s, runs, turns, seed));
             var noScouting = RunMany(balance, Strategy.ActiveNoScouting, runs, turns, seed);
+            var ignoresPeople = RunMany(balance, Strategy.ActiveIgnoresPeople, runs, turns, seed);
             var report = new StringBuilder();
-            WriteReport(report, results, noScouting, runs, overrides);
+            WriteReport(report, results, noScouting, ignoresPeople, runs, overrides);
             WriteCurvesCsv(Path.Combine(outDir, "curves.csv"), results, turns);
 
             if (brakes)
@@ -149,6 +153,11 @@ namespace PlanetTrader.Sim
                 r.Capital[t] = g.Capital;
                 r.Planets[t] = g.PlayerPlanetCount;
                 if (r.SecondPlanetTurn < 0 && g.PlayerPlanetCount >= 2) r.SecondPlanetTurn = t;
+                foreach (var p in g.PlayerPlanets.Where(p => p.Inhabited))
+                {
+                    r.InhabitedTurns++;
+                    if (p.OnStrike) r.StrikeTurns++;
+                }
             }
 
             r.TurnsActionsExhausted = g.TurnsActionsExhausted;
@@ -158,6 +167,11 @@ namespace PlanetTrader.Sim
             foreach (var p in g.AllPlanets.Where(p => p.Invested > 0))
             {
                 double returned = p.Earned + (p.Owner == Owner.Player ? p.MarketValue(b) : 0);
+                if (p.Inhabited)
+                {
+                    r.InhabitedInvested += p.Invested;
+                    r.InhabitedReturned += returned;
+                }
                 r.ByType.TryGetValue(p.Type.Name, out var acc);
                 r.ByType[p.Type.Name] = (acc.invested + p.Invested, acc.returned + returned);
             }
@@ -184,7 +198,8 @@ namespace PlanetTrader.Sim
 
         static string Check(bool ok) => ok ? "✅" : "❌";
 
-        static void WriteReport(StringBuilder sb, Dictionary<Strategy, List<RunResult>> results, List<RunResult> noScouting, int runs, List<string> overrides)
+        static void WriteReport(StringBuilder sb, Dictionary<Strategy, List<RunResult>> results, List<RunResult> noScouting,
+            List<RunResult> ignoresPeople, int runs, List<string> overrides)
         {
             sb.AppendLine("# Отчёт симулятора экономики");
             sb.AppendLine();
@@ -252,6 +267,14 @@ namespace PlanetTrader.Sim
             double scout60 = Median(active.Select(r => r.Capital[60])) / Median(noScouting.Select(r => r.Capital[60]));
             double scout120 = Median(active.Select(r => r.Capital[120])) / Median(noScouting.Select(r => r.Capital[120]));
             sb.AppendLine($"| Разведка окупается (этап 3) | «Активный» с разведкой обгоняет того же без неё на 10%+ к 120 | ×{F(scout60, "0.00")} к 60, ×{F(scout120, "0.00")} к 120 | {Check(scout120 >= 1.1)} |");
+            double StrikeShare(List<RunResult> rs) => rs.Sum(r => r.StrikeTurns) / (double)Math.Max(1, rs.Sum(r => r.InhabitedTurns));
+            double InhabitedRoi(List<RunResult> rs) => rs.Sum(r => r.InhabitedReturned) / Math.Max(1, rs.Sum(r => r.InhabitedInvested));
+            double strikeCare = StrikeShare(active), strikeIgnore = StrikeShare(ignoresPeople);
+            double roiCare = InhabitedRoi(active), roiIgnore = InhabitedRoi(ignoresPeople);
+            double inhabitedShare = active.Sum(r => r.InhabitedTurns) / (double)Math.Max(1, active.Sum(r => r.Planets.Skip(1).Sum()));
+            sb.AppendLine($"| Жители требуют внимания (этап 4) | забастовки: у заботливого ≤10%, у того, кто жителей не замечает, ≥30% | {F(strikeCare * 100, "0")}% против {F(strikeIgnore * 100, "0")}% | {Check(strikeCare <= 0.1 && strikeIgnore >= 0.3)} |");
+            sb.AppendLine($"| Забота окупается (этап 4) | доход на вложенное в обитаемые планеты выше на 20%+ | ×{F(roiCare, "0.00")} против ×{F(roiIgnore, "0.00")} | {Check(roiCare >= roiIgnore * 1.2)} |");
+            sb.AppendLine($"| Обитаемых среди планет «Активного» | для справки | {F(inhabitedShare * 100, "0")}% | |");
             sb.AppendLine($"| Квантий не ломает экономику | Аномалия не сильно выгоднее Льда | Аномалия ×{F(anomalyRoi, "0.00")}, Лёд ×{F(iceRoi, "0.00")} | {Check(anomalyRoi <= iceRoi * 1.3)} |");
             sb.AppendLine();
 
