@@ -24,6 +24,8 @@ namespace PlanetTrader.Client
     /// -autoShotStart — не закрывать экран выбора персонажа (снять его самого).
     /// -autoShotSector n — купить лицензии до сектора n (с деньгами и уровнем «для снимка») и показать его карту;
     /// -autoShotSectorLocked n — показать сектор n без лицензии (карточка лицензии).
+    /// -autoShotSaves n — сыграть n ходов (пустых), сохранить партию вручную и открыть список сохранений;
+    /// -autoShotContinue — при запуске продолжить автосохранение (как кнопка «Продолжить партию»).
     /// Без ключа ничего не делает.
     /// </summary>
     public sealed class AutoScreenshot : MonoBehaviour
@@ -34,7 +36,8 @@ namespace PlanetTrader.Client
         float _drag;
         int _tab = -1;
         bool _probe, _rivals, _buy, _selectFree, _people, _keepStart;
-        int _character, _sector = -1, _lockedSector = -1;
+        int _character, _sector = -1, _lockedSector = -1, _saveTurns = -1;
+        bool _continue;
         Vector2[] _clicks = new Vector2[0];
         float[] _wheel, _pan;
 
@@ -46,7 +49,7 @@ namespace PlanetTrader.Client
             float delay = 6;
             bool reveal = System.Array.IndexOf(args, "-autoShotReveal") >= 0;
             float drag = 0;
-            int tab = -1, character = 0, sector = -1, lockedSector = -1;
+            int tab = -1, character = 0, sector = -1, lockedSector = -1, saveTurns = -1;
             string clicks = null;
             float[] wheel = null, pan = null;
             for (int i = 0; i < args.Length - 1; i++)
@@ -60,6 +63,7 @@ namespace PlanetTrader.Client
                 if (args[i] == "-autoShotCharacter") int.TryParse(args[i + 1], out character);
                 if (args[i] == "-autoShotSector") int.TryParse(args[i + 1], out sector);
                 if (args[i] == "-autoShotSectorLocked") int.TryParse(args[i + 1], out lockedSector);
+                if (args[i] == "-autoShotSaves") int.TryParse(args[i + 1], out saveTurns);
                 if (args[i] == "-autoShotDelay") float.TryParse(args[i + 1], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out delay);
             }
             if (path == null) return;
@@ -88,16 +92,30 @@ namespace PlanetTrader.Client
             shot._buy = System.Array.IndexOf(args, "-autoShotBuy") >= 0;
             shot._selectFree = System.Array.IndexOf(args, "-autoShotSelectFree") >= 0;
             shot._people = System.Array.IndexOf(args, "-autoShotPeople") >= 0;
+            shot._saveTurns = saveTurns;
+            shot._continue = System.Array.IndexOf(args, "-autoShotContinue") >= 0;
         }
 
         IEnumerator Start()
         {
             yield return null;
             var app = FindAnyObjectByType<PlanetTraderApp>();
-            if (app != null && !_keepStart)
+            if (app != null && _continue)
+            {
+                app.ContinueForShot();
+                yield return null;
+                yield return null;
+            }
+            else if (app != null && !_keepStart)
             {
                 // Партия за выбранного персонажа начинается в Update — ждём пару кадров.
                 app.StartAs(_character);
+                yield return null;
+                yield return null;
+            }
+            if (app != null && _saveTurns >= 0)
+            {
+                app.SavesForShot(_saveTurns);
                 yield return null;
                 yield return null;
             }

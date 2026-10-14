@@ -345,6 +345,7 @@ namespace PlanetTrader.Client
             EndTurn();
             _turnActions.Clear();
             RecordPrices();
+            AutosaveAfterTurn();
             MarkDirty();
         }
 
@@ -357,6 +358,11 @@ namespace PlanetTrader.Client
                 return;
             }
             // Пока выбирают персонажа, ход не кончается; Esc возвращает к партии, если это можно.
+            if (Input.GetKeyDown(KeyCode.Escape) && !_saves.ClassListContains("hidden"))
+            {
+                _saves.AddToClassList("hidden");
+                return;
+            }
             if (StartOpen)
             {
                 if (Input.GetKeyDown(KeyCode.Escape) && !_startCancel.ClassListContains("hidden")) _start.AddToClassList("hidden");

@@ -1738,6 +1738,52 @@
 .start-cancel {
     flex-shrink: 0;
     padding: 0 16px;
+    margin-left: 8px;
+}
+
+/* «Продолжить партию» — главная кнопка экрана выбора, если есть автосохранение. */
+.start-continue {
+    background-color: rgba(120, 74, 20, 0.95);
+    border-color: var(--orange);
+    color: #ffd08a;
+}
+
+.start-continue:hover {
+    background-color: rgba(150, 94, 28, 1);
+    color: #ffe2b0;
+}
+
+/* Окно сохранений: строка — партия, ход, капитал, когда сохранена; «Загрузить» и удалить. */
+.saves-card {
+    width: 720px;
+    height: 520px;
+}
+
+.save-row {
+    flex-direction: row;
+    align-items: center;
+    padding: 8px 4px;
+    border-bottom-width: 1px;
+    border-color: rgba(255, 255, 255, 0.06);
+}
+
+.save-row:hover {
+    background-color: rgba(255, 255, 255, 0.03);
+}
+
+.save-text {
+    flex-shrink: 1;
+}
+
+.save-title {
+    font-size: 15px;
+    -unity-font-definition: url("project://database/Assets/Resources/UI/Fonts/Inter-SemiBold.ttf");
+    margin-bottom: 2px;
+}
+
+.save-row .button {
+    padding: 0 14px;
+    margin-right: 6px;
 }
 
 .journal-card {

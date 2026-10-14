@@ -41,6 +41,7 @@
     <Reference Include="UnityEngine.UIElementsModule" HintPath="$(UnityRefs)UnityEngine.UIElementsModule.dll" Private="false" />
     <Reference Include="UnityEngine.ScreenCaptureModule" HintPath="$(UnityRefs)UnityEngine.ScreenCaptureModule.dll" Private="false" />
     <Reference Include="UnityEngine.ImageConversionModule" HintPath="$(UnityRefs)UnityEngine.ImageConversionModule.dll" Private="false" />
+    <Reference Include="UnityEngine.JSONSerializeModule" HintPath="$(UnityRefs)UnityEngine.JSONSerializeModule.dll" Private="false" />
     <Reference Include="UnityEngine.TextCoreTextEngineModule" HintPath="$(UnityRefs)UnityEngine.TextCoreTextEngineModule.dll" Private="false" Condition="Exists('$(UnityRefs)UnityEngine.TextCoreTextEngineModule.dll')" />
   </ItemGroup>
 

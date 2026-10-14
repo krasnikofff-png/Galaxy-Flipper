@@ -78,6 +78,8 @@ namespace PlanetTrader.Client
             _menu.AddToClassList("hidden");
             _journal.AddToClassList("hidden");
             _startCancel.EnableInClassList("hidden", !canCancel);
+            // «Продолжить» — только при запуске игры; из меню идущую партию и так можно продолжить.
+            RefreshStartSaves(!canCancel);
             _start.RemoveFromClassList("hidden");
         }
 
@@ -86,6 +88,7 @@ namespace PlanetTrader.Client
         {
             _start.AddToClassList("hidden");
             NewGame(index, _startSeed);
+            _playing = true;
         });
 
         static ulong NewSeed() => (ulong)DateTime.Now.Ticks;

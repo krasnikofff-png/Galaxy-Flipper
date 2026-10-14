@@ -80,7 +80,7 @@ namespace PlanetTrader.Core
         /// <summary>Открытые секторы: у них есть планеты и магнаты. Стартовый открыт всегда.</summary>
         readonly HashSet<int> _openSectors = new HashSet<int> { 0 };
         /// <summary>Типы планет каждого сектора: в богатых — с множителями.</summary>
-        readonly Dictionary<int, PlanetType[]> _sectorTypes = new Dictionary<int, PlanetType[]>();
+        [NonSerialized] readonly Dictionary<int, PlanetType[]> _sectorTypes = new Dictionary<int, PlanetType[]>();
         readonly List<Order> _orders = new List<Order>();
         readonly List<Probe> _probes = new List<Probe>();
         List<Shipment> _shipments => _current.Shipments;
@@ -104,7 +104,7 @@ namespace PlanetTrader.Core
         /// Сообщения о том, что случилось во время действий игрока (например, нашлись руины при покупке).
         /// Интерфейс забирает их и очищает список.
         /// </summary>
-        public readonly List<string> Notices = new List<string>();
+        [NonSerialized] public readonly List<string> Notices = new List<string>();
 
         public int Turn { get; private set; } = 1;
 
@@ -192,9 +192,19 @@ namespace PlanetTrader.Core
         /// <summary>Зарплаты команды за ход.</summary>
         public double SalariesPerTurn => _current.Staff.Sum(m => m.Salary);
 
+        /// <summary>Зерно партии: из него — карта и облик планет.</summary>
+        public ulong Seed { get; private set; }
+
+        /// <summary>Сохранить партию целиком (см. <see cref="SaveGame"/>).</summary>
+        public string Save() => SaveGame.Save(this);
+
+        /// <summary>Партия из сохранения; balance — нынешний баланс игры.</summary>
+        public static Game Load(string json, Balance balance) => SaveGame.Load(json, balance);
+
         Game(Balance balance, ulong seed)
         {
             Balance = balance;
+            Seed = seed;
             _rng = new Rng(seed);
             _mapRng = new Rng(seed ^ 0x5EC7_0A11UL);
             _surveyRng = new Rng(seed ^ 0x50_17E5UL);
@@ -1619,7 +1629,7 @@ namespace PlanetTrader.Core
 
         /// <summary>Отчёты всех игроков за последний ход. События у них общие.</summary>
         public IReadOnlyDictionary<int, TurnReport> LastReports => _lastReports;
-        Dictionary<int, TurnReport> _lastReports = new Dictionary<int, TurnReport>();
+        [NonSerialized] Dictionary<int, TurnReport> _lastReports = new Dictionary<int, TurnReport>();
 
         /// <summary>
         /// Конец хода для всех. Сначала каждый игрок: добыча; затем общее: магнаты добывают, месторождения восстанавливаются;

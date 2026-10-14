@@ -24,6 +24,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\PlanetTrader.Core\PlanetTrader.Core.csproj" />
+    <ProjectReference Include="..\..\src\PlanetTrader.Sim\PlanetTrader.Sim.csproj" />
   </ItemGroup>
 
 </Project>

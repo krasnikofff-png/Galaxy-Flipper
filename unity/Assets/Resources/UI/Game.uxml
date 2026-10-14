@@ -93,6 +93,8 @@
         </ui:VisualElement>
         <ui:VisualElement name="menu" class="menu-popup frame hidden">
             <ui:Button name="newGameButton" text="Новая игра" focusable="false" class="button" />
+            <ui:Button name="saveButton" text="Сохранить" focusable="false" class="button" />
+            <ui:Button name="loadButton" text="Загрузить" focusable="false" class="button" />
             <ui:Button name="showcaseButton" text="Витрина планет (F2)" focusable="false" class="button" />
         </ui:VisualElement>
         <ui:VisualElement name="journal" class="overlay hidden">
@@ -126,8 +128,23 @@
                 <ui:VisualElement name="startCharacters" class="start-characters" />
                 <ui:VisualElement class="start-footer">
                     <ui:Label text="Навыки от 1 до 5, средний — 3: переговоры — покупка и продажа планет, сделки с жителями; геология — шахты и зонды; грязные дела — слухи и подкуп; работа с людьми — праздники, школы, учёба." class="small start-note" />
+                    <ui:Button name="startLoadButton" text="Загрузить" focusable="false" class="button start-cancel hidden" />
+                    <ui:Button name="continueButton" text="Продолжить партию" focusable="false" class="button start-cancel start-continue hidden" />
                     <ui:Button name="startCancel" text="Вернуться к партии" focusable="false" class="button start-cancel" />
                 </ui:VisualElement>
+            </ui:VisualElement>
+        </ui:VisualElement>
+        <ui:VisualElement name="saves" class="overlay hidden">
+            <ui:VisualElement class="journal-card saves-card frame">
+                <ui:VisualElement class="panel-head">
+                    <ui:Label text="Сохранённые партии" class="panel-title-small" />
+                    <ui:VisualElement class="spacer" />
+                    <ui:Button name="savesClose" focusable="false" class="small-button">
+                        <ui:Label text="Закрыть" picking-mode="Ignore" />
+                        <ui:VisualElement class="icon icon-close" />
+                    </ui:Button>
+                </ui:VisualElement>
+                <ui:ScrollView name="savesList" mode="Vertical" horizontal-scroller-visibility="Hidden" touch-scroll-type="Clamped" class="journal-list" />
             </ui:VisualElement>
         </ui:VisualElement>
         <ui:Label name="tooltip" class="tooltip hidden" picking-mode="Ignore" />
