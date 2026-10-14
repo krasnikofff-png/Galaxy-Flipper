@@ -25,7 +25,7 @@ namespace PlanetTrader.Client
         ScrollView _sideScroll, _actionsList, _journalList;
         Label _turnValue, _tooltip, _rivalsTitle, _actionsCount;
         readonly Dictionary<string, Label> _statValues = new Dictionary<string, Label>();
-        VisualElement _levelFill;
+        VisualElement _levelFill, _levelIcon;
 
         /// <summary>Состояние игры изменилось — пересобрать панели в конце кадра.</summary>
         bool _dirty = true;
@@ -179,8 +179,9 @@ namespace PlanetTrader.Client
         /// <summary>Уровень корпорации: название и полоска до следующего. Клик — вкладка «Развитие», где все уровни.</summary>
         void AddLevelStat(VisualElement parent)
         {
-            AddStat(parent, "level", "rank", "Уровень");
+            AddStat(parent, "level", LevelIcon(0), "Уровень");
             var stat = parent[parent.childCount - 1];
+            _levelIcon = stat[0];
             var bar = new VisualElement { pickingMode = PickingMode.Ignore };
             bar.AddToClassList("level-bar");
             _levelFill = new VisualElement { pickingMode = PickingMode.Ignore };
@@ -192,6 +193,22 @@ namespace PlanetTrader.Client
             stat.RegisterCallback<ClickEvent>(_ => Later(() => _tab = Tab.Development));
             stat.RegisterCallback<PointerMoveEvent>(e => ShowTooltip(LevelTooltip(), _screen.WorldToLocal(e.position)));
             stat.RegisterCallback<PointerLeaveEvent>(_ => HideTooltip());
+        }
+
+        /// <summary>Знак различия уровня: шевроны (1–3) золотые, ромбы (4–5) фиолетовые.</summary>
+        static string LevelIcon(int level) => "level_" + Mathf.Clamp(level + 1, 1, 5);
+
+        static readonly Color LevelGold = new Color(0.84f, 0.64f, 0.31f);
+        static readonly Color LevelPurple = new Color(0.7f, 0.45f, 1f);
+
+        static Color LevelColor(int level) => level >= 3 ? LevelPurple : LevelGold;
+
+        /// <summary>Значок уровня нужного размера и цвета.</summary>
+        static VisualElement LevelBadge(int level, string cls)
+        {
+            var badge = Icons.Make(LevelIcon(level), cls);
+            badge.style.color = LevelColor(level);
+            return badge;
         }
 
         string LevelTooltip()
@@ -400,6 +417,8 @@ namespace PlanetTrader.Client
             _statValues["debt"].text = Fmt.Money(g.Debt);
             _statValues["capital"].text = Fmt.Money(g.Capital);
             _statValues["level"].text = g.LevelInfo.Name;
+            if (_levelIcon.userData as string != LevelIcon(g.Level)) Icons.Change(_levelIcon, LevelIcon(g.Level));
+            _levelIcon.style.color = LevelColor(g.Level);
             _levelFill.style.width = Length.Percent(LevelProgress() * 100);
             _statValues["costs"].text = $"{Fmt.Money(g.CostsPerTurn)} / ход";
             _statValues["actions"].text = $"{g.ActionsLeft}/{g.ActionsPerTurn}";

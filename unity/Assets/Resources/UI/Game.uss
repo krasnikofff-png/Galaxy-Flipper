@@ -165,6 +165,46 @@
     background-color: rgba(255, 255, 255, 0.04);
 }
 
+/* Знаки уровней во вкладке «Развитие». */
+
+.level-head {
+    flex-direction: row;
+    align-items: center;
+    margin-bottom: 4px;
+}
+
+.level-badge {
+    width: 30px;
+    height: 30px;
+    margin-right: 10px;
+}
+
+.level-row {
+    flex-direction: row;
+    align-items: center;
+    margin: 4px 0;
+}
+
+.level-row-badge {
+    width: 20px;
+    height: 20px;
+    margin-right: 8px;
+    flex-shrink: 0;
+}
+
+.level-row-name {
+    width: 130px;
+    flex-shrink: 0;
+    font-size: 14px;
+    color: var(--text-dim);
+}
+
+.level-row-value {
+    flex-shrink: 1;
+    font-size: 13px;
+    white-space: normal;
+}
+
 /* Полоска до следующего уровня корпорации: под названием уровня. */
 .level-bar {
     height: 3px;

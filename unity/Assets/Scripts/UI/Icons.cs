@@ -15,7 +15,8 @@ namespace PlanetTrader.Client
     public static class Icons
     {
         /// <summary>
-        /// Контуры значков. Префикс: «s» — обвести (s2.5 — линией толще), «f» — залить.
+        /// Контуры значков. Префикс: «s» — обвести (s2.5 — линией толще), «f» — залить. После него — оттенок детали
+        /// для объёма: «f+0.3» — светлее (к белому на 30%), «f-0.2» — темнее, «s0.6+0.6» — светлая линия-блик толщиной 0.6.
         /// </summary>
         static readonly Dictionary<string, string[]> Set = new Dictionary<string, string[]>
         {
@@ -63,6 +64,12 @@ namespace PlanetTrader.Client
             ["plasma"] = new[] { "s:O12 12 3.2 M12 3v3.5 M12 17.5V21 M3 12h3.5 M17.5 12H21 M5.6 5.6l2.5 2.5 M15.9 15.9l2.5 2.5 M5.6 18.4l2.5-2.5 M15.9 8.1l2.5-2.5" },
             ["drop"] = new[] { "s:M12 3C12 3 5.5 10.2 5.5 14.5C5.5 18.1 8.4 21 12 21C15.6 21 18.5 18.1 18.5 14.5C18.5 10.2 12 3 12 3Z M9 15c0 1.7 1.3 3 3 3" },
             ["lock"] = new[] { "s:M6.5 11h11v9h-11z M8.5 11V8C8.5 5.8 10.1 4.5 12 4.5C13.9 4.5 15.5 5.8 15.5 8V11" },
+            // Уровни корпорации — знаки различия: шевроны (1–3) и ромбы-огранка (4–5), с объёмом и бликами.
+            ["level_1"] = new[] { "f+0.12:M5 13.80L12 7.80v2.4L5 16.20z", "f-0.12:M12 7.80l7 6.00v2.4l-7 -6.00z", "s0.55+0.6:M6 13.36L11.3 8.82", "s0.5+0.28:M12.7 8.82L18 13.36" },
+            ["level_2"] = new[] { "f+0.12:M5 11.00L12 5.00v2.4L5 13.40z", "f-0.12:M12 5.00l7 6.00v2.4l-7 -6.00z", "s0.55+0.6:M6 10.56L11.3 6.02", "s0.5+0.28:M12.7 6.02L18 10.56", "f+0.12:M5 17.60L12 11.60v2.4L5 20.00z", "f-0.12:M12 11.60l7 6.00v2.4l-7 -6.00z", "s0.55+0.6:M6 17.16L11.3 12.62", "s0.5+0.28:M12.7 12.62L18 17.16" },
+            ["level_3"] = new[] { "f+0.12:M5 8.40L12 3.40v2.2L5 10.60z", "f-0.12:M12 3.40l7 5.00v2.2l-7 -5.00z", "s0.55+0.6:M6 8.11L11.3 4.32", "s0.5+0.28:M12.7 4.32L18 8.11", "f+0.12:M5 13.60L12 8.60v2.2L5 15.80z", "f-0.12:M12 8.60l7 5.00v2.2l-7 -5.00z", "s0.55+0.6:M6 13.31L11.3 9.52", "s0.5+0.28:M12.7 9.52L18 13.31", "f+0.12:M5 18.80L12 13.80v2.2L5 21.00z", "f-0.12:M12 13.80l7 5.00v2.2l-7 -5.00z", "s0.55+0.6:M6 18.51L11.3 14.72", "s0.5+0.28:M12.7 14.72L18 18.51" },
+            ["level_4"] = new[] { "f+0.32:M6.40 12.00L12.00 4.50L12.00 12.00z", "f+0.06:M12.00 4.50L17.60 12.00L12.00 12.00z", "f-0.24:M17.60 12.00L12.00 19.50L12.00 12.00z", "f-0.06:M12.00 19.50L6.40 12.00L12.00 12.00z", "s0.78+0.8:M9.00 10.20L11.35 7.05" },
+            ["level_5"] = new[] { "f+0.32:M2.80 12.00L7.20 5.50L7.20 12.00z", "f+0.06:M7.20 5.50L11.60 12.00L7.20 12.00z", "f-0.24:M11.60 12.00L7.20 18.50L7.20 12.00z", "f-0.06:M7.20 18.50L2.80 12.00L7.20 12.00z", "s0.62+0.8:M4.86 10.36L6.71 7.63", "f+0.32:M12.40 12.00L16.80 5.50L16.80 12.00z", "f+0.06:M16.80 5.50L21.20 12.00L16.80 12.00z", "f-0.24:M21.20 12.00L16.80 18.50L16.80 12.00z", "f-0.06:M16.80 18.50L12.40 12.00L16.80 12.00z", "s0.62+0.8:M14.46 10.36L16.31 7.63" },
             ["star"] = new[] { "f:M12 2.5l2.9 6 6.6.9-4.8 4.6 1.2 6.5L12 17.4 6.1 20.5l1.2-6.5L2.5 9.4l6.6-.9z" },
             ["spark"] = new[] { "f:M12 2l2.2 7.8L22 12l-7.8 2.2L12 22l-2.2-7.8L2 12l7.8-2.2z" },
         };
@@ -80,8 +87,16 @@ namespace PlanetTrader.Client
         {
             public bool Fill;
             public float Width;
+            /// <summary>Оттенок детали: больше нуля — светлее (к белому), меньше — темнее.</summary>
+            public float Tone;
             public List<Cmd> Cmds;
         }
+
+        static readonly Regex Head = new Regex(@"^([sf])(\d*\.?\d+)?([+-]\d*\.?\d+)?$", RegexOptions.Compiled);
+
+        static Color Toned(Color c, float tone) =>
+            tone >= 0 ? new Color(c.r + (1 - c.r) * tone, c.g + (1 - c.g) * tone, c.b + (1 - c.b) * tone, c.a)
+                : new Color(c.r * (1 + tone), c.g * (1 + tone), c.b * (1 + tone), c.a);
 
         static readonly Dictionary<string, Shape[]> Parsed = new Dictionary<string, Shape[]>();
         static readonly Regex Tokens = new Regex(@"[MmLlHhVvCcQqZzO]|-?(?:\d+\.?\d*|\.\d+)", RegexOptions.Compiled);
@@ -160,14 +175,22 @@ namespace PlanetTrader.Client
                             break;
                     }
                 }
+                var shade = shape.Tone == 0 ? color : Toned(color, shape.Tone);
                 if (shape.Fill)
                 {
-                    p.fillColor = color;
+                    p.fillColor = shade;
                     p.Fill();
+                    // Грани объёмного значка — тонкой обводкой того же цвета, чтобы между ними не было щелей.
+                    if (shape.Tone != 0)
+                    {
+                        p.strokeColor = shade;
+                        p.lineWidth = 0.2f * s;
+                        p.Stroke();
+                    }
                 }
                 else
                 {
-                    p.strokeColor = color;
+                    p.strokeColor = shade;
                     p.lineWidth = shape.Width * s;
                     p.Stroke();
                 }
@@ -182,11 +205,12 @@ namespace PlanetTrader.Client
             for (int i = 0; i < defs.Length; i++)
             {
                 int colon = defs[i].IndexOf(':');
-                string head = defs[i].Substring(0, colon);
+                var head = Head.Match(defs[i].Substring(0, colon));
                 shapes[i] = new Shape
                 {
-                    Fill = head[0] == 'f',
-                    Width = head.Length > 1 ? float.Parse(head.Substring(1), CultureInfo.InvariantCulture) : 1.8f,
+                    Fill = head.Groups[1].Value == "f",
+                    Width = head.Groups[2].Success ? float.Parse(head.Groups[2].Value, CultureInfo.InvariantCulture) : 1.8f,
+                    Tone = head.Groups[3].Success ? float.Parse(head.Groups[3].Value, CultureInfo.InvariantCulture) : 0,
                     Cmds = Parse(defs[i].Substring(colon + 1)),
                 };
             }

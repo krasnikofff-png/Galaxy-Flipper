@@ -148,7 +148,9 @@ namespace PlanetTrader.Client
             ui.Header("Уровень корпорации");
             using (ui.Card())
             {
-                ui.Text($"<b>{g.LevelInfo.Name}</b> — уровень {g.Level + 1} из {levels.Length}");
+                var head = ui.Add(new VisualElement()).WithClass("level-head");
+                head.Add(LevelBadge(g.Level, "level-badge"));
+                head.Add(new Label($"<b>{g.LevelInfo.Name}</b> — уровень {g.Level + 1} из {levels.Length}").WithClass("text"));
                 var next = g.NextLevel;
                 if (next != null)
                 {
@@ -165,7 +167,10 @@ namespace PlanetTrader.Client
                 for (int i = 0; i < levels.Length; i++)
                 {
                     string state = i < g.Level ? "<color=#7be38b>пройден</color>" : i == g.Level ? "<color=#ffd27a>сейчас</color>" : $"капитал от {Fmt.Money(levels[i].Capital)}";
-                    ui.Line($"{i + 1}. {levels[i].Name}", $"{state} — {string.Join(", ", g.LevelUnlocks(i))}");
+                    var row = ui.Add(new VisualElement()).WithClass("level-row");
+                    row.Add(LevelBadge(i, "level-row-badge"));
+                    row.Add(new Label($"{i + 1}. {levels[i].Name}").WithClass("level-row-name"));
+                    row.Add(new Label($"{state} — {string.Join(", ", g.LevelUnlocks(i))}").WithClass("level-row-value"));
                 }
             }
         }
