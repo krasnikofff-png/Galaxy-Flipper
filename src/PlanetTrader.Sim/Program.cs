@@ -39,6 +39,13 @@ namespace PlanetTrader.Sim
         public readonly Dictionary<string, (double invested, double returned)> ByType = new Dictionary<string, (double, double)>();
     }
 
+    /// <summary>Партии «Активного» за стартового персонажа: короткие (к 120-му ходу) и полные.</summary>
+    sealed class CharacterRuns
+    {
+        public string Name;
+        public List<RunResult> Early, Late;
+    }
+
     static class Program
     {
         static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
@@ -98,8 +105,18 @@ namespace PlanetTrader.Sim
             calm.CartelChance = 0;
             calm.MergerChance = 0;
             var noTricks = RunMany(calm, Strategy.Active, runs, turns, seed);
+            // Стартовые персонажи: «Активный» за каждого — с теми же сидами, что и средний директор. Начало партии
+            // очень чувствительно к случайностям, поэтому к 120-му ходу сравниваем на 100+ коротких партиях.
+            int earlyRuns = Math.Max(runs, 100);
+            var earlyBase = RunMany(balance, Strategy.Active, earlyRuns, 120, seed);
+            var characters = balance.Characters.Select(c => new CharacterRuns
+            {
+                Name = c.Name,
+                Early = RunMany(balance, Strategy.Active, earlyRuns, 120, seed, c),
+                Late = RunMany(balance, Strategy.Active, runs, turns, seed, c),
+            }).ToList();
             var report = new StringBuilder();
-            WriteReport(report, results, noScouting, ignoresPeople, noTricks, runs, overrides);
+            WriteReport(report, results, noScouting, ignoresPeople, noTricks, earlyBase, characters, runs, overrides);
             WriteCurvesCsv(Path.Combine(outDir, "curves.csv"), results, turns);
 
             if (brakes)
@@ -159,10 +176,10 @@ namespace PlanetTrader.Sim
             f.SetValue(target, value);
         }
 
-        static List<RunResult> RunMany(Balance b, Strategy s, int runs, int turns, ulong seed)
+        static List<RunResult> RunMany(Balance b, Strategy s, int runs, int turns, ulong seed, StartCharacter character = null)
         {
             var list = new List<RunResult>();
-            for (int i = 0; i < runs; i++) list.Add(RunOne(b, s, turns, seed + (ulong)i * 7919));
+            for (int i = 0; i < runs; i++) list.Add(RunOne(b, s, turns, seed + (ulong)i * 7919, character));
             return list;
         }
 
@@ -182,9 +199,10 @@ namespace PlanetTrader.Sim
             }
         }
 
-        static RunResult RunOne(Balance b, Strategy s, int turns, ulong seed)
+        /// <summary>Одна партия; character — стартовый персонаж первого игрока (null — средний директор).</summary>
+        static RunResult RunOne(Balance b, Strategy s, int turns, ulong seed, StartCharacter character = null)
         {
-            var g = Game.New(b, seed, Players);
+            var g = Game.New(b, seed, Players, character);
             var bot = new Bot(s, seed);
             var partners = g.Players.Skip(1).Select((c, i) => (id: c.Id, bot: new Bot(s, seed + (ulong)(i + 1) * 104729))).ToList();
             int me = g.Current.Id;
@@ -296,7 +314,7 @@ namespace PlanetTrader.Sim
         static string Check(bool ok) => ok ? "✅" : "❌";
 
         static void WriteReport(StringBuilder sb, Dictionary<Strategy, List<RunResult>> results, List<RunResult> noScouting,
-            List<RunResult> ignoresPeople, List<RunResult> noTricks, int runs, List<string> overrides)
+            List<RunResult> ignoresPeople, List<RunResult> noTricks, List<RunResult> earlyBase, List<CharacterRuns> characters, int runs, List<string> overrides)
         {
             sb.AppendLine("# Отчёт симулятора экономики");
             sb.AppendLine();
@@ -375,6 +393,14 @@ namespace PlanetTrader.Sim
             }).ToList();
             var firstLevel = levelTurns.FirstOrDefault();
             var lastLevel = levelTurns.LastOrDefault();
+            // Персонажи: капитал «Активного» за каждого против среднего директора к 120-му и к концу. Сиды те же,
+            // поэтому сравниваем попарно — медиана отношений в одной и той же партии шумит меньше, чем отношение медиан.
+            double Paired(List<RunResult> runs, List<RunResult> baseline, int t) => Median(runs.Zip(baseline, (c, a) => c.Capital[t] / Math.Max(1, a.Capital[t])));
+            var characterLeads = characters.Select(c => (name: c.Name, early: Paired(c.Early, earlyBase, 120), late: Paired(c.Late, active, End))).ToList();
+            if (characterLeads.Count > 0)
+                sb.AppendLine($"| Стартовые персонажи равноценны (этап 8) | капитал каждого к 120-му (на {earlyBase.Count} партиях) и к {End}-му — ×0,85–1,15 от среднего директора в той же партии (медиана) | " +
+                              string.Join(", ", characterLeads.Select(c => $"{c.name} ×{F(c.early, "0.00")} / ×{F(c.late, "0.00")}")) +
+                              $" | {Check(characterLeads.All(c => c.early >= 0.85 && c.early <= 1.15 && c.late >= 0.85 && c.late <= 1.15))} |");
             sb.AppendLine($"| Уровни корпорации растянуты на партию (этап 8) | второй уровень — к 20–45-му ходу, последний — к 150–500-му | " +
                           string.Join(", ", levelTurns.Select(x => $"{x.name} {F(x.turn, "0")}" + (x.share < 1 ? $" ({F(x.share * 100, "0")}% партий)" : ""))) +
                           $" | {Check(levelTurns.Count > 0 && firstLevel.turn >= 20 && firstLevel.turn <= 45 && lastLevel.turn >= 150 && lastLevel.turn <= 500)} |");

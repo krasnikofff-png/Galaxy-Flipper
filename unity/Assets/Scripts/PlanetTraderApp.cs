@@ -135,7 +135,10 @@ namespace PlanetTrader.Client
             _map3d = gameObject.AddComponent<SectorMapView>();
             _portrait = gameObject.AddComponent<PlanetPortrait>();
             CreateScreen();
-            NewGame();
+            // За экраном выбора персонажа уже видна карта будущей партии: выбор начнёт её с тем же сектором.
+            var seed = NewSeed();
+            NewGame(0, seed);
+            ShowStart(false, seed);
         }
 
         // Пока открыта витрина, интерфейс выключен — вместе с ним прячется и 3D-карта.
@@ -272,10 +275,12 @@ namespace PlanetTrader.Client
             ShowPortrait();
         }
 
-        void NewGame()
+        /// <summary>Новая партия за стартового персонажа номер character.</summary>
+        void NewGame(int character, ulong seed)
         {
-            var seed = (ulong)DateTime.Now.Ticks;
-            _game = Core.Game.New(new Balance(), seed);
+            var balance = new Balance();
+            var hero = balance.Characters[Mathf.Clamp(character, 0, balance.Characters.Length - 1)];
+            _game = Core.Game.New(balance, seed, 1, hero);
             _lookSeed = (int)(seed % int.MaxValue);
             _rivalsTurnStarted = -1;
             _selectedId = _game.PlayerPlanets.First().Id;
@@ -283,7 +288,10 @@ namespace PlanetTrader.Client
             _probeMode = false;
             ResetScreen();
             var b = _game.Balance;
-            Log($"Новая партия. У вас ледяной карлик с шахтой, {Fmt.Money(b.StartMoney)} денег и долг {Fmt.Money(b.StartDebt)}.");
+            var start = _game.PlayerPlanets.First();
+            string extras = (start.Inhabited ? " и жителями" : "") +
+                            (start.ExtraDeposits.Count > 0 ? $" и вторым месторождением ({start.ExtraDeposits[0].Resource.RuName().ToLowerInvariant()})" : "");
+            Log($"Новая партия. Директор — {hero.Name.ToLowerInvariant()}. У вас ледяной карлик с шахтой{extras}, {Fmt.Money(_game.Money)} денег и долг {Fmt.Money(b.StartDebt)}.");
             Log($"За ход можно сделать {_game.ActionsPerTurn} действия: купить, построить шахту, продать планету, запустить зонд, нанять менеджера.");
             Log("Продажа ресурсов, заказы и кредит действий не тратят. Пробел или Enter — конец хода.");
             Log("Серые планеты — силуэты: тип и запас неизвестны. Кнопка «Зонды» — скан области или полная разведка планеты.");
@@ -342,6 +350,12 @@ namespace PlanetTrader.Client
             if (RivalsTurn)
             {
                 if (Input.anyKeyDown) Later(FinishTurn);
+                return;
+            }
+            // Пока выбирают персонажа, ход не кончается; Esc возвращает к партии, если это можно.
+            if (StartOpen)
+            {
+                if (Input.GetKeyDown(KeyCode.Escape) && !_startCancel.ClassListContains("hidden")) _start.AddToClassList("hidden");
                 return;
             }
             if (Input.GetKeyDown(KeyCode.Space) || Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.KeypadEnter))

@@ -107,7 +107,7 @@ namespace PlanetTrader.Client
             root.Q<Button>("newGameButton").clicked += () =>
             {
                 _menu.AddToClassList("hidden");
-                Later(NewGame);
+                ShowStart(true, NewSeed());
             };
             root.Q<Button>("showcaseButton").clicked += () =>
             {
@@ -152,6 +152,7 @@ namespace PlanetTrader.Client
 
             CreatePortrait();
             CreateMap(root);
+            CreateStart(root);
             Icons.AttachAll(root);
             Frames.AttachAll(root);
         }

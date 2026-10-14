@@ -20,6 +20,8 @@ namespace PlanetTrader.Client
     /// -autoShotPeople — на вашей планете жители и школа (видно учёбу и правила планеты).
     /// -autoShotSelectFree — выбрать свободную планету, которую ещё не разведали (видно кнопку «Разведать зондом»).
     /// -autoShotProbe — включить режим зонда. -autoShotRivals — нажать «Конец хода» перед снимком (пауза «ходят соперники»).
+    /// -autoShotCharacter n — начать за стартового персонажа номер n (по умолчанию 0 — Геолог);
+    /// -autoShotStart — не закрывать экран выбора персонажа (снять его самого).
     /// Без ключа ничего не делает.
     /// </summary>
     public sealed class AutoScreenshot : MonoBehaviour
@@ -29,7 +31,8 @@ namespace PlanetTrader.Client
         bool _reveal;
         float _drag;
         int _tab = -1;
-        bool _probe, _rivals, _buy, _selectFree, _people;
+        bool _probe, _rivals, _buy, _selectFree, _people, _keepStart;
+        int _character;
         Vector2[] _clicks = new Vector2[0];
         float[] _wheel, _pan;
 
@@ -41,7 +44,7 @@ namespace PlanetTrader.Client
             float delay = 6;
             bool reveal = System.Array.IndexOf(args, "-autoShotReveal") >= 0;
             float drag = 0;
-            int tab = -1;
+            int tab = -1, character = 0;
             string clicks = null;
             float[] wheel = null, pan = null;
             for (int i = 0; i < args.Length - 1; i++)
@@ -52,9 +55,12 @@ namespace PlanetTrader.Client
                 if (args[i] == "-autoShotWheel") wheel = Numbers(args[i + 1]);
                 if (args[i] == "-autoShotPan") pan = Numbers(args[i + 1]);
                 if (args[i] == "-autoShotTab") int.TryParse(args[i + 1], out tab);
+                if (args[i] == "-autoShotCharacter") int.TryParse(args[i + 1], out character);
                 if (args[i] == "-autoShotDelay") float.TryParse(args[i + 1], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out delay);
             }
             if (path == null) return;
+            // Снимок делается и тогда, когда окно игры не в фокусе (человек работает в другом окне).
+            Application.runInBackground = true;
             var go = new GameObject("Автоснимок");
             DontDestroyOnLoad(go);
             var shot = go.AddComponent<AutoScreenshot>();
@@ -63,6 +69,8 @@ namespace PlanetTrader.Client
             shot._reveal = reveal;
             shot._drag = drag;
             shot._tab = tab;
+            shot._character = character;
+            shot._keepStart = System.Array.IndexOf(args, "-autoShotStart") >= 0;
             shot._wheel = wheel;
             shot._pan = pan;
             if (clicks != null)
@@ -80,6 +88,13 @@ namespace PlanetTrader.Client
         {
             yield return null;
             var app = FindAnyObjectByType<PlanetTraderApp>();
+            if (app != null && !_keepStart)
+            {
+                // Партия за выбранного персонажа начинается в Update — ждём пару кадров.
+                app.StartAs(_character);
+                yield return null;
+                yield return null;
+            }
             if (_reveal && app != null)
             {
                 foreach (var p in app.CurrentGame.AllPlanets)

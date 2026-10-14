@@ -112,6 +112,8 @@ unity run "$PWD/unity" -- -executeMethod PlanetTrader.EditorTools.BuildTools.Bui
 # -autoShotDrag 200 перед снимком «тянет мышью» окно планеты (облёт базы);
 # -autoShotTab 3 открывает вкладку (0 — «Планета» … 6 — «Магнаты»), -autoShotProbe включает режим зонда,
 # -autoShotRivals снимает паузу «ходят соперники», -autoShotClicks "1134,20;500,420" кликает мышью
-# в точки интерфейса (экран 1600×900) — так проверяются кнопки без человека
+# в точки интерфейса (экран 1600×900) — так проверяются кнопки без человека;
+# партия начинается за Геолога, -autoShotCharacter 2 — за Филантропа, -autoShotStart оставляет экран выбора персонажа.
+# Снимок делается и тогда, когда окно игры не в фокусе.
 unity/Build/PlanetTrader.app/Contents/MacOS/unity -screen-fullscreen 0 -screen-width 1600 -screen-height 900 -autoShot /tmp/map.png -autoShotDelay 10 -autoShotReveal
 ```

@@ -20,6 +20,32 @@ namespace PlanetTrader.Core
         }
     }
 
+    /// <summary>
+    /// Стартовый персонаж (этап 8): директор со своими навыками, сильной стороной и слабостью.
+    /// Сумма навыков у всех одинаковая (12, как у среднего директора), отличаются они тем, где сильны.
+    /// </summary>
+    public sealed class StartCharacter
+    {
+        public string Name;
+        /// <summary>Чем хорош и чем плох — для экрана выбора.</summary>
+        public string Plus, Minus;
+        /// <summary>Навыки директора 1–5 по порядку enum Skill.</summary>
+        public int[] Skills;
+        /// <summary>Прибавка к стартовым деньгам (бывает и меньше обычного).</summary>
+        public double ExtraMoney;
+        public double Reputation = 50;
+        /// <summary>На стартовой планете — дополнительное месторождение.</summary>
+        public bool ExtraDeposit;
+        /// <summary>Стартовая планета обитаема.</summary>
+        public bool Inhabited;
+
+        public StartCharacter(string name, int[] skills)
+        {
+            Name = name;
+            Skills = skills;
+        }
+    }
+
     public static class Words
     {
         /// <summary>Число со словом в нужной форме: 1 менеджер, 2 менеджера, 5 менеджеров.</summary>

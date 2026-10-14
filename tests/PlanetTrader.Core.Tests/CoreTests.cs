@@ -1450,6 +1450,58 @@ public class ProgressionTests
     }
 
     [Fact]
+    public void GeologistStartsWithSkillsAndSecondDeposit()
+    {
+        var b = Quiet();
+        var geologist = b.Characters.Single(c => c.Name == "Геолог");
+        var g = Game.New(b, 3, 1, geologist);
+        var director = g.Staff.Single();
+        Assert.Equal("Вы (геолог)", director.Name);
+        Assert.Equal(5, director.Level(Skill.Geology));
+        Assert.Equal(2, director.Level(Skill.Negotiation));
+        Assert.Equal(b.StartMoney + geologist.ExtraMoney, g.Money);
+        var deposit = Assert.Single(g.PlayerPlanets.Single().ExtraDeposits);
+        Assert.Contains(deposit.Resource, new[] { Resource.Metal, Resource.Gas });
+        // Навыки персонажа — копия: партия не меняет образец в Balance.
+        director.SkillLevels[0] = 1;
+        Assert.Equal(2, geologist.Skills[0]);
+    }
+
+    [Fact]
+    public void SwindlerStartsRicherWithBadReputation()
+    {
+        var b = Quiet();
+        var g = Game.New(b, 3, 1, b.Characters.Single(c => c.Name == "Аферист"));
+        Assert.Equal(b.StartMoney + 800, g.Money);
+        Assert.Equal(35, g.Reputation);
+        Assert.Equal(5, g.Staff.Single().Level(Skill.Shady));
+        Assert.False(g.PlayerPlanets.Single().Inhabited);
+    }
+
+    [Fact]
+    public void PhilanthropistStartsWithResidents()
+    {
+        var b = Quiet();
+        var g = Game.New(b, 3, 1, b.Characters.Single(c => c.Name == "Филантроп"));
+        var start = g.PlayerPlanets.Single();
+        Assert.True(start.Inhabited);
+        Assert.Equal(b.ColonyLoyalty, start.Loyalty);
+        Assert.Equal(65, g.Reputation);
+        Assert.Equal(b.StartMoney - 300, g.Money);
+    }
+
+    [Fact]
+    public void WithoutCharacterDirectorIsAverage()
+    {
+        var b = Quiet();
+        var g = Game.New(b, 3);
+        Assert.Null(g.Current.Character);
+        Assert.All(Skills.All, s => Assert.Equal(Manager.AverageSkill, g.Staff.Single().Level(s)));
+        Assert.Equal(b.StartReputation, g.Reputation);
+        Assert.Empty(g.PlayerPlanets.Single().ExtraDeposits);
+    }
+
+    [Fact]
     public void LevelUnlocksAreListed()
     {
         var g = Game.New(Quiet(), 3);

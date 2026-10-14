@@ -209,19 +209,25 @@ namespace PlanetTrader.Core
             }
         }
 
-        /// <summary>Новая партия. players — сколько игроков (больше одного — кооператив): у каждого своя корпорация и стартовая планета.</summary>
-        public static Game New(Balance balance, ulong seed, int players = 1)
+        /// <summary>
+        /// Новая партия. players — сколько игроков (больше одного — кооператив): у каждого своя корпорация и стартовая планета.
+        /// characters — стартовые персонажи игроков по порядку; кому не хватило — средний директор.
+        /// </summary>
+        public static Game New(Balance balance, ulong seed, int players = 1, params StartCharacter[] characters)
         {
             var g = new Game(balance, seed);
             for (int i = 0; i < Math.Max(1, players); i++)
             {
+                var character = characters != null && i < characters.Length ? characters[i] : null;
                 var corp = new Corporation(i, i == 0 ? "Вы" : $"Игрок {i + 1}")
                 {
-                    Money = balance.StartMoney,
+                    Character = character,
+                    Money = balance.StartMoney + (character?.ExtraMoney ?? 0),
                     Debt = balance.StartDebt,
-                    Reputation = balance.StartReputation,
+                    Reputation = character?.Reputation ?? balance.StartReputation,
                 };
-                corp.Staff.Add(Manager.Director(g._nextManagerId++, "Вы (директор)", balance.BaseActionsPerTurn));
+                string director = character == null ? "Вы (директор)" : $"Вы ({character.Name.ToLowerInvariant()})";
+                corp.Staff.Add(Manager.Director(g._nextManagerId++, director, balance.BaseActionsPerTurn, character?.Skills));
                 g._corps.Add(corp);
             }
             foreach (var m in g._magnates)
@@ -256,6 +262,7 @@ namespace PlanetTrader.Core
                 };
                 g.PlaceOnMap(start);
                 start.Knowledge = Knowledge.Explored;
+                g.ApplyCharacter(start, corp.Character);
                 g._planets.Add(start);
 
                 // Окрестности своей планеты игрок знает по скану, остальное — силуэты.
@@ -269,6 +276,25 @@ namespace PlanetTrader.Core
             g._current = g._corps[0];
             g.Market.SectorFactor = Math.Pow(Math.Max(1, players), balance.MarketGrowthPower);
             return g;
+        }
+
+        /// <summary>Что персонаж приносит на стартовую планету: жителей (Филантроп), второе месторождение (Геолог).</summary>
+        void ApplyCharacter(Planet start, StartCharacter character)
+        {
+            if (character == null) return;
+            if (character.Inhabited)
+            {
+                start.Inhabited = true;
+                start.Loyalty = Balance.ColonyLoyalty;
+            }
+            if (character.ExtraDeposit)
+            {
+                // Богатое месторождение металла или газа: добыча и запас — по верхней границе обычных.
+                var r = _surveyRng.Chance(0.5) ? Resource.Metal : Resource.Gas;
+                double output = Math.Round(Balance.TypeOf(r).OutputPerTurn * Balance.ExtraOutputMax, 1);
+                double capacity = Math.Round(output * Balance.ExtraCapacityTurnsMax);
+                start.ExtraDeposits.Add(new Deposit { Resource = r, OutputPerTurn = output, Capacity = capacity, InitialCapacity = capacity, Reserve = capacity });
+            }
         }
 
         PlanetType RandomType()

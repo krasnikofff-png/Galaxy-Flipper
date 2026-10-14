@@ -114,6 +114,17 @@
                 <ui:Label text="Клик или пробел — пропустить" class="small" />
             </ui:VisualElement>
         </ui:VisualElement>
+        <ui:VisualElement name="start" class="overlay start-overlay hidden">
+            <ui:VisualElement class="start-card frame">
+                <ui:Label text="Новая корпорация" class="title" />
+                <ui:Label text="Кто сядет в кресло директора? От выбора зависят навыки, деньги и репутация на старте. Остальное — дело наживы." class="start-subtitle" />
+                <ui:VisualElement name="startCharacters" class="start-characters" />
+                <ui:VisualElement class="start-footer">
+                    <ui:Label text="Навыки от 1 до 5, средний — 3: переговоры — покупка и продажа планет, сделки с жителями; геология — шахты и зонды; грязные дела — слухи и подкуп; работа с людьми — праздники, школы, учёба." class="small start-note" />
+                    <ui:Button name="startCancel" text="Вернуться к партии" focusable="false" class="button start-cancel" />
+                </ui:VisualElement>
+            </ui:VisualElement>
+        </ui:VisualElement>
         <ui:Label name="tooltip" class="tooltip hidden" picking-mode="Ignore" />
     </ui:VisualElement>
 </ui:UXML>

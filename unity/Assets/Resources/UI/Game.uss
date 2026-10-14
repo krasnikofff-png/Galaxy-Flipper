@@ -1346,6 +1346,146 @@
     background-color: var(--orange);
 }
 
+/* Экран выбора стартового персонажа */
+
+.start-overlay {
+    background-color: rgba(0, 0, 0, 0.62);
+}
+
+.start-card {
+    width: 1180px;
+    padding: 20px 26px 18px 26px;
+    --frame-fill: rgba(9, 12, 19, 0.98);
+}
+
+.start-subtitle {
+    font-size: 15px;
+    color: var(--text-dim);
+    white-space: normal;
+    margin-bottom: 14px;
+}
+
+.start-characters {
+    flex-direction: row;
+}
+
+.character-card {
+    flex-grow: 1;
+    flex-basis: 0;
+    margin: 0 6px;
+    padding: 14px 16px;
+    background-color: var(--card-bg);
+    border-width: 1px;
+    border-color: var(--card-line);
+    border-radius: 3px;
+}
+
+.character-card:hover {
+    background-color: rgba(214, 162, 78, 0.07);
+    border-color: var(--orange);
+}
+
+.character-head {
+    flex-direction: row;
+    align-items: center;
+    margin-bottom: 10px;
+}
+
+.character-icon {
+    width: 40px;
+    height: 40px;
+    margin-right: 12px;
+    color: var(--gold);
+}
+
+.character-name {
+    font-size: 22px;
+    -unity-font-definition: url("project://database/Assets/Resources/UI/Fonts/Inter-SemiBold.ttf");
+}
+
+.skill-row {
+    flex-direction: row;
+    align-items: center;
+    height: 20px;
+}
+
+.skill-name {
+    width: 140px;
+    font-size: 13px;
+    color: var(--text-dim);
+}
+
+.pip {
+    width: 14px;
+    height: 7px;
+    margin-right: 3px;
+    border-radius: 1px;
+    background-color: rgba(255, 255, 255, 0.1);
+}
+
+.pip.on {
+    background-color: var(--gold);
+}
+
+.character-start {
+    font-size: 13px;
+    color: var(--muted);
+    margin: 8px 0 8px 0;
+}
+
+.character-plus,
+.character-minus {
+    font-size: 13px;
+    white-space: normal;
+    margin-bottom: 6px;
+}
+
+.character-plus {
+    color: var(--green);
+}
+
+.character-minus {
+    color: #ff8a7a;
+    flex-grow: 1;
+}
+
+.character-pick {
+    height: 40px;
+    margin: 8px 0 0 0;
+    background-color: rgba(120, 74, 20, 0.95);
+    border-width: 1px;
+    border-color: var(--orange);
+    border-radius: 3px;
+    color: #ffd08a;
+    font-size: 16px;
+    -unity-text-align: middle-center;
+    -unity-font-definition: url("project://database/Assets/Resources/UI/Fonts/Inter-SemiBold.ttf");
+}
+
+.character-pick:hover {
+    background-color: rgba(150, 94, 28, 1);
+    color: #ffe2b0;
+}
+
+.start-footer {
+    flex-direction: row;
+    align-items: center;
+    margin-top: 14px;
+    padding: 0 6px;
+}
+
+.start-note {
+    flex-grow: 1;
+    flex-shrink: 1;
+    white-space: normal;
+    margin-right: 16px;
+}
+
+.start-cancel {
+    flex-shrink: 0;
+    padding: 0 16px;
+}
+
 .journal-card {
     width: 900px;
     height: 640px;

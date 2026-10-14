@@ -84,8 +84,9 @@ namespace PlanetTrader.Core
             }
         }
 
-        public static Manager Director(int id, string name, int actions) =>
-            new Manager(id, name, new[] { AverageSkill, AverageSkill, AverageSkill, AverageSkill }, 0, actions, isDirector: true);
+        /// <summary>Директор: навыки персонажа или средние.</summary>
+        public static Manager Director(int id, string name, int actions, int[] skills = null) =>
+            new Manager(id, name, skills != null ? (int[])skills.Clone() : new[] { AverageSkill, AverageSkill, AverageSkill, AverageSkill }, 0, actions, isDirector: true);
 
         static readonly string[] FirstNames = { "Аркадий", "Василиса", "Гектор", "Дана", "Евлампий", "Жанна", "Игнат", "Кира", "Лев", "Марта", "Нестор", "Олимпия", "Прохор", "Рада", "Савелий", "Тамара" };
         static readonly string[] LastNames = { "Орбитальный", "Пылевая", "Кольцов", "Туманность", "Вакуумов", "Спиральная", "Кометкин", "Протуберанец", "Сверхновая", "Гравитонов", "Астролябина", "Парсеков" };
