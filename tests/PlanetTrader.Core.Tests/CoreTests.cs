@@ -3,6 +3,37 @@ using Xunit;
 
 namespace PlanetTrader.Core.Tests;
 
+/// <summary>
+/// Покупки по правилам: игрок покупает только разведанную планету. Тесты других механик
+/// разведывают планету сразу, как будто зонд уже вернулся.
+/// </summary>
+static class ExploredPurchases
+{
+    static void Explore(Game g, int id)
+    {
+        var p = g.GetPlanet(id);
+        if (p != null) p.Knowledge = Knowledge.Explored;
+    }
+
+    public static ActionResult BuyExplored(this Game g, int id)
+    {
+        Explore(g, id);
+        return g.BuyPlanet(id);
+    }
+
+    public static ActionResult OfferExplored(this Game g, int id, Offer offer, out bool accepted)
+    {
+        Explore(g, id);
+        return g.MakeOffer(id, offer, out accepted);
+    }
+
+    public static ActionResult BidExplored(this Game g, int id, double factor, out bool won)
+    {
+        Explore(g, id);
+        return g.PlaceBid(id, factor, out won);
+    }
+}
+
 public class BalanceTests
 {
     [Theory]
@@ -183,7 +214,7 @@ public class GameTests
         Assert.Equal(System.Math.Round(p.Type.MineCost * (1 + 2 * b.GeologyCostStep)), g.MineCost(p));
         double money = g.Money;
         double price = g.PurchasePrice(p);
-        Assert.True(g.BuyPlanet(p.Id).Ok);
+        Assert.True(g.BuyExplored(p.Id).Ok);
         Assert.Equal(money - price, g.Money, 6);
         Assert.Equal(0, c.ActionsLeft);
         // Когда у выбранного действий нет, берётся лучший из свободных.
@@ -219,7 +250,7 @@ public class GameTests
         p.RuinsValue = 0;
         double price = p.ListPrice(b);
 
-        Assert.True(g.BuyPlanet(p.Id).Ok);
+        Assert.True(g.BuyExplored(p.Id).Ok);
         Assert.Equal(100_000 - price, g.Money, 6);
         Assert.True(g.BuildMine(p.Id).Ok);
 
@@ -501,21 +532,40 @@ public class ExplorationTests
     }
 
     [Fact]
-    public void BuyingRevealsPlanetAndPaysRuins()
+    public void BuyingNeedsExplorationAndPaysRuins()
     {
         var b = Quiet();
         var g = Game.New(b, 2);
-        var p = g.PlanetsForSale.First();
+        var p = g.PlanetsForSale.First(x => x.Knowledge != Knowledge.Explored);
         p.FoundByProbe = true; // без аукциона
         p.RuinsValue = 500;
         double money = g.Money;
         double price = p.ListPrice(b);
 
+        // Без полной разведки купить нельзя ни у реестра, ни на аукционе, ни у жителей.
+        Assert.False(g.BuyPlanet(p.Id).Ok);
+        Assert.Equal(money, g.Money);
+
+        p.Knowledge = Knowledge.Explored; // как после зонда
         Assert.True(g.BuyPlanet(p.Id).Ok);
-        Assert.Equal(Knowledge.Explored, p.Knowledge);
         Assert.Equal(money - price + 500, g.Money, 6);
         Assert.True(p.RuinsLooted);
         Assert.NotEmpty(g.Notices);
+    }
+
+    [Fact]
+    public void BidsAndOffersNeedExploration()
+    {
+        var g = Game.New(Quiet(), 2);
+        var auction = g.PlanetsForSale.First(x => x.Knowledge != Knowledge.Explored && !x.Inhabited);
+        auction.FoundByProbe = false;
+        Assert.True(auction.SoldAtAuction);
+        Assert.False(g.PlaceBid(auction.Id, 1.2, out _).Ok);
+
+        var people = g.PlanetsForSale.First(x => x.Knowledge != Knowledge.Explored && x != auction);
+        people.Inhabited = true;
+        Assert.False(g.MakeOffer(people.Id, new Offer(1.0), out _).Ok);
+        Assert.Equal(g.ActionsPerTurn, g.ActionsLeft);
     }
 
     [Fact]
@@ -578,7 +628,7 @@ public class PeopleTests
         p.Mine = MineState.Working;
         p.RuinsValue = 0;
         g.Balance.OfferChanceAtFullPrice = 1;
-        Assert.True(g.MakeOffer(p.Id, new Offer(1.0), out bool accepted).Ok);
+        Assert.True(g.OfferExplored(p.Id, new Offer(1.0), out bool accepted).Ok);
         Assert.True(accepted);
         return p;
     }
@@ -589,7 +639,7 @@ public class PeopleTests
         var g = Game.New(Quiet(), 4);
         var p = g.PlanetsForSale.First();
         p.Inhabited = true;
-        Assert.False(g.BuyPlanet(p.Id).Ok);
+        Assert.False(g.BuyExplored(p.Id).Ok);
         Assert.Equal(Owner.Registry, p.Owner);
     }
 
@@ -623,12 +673,12 @@ public class PeopleTests
             var g = Game.New(Quiet(), seed);
             var p = g.PlanetsForSale.First();
             p.Inhabited = true;
-            Assert.True(g.MakeOffer(p.Id, new Offer(0.8), out bool accepted).Ok);
+            Assert.True(g.OfferExplored(p.Id, new Offer(0.8), out bool accepted).Ok);
             if (accepted) continue;
             Assert.Equal(Owner.Registry, p.Owner);
-            Assert.False(g.MakeOffer(p.Id, new Offer(1.1), out _).Ok);
+            Assert.False(g.OfferExplored(p.Id, new Offer(1.1), out _).Ok);
             for (int i = 0; i < g.Balance.RefusalCooldownTurns; i++) g.EndTurn();
-            Assert.True(g.MakeOffer(p.Id, new Offer(1.1), out _).Ok);
+            Assert.True(g.OfferExplored(p.Id, new Offer(1.1), out _).Ok);
             return;
         }
         Assert.Fail("Жители ни разу не отказали при 20% шансе согласия");
@@ -696,7 +746,7 @@ public class PeopleTests
         var offer = new Offer(1, withSchool: true);
         double cost = g.OfferCost(p, offer);
         double money = g.Money;
-        Assert.True(g.MakeOffer(p.Id, offer, out bool accepted).Ok);
+        Assert.True(g.OfferExplored(p.Id, offer, out bool accepted).Ok);
         Assert.True(accepted);
         Assert.True(p.HasSchool);
         Assert.Equal(b.LoyaltyAfterSchoolDeal, p.Loyalty);
@@ -762,7 +812,7 @@ public class MagnateTests
     {
         var g = Game.New(NoTricks(), 6);
         var p = AuctionPlanet(g);
-        Assert.False(g.BuyPlanet(p.Id).Ok);
+        Assert.False(g.BuyExplored(p.Id).Ok);
     }
 
     [Fact]
@@ -774,7 +824,7 @@ public class MagnateTests
         var p = AuctionPlanet(g);
         Assert.Equal(1, g.AuctionWinChance(p, 1.0), 6);
         double money = g.Money;
-        Assert.True(g.PlaceBid(p.Id, 1.1, out bool won).Ok);
+        Assert.True(g.BidExplored(p.Id, 1.1, out bool won).Ok);
         Assert.True(won);
         Assert.Equal(Owner.Player, p.Owner);
         Assert.Equal(money - g.BidPrice(p, 1.1), g.Money, 6);
@@ -795,7 +845,7 @@ public class MagnateTests
         var p = AuctionPlanet(g);
         Assert.Equal(0, g.AuctionWinChance(p, 1.3), 6);
         double money = g.Money;
-        Assert.True(g.PlaceBid(p.Id, 1.3, out bool won).Ok);
+        Assert.True(g.BidExplored(p.Id, 1.3, out bool won).Ok);
         Assert.False(won);
         Assert.Equal(Owner.Ai, p.Owner);
         Assert.True(p.MagnateId >= 0);
@@ -826,7 +876,7 @@ public class MagnateTests
         p.Inhabited = true;
         p.Mine = MineState.Working;
         p.RuinsValue = 0;
-        Assert.True(g.MakeOffer(p.Id, new Offer(1.0), out bool accepted).Ok);
+        Assert.True(g.OfferExplored(p.Id, new Offer(1.0), out bool accepted).Ok);
         Assert.True(accepted);
         p.Loyalty = 35;
         return g;
@@ -1143,7 +1193,7 @@ public class EventTests
         Assert.Equal(1, g.EventUpkeepFactor);
         var p = g.PlanetsForSale.First(x => !x.Inhabited);
         p.FoundByProbe = true;
-        Assert.True(g.BuyPlanet(p.Id).Ok);
+        Assert.True(g.BuyExplored(p.Id).Ok);
         Assert.Equal(2, g.EventUpkeepFactor);
     }
 

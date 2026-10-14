@@ -33,6 +33,7 @@
                     <ui:VisualElement class="spacer" picking-mode="Ignore" />
                     <ui:Button name="probeDone" text="Готово" focusable="false" class="button probe-done" />
                 </ui:VisualElement>
+                <ui:Label name="probeInfo" class="probe-info hidden" picking-mode="Ignore" />
                 <ui:VisualElement class="map-tools">
                     <ui:Button name="centerButton" focusable="false" class="tool-button">
                         <ui:VisualElement class="icon icon-target" />

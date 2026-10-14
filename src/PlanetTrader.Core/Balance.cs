@@ -38,7 +38,7 @@ namespace PlanetTrader.Core
     public sealed class Balance
     {
         // --- Старт ---
-        public double StartMoney = 2000;
+        public double StartMoney = 2300;
         public double StartDebt = 1000;
         /// <summary>Есть ли на стартовой планете готовая шахта (допущение).</summary>
         public bool StartPlanetHasMine = true;
@@ -165,6 +165,11 @@ namespace PlanetTrader.Core
         public double RuinsMinValue = 300;
         public double RuinsMaxValue = 1200;
         public double InhabitedChance = 0.20;
+        /// <summary>
+        /// Решение автора: игрок покупает планету (у реестра, на аукционе, у жителей) только после полной разведки зондом.
+        /// Магнаты покупают по оценке реестра, как раньше.
+        /// </summary>
+        public bool RequireExplorationToBuy = true;
 
         // --- Жители (этап 4, всё — допущения) ---
         /// <summary>Работающая шахта каждый ход снижает лояльность: выкачивание ресурсов.</summary>

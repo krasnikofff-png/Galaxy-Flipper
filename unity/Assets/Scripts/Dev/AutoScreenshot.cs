@@ -17,6 +17,7 @@ namespace PlanetTrader.Client
     /// -autoShotWheel "x,y,шаги" — покрутить колесо мыши в точке (меньше нуля — к себе, приблизить),
     /// -autoShotPan "x,y,dx,dy" — потянуть мышью из точки на dx, dy.
     /// -autoShotBuy — купить свободную планету без шахты, выбрать её и выписать в журнал кнопки правой панели.
+    /// -autoShotSelectFree — выбрать свободную планету, которую ещё не разведали (видно кнопку «Разведать зондом»).
     /// -autoShotProbe — включить режим зонда. -autoShotRivals — нажать «Конец хода» перед снимком (пауза «ходят соперники»).
     /// Без ключа ничего не делает.
     /// </summary>
@@ -27,7 +28,7 @@ namespace PlanetTrader.Client
         bool _reveal;
         float _drag;
         int _tab = -1;
-        bool _probe, _rivals, _buy;
+        bool _probe, _rivals, _buy, _selectFree;
         Vector2[] _clicks = new Vector2[0];
         float[] _wheel, _pan;
 
@@ -70,6 +71,7 @@ namespace PlanetTrader.Client
             shot._probe = System.Array.IndexOf(args, "-autoShotProbe") >= 0;
             shot._rivals = System.Array.IndexOf(args, "-autoShotRivals") >= 0;
             shot._buy = System.Array.IndexOf(args, "-autoShotBuy") >= 0;
+            shot._selectFree = System.Array.IndexOf(args, "-autoShotSelectFree") >= 0;
         }
 
         IEnumerator Start()
@@ -97,6 +99,8 @@ namespace PlanetTrader.Client
                 foreach (var target in g.AllPlanets.Where(p => p.Owner == Core.Owner.Registry && p.Mine == Core.MineState.None && !p.Inhabited && !p.IsDepleted).ToList())
                 {
                     bool won = false;
+                    // По правилам покупают только разведанное — для снимка «разведываем» сразу.
+                    target.Knowledge = Core.Knowledge.Explored;
                     var r = target.SoldAtAuction ? g.PlaceBid(target.Id, g.Balance.BidFactors.Max(), out won) : g.BuyPlanet(target.Id);
                     Debug.Log($"Автопокупка #{target.Id}: {(r.Ok ? (target.SoldAtAuction && !won ? "ставка проиграна" : "куплена") : r.Error)}, шахта {target.Mine}, владелец {target.Owner}");
                     if (target.Owner != Core.Owner.Player) continue;
@@ -107,6 +111,11 @@ namespace PlanetTrader.Client
                 var side = FindAnyObjectByType<UIDocument>().rootVisualElement.Q<ScrollView>("sideScroll");
                 foreach (var b in side.Query<Button>().ToList())
                     Debug.Log($"Кнопка панели: «{b.text}» {(b.enabledSelf ? "" : "(неактивна)")} {(b.resolvedStyle.display == DisplayStyle.None ? "(скрыта)" : "")}");
+            }
+            if (app != null && _selectFree)
+            {
+                var free = app.CurrentGame.PlanetsForSale.FirstOrDefault(p => p.Knowledge == Core.Knowledge.Scanned && !p.Inhabited);
+                if (free != null) app.Select(free.Id);
             }
             if (app != null && _tab >= 0) app.ShowTab(_tab);
             if (app != null && _probe) app.SetProbeMode(true);

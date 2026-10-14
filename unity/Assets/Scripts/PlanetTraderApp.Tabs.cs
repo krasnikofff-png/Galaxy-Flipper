@@ -201,15 +201,16 @@ namespace PlanetTrader.Client
                     if (p.Mine == MineState.Working) note += ", шахта уже стоит";
                     ui.Small($"Цена {Fmt.Money(price)} ({note}). Реестр считает цену по своей оценке запаса." +
                              (p.Mine == MineState.None ? $" Потом шахта: {Fmt.Money(g.MineCost(p))} и {b.MineBuildTurns} хода постройки." : ""));
-                    if (p.Inhabited && !silhouette)
+                    if (!g.ExploredEnoughToBuy(p))
+                        ExploreFirst(ui, p);
+                    else if (p.Inhabited)
                         Negotiation(ui, p);
                     else if (p.SoldAtAuction)
                         Auction(ui, p, silhouette, exact);
                     else
                     {
-                        string blind = silhouette ? " вслепую" : exact ? "" : " по оценке";
                         using (ui.Box("big-buttons"))
-                            ui.BigButton("coins", $"Купить{blind}", $"за {Fmt.Money(price)} · {Doer(Skill.Negotiation)}", "big-primary",
+                            ui.BigButton("coins", "Купить", $"за {Fmt.Money(price)} · {Doer(Skill.Negotiation)}", "big-primary",
                                 g.ActionsLeft > 0 && g.Money >= price,
                                 () => Act(() => g.BuyPlanet(p.Id), $"Куплена планета {p.Type.Name} #{p.Id} за {Fmt.Money(price)}."));
                     }
@@ -259,6 +260,40 @@ namespace PlanetTrader.Client
                     break;
             }
         }
+
+        /// <summary>
+        /// Свободная планета ещё не разведана: купить её нельзя, главная кнопка — разведать самым дешёвым зондом, который долетит.
+        /// </summary>
+        void ExploreFirst(PanelBuilder ui, Planet p)
+        {
+            var g = _game;
+            ui.Small("Купить планету можно только после полной разведки зондом: она покажет настоящий запас, подвохи и руины.");
+            using (ui.Box("big-buttons"))
+            {
+                var flying = g.Probes.FirstOrDefault(x => x.TargetPlanetId == p.Id);
+                if (flying != null)
+                {
+                    ui.BigButton("rocket", "Зонд в пути", $"разведка через {flying.ResolveTurn - g.Turn + 1} х.", "big-plain", false, () => { });
+                    return;
+                }
+                var probe = g.Balance.ProbeTypes.Where(t => g.InRange(t, p.MapX, p.MapY)).OrderBy(t => t.Cost).FirstOrDefault();
+                if (probe == null)
+                {
+                    ui.BigButton("rocket", "Разведать", "ни один зонд сюда не долетит", "big-plain", false, () => { });
+                    return;
+                }
+                int id = p.Id;
+                ui.BigButton("rocket", $"Разведать зондом «{probe.Name}»",
+                    $"{Fmt.Money(probe.Cost)} · через {g.ProbeTurns(probe, p.MapX, p.MapY, ProbeMission.Explore)} х., 1 действие", "big-primary",
+                    g.ActionsLeft > 0 && g.Money >= probe.Cost,
+                    () => Act(() => g.LaunchExplore(probe, id), $"Зонд «{probe.Name}» отправлен на разведку планеты #{id}."));
+            }
+        }
+
+        /// <summary>Чем зонд отличается от других: дальность, скорость, скан, шанс найти скрытую планету. Расстояния — в световых годах, как «До биржи».</summary>
+        static string ProbeDescription(ProbeType t) =>
+            $"Дальность {Fmt.Amount(t.Range * 10)} св. лет, скорость {Fmt.Amount(t.Speed * 10)} св. лет за ход, " +
+            $"сканирует область радиусом {Fmt.Amount(t.ScanRadius * 10)} св. лет и находит в ней скрытую планету с шансом {Fmt.Percent(t.FindChance)}.";
 
         static readonly double[] OfferShares = { 0.8, 0.9, 1.0, 1.1 };
 
@@ -533,17 +568,22 @@ namespace PlanetTrader.Client
                 ui.Small("К планете уже летит зонд.");
                 return;
             }
-            ui.Small("Полная разведка покажет точный запас, подвохи и руины:");
+            ui.Header("Зонды");
+            ui.Small("Полная разведка покажет точный запас, подвохи и руины. Зонды летят от ближайшей вашей планеты или от биржи. " +
+                     "Дороже — дальше и быстрее летает, шире сканирует область и чаще находит скрытые планеты.");
             foreach (var t in g.Balance.ProbeTypes)
             {
                 bool reach = g.InRange(t, p.MapX, p.MapY);
-                string text = reach
-                    ? $"Разведать зондом «{t.Name}» за {Fmt.Money(t.Cost)} · {g.ProbeTurns(t, p.MapX, p.MapY, ProbeMission.Explore)} х., 1 действие"
-                    : $"«{t.Name}» не долетит";
                 var probe = t;
                 int id = p.Id;
-                ui.Button(text, reach && g.ActionsLeft > 0 && g.Money >= t.Cost,
-                    () => Act(() => g.LaunchExplore(probe, id), $"Зонд «{probe.Name}» отправлен на разведку планеты #{id}."));
+                using (ui.Card())
+                {
+                    ui.Text($"<b>«{t.Name}»</b> — {Fmt.Money(t.Cost)}");
+                    ui.Small(ProbeDescription(t));
+                    ui.Button(reach ? $"Разведать · результат через {g.ProbeTurns(t, p.MapX, p.MapY, ProbeMission.Explore)} х., 1 действие" : "Не долетит: планета дальше его дальности",
+                        reach && g.ActionsLeft > 0 && g.Money >= t.Cost,
+                        () => Act(() => g.LaunchExplore(probe, id), $"Зонд «{probe.Name}» отправлен на разведку планеты #{id}."));
+                }
             }
         }
 

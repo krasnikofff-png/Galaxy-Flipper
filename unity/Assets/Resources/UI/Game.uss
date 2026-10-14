@@ -54,6 +54,7 @@
 
 .top-bar {
     height: 60px;
+    flex-shrink: 0;
     flex-direction: row;
     align-items: center;
     padding: 0 8px 0 6px;
@@ -229,6 +230,8 @@
 
 .body {
     flex-grow: 1;
+    flex-shrink: 1;
+    min-height: 0;
     flex-direction: row;
     margin-bottom: 8px;
 }
@@ -371,6 +374,19 @@
     flex-direction: row;
 }
 
+.probe-info {
+    position: absolute;
+    left: 20px;
+    right: 20px;
+    top: 110px;
+    padding: 4px 8px;
+    font-size: 12px;
+    color: var(--text-dim);
+    white-space: normal;
+    background-color: rgba(10, 13, 20, 0.8);
+    border-radius: 3px;
+}
+
 .probe-types {
     width: 420px;
 }
@@ -459,6 +475,7 @@
 
 .side {
     width: 570px;
+    min-height: 0;
     margin-left: 8px;
     padding: 12px 8px 10px 16px;
 }
@@ -471,6 +488,7 @@
 
 .bottom {
     height: 178px;
+    flex-shrink: 0;
     flex-direction: row;
 }
 

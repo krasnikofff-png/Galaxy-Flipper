@@ -13,7 +13,7 @@ namespace PlanetTrader.Client
     /// </summary>
     public sealed partial class PlanetTraderApp
     {
-        Label _sectorName, _eventLine, _zoomValue, _probesText;
+        Label _sectorName, _eventLine, _zoomValue, _probesText, _probeInfo;
         Button _probesButton;
 
         /// <summary>Подпись на карте: имя (магнат, «ВЫ», «Биржа») и строка с ценой или пометкой.</summary>
@@ -55,6 +55,7 @@ namespace PlanetTrader.Client
             _eventLine = root.Q<Label>("eventLine");
             _zoomValue = root.Q<Label>("zoomValue");
             _probesText = root.Q<Label>("probesText");
+            _probeInfo = root.Q<Label>("probeInfo");
             _probesButton = root.Q<Button>("probesButton");
             _probesButton.clicked += () => Later(() => _probeMode = !_probeMode);
             root.Q<Button>("zoomInButton").clicked += () => ZoomMap(-2, _map.contentRect.center);
@@ -136,7 +137,7 @@ namespace PlanetTrader.Client
             if (float.IsNaN(r.width) || r.width < 100 || r.height < 100) return false;
             // Карта квадратная, чтобы расстояния и радиусы на экране не искажались.
             // Сверху — заголовок и легенда (и полоска зонда), снизу — кнопки приближения.
-            float top = _probeMode ? 112 : 70;
+            float top = _probeMode ? 150 : 70;
             float side = Mathf.Min(r.width - 60, r.height - top - 58);
             _mapArea = new Rect((r.width - side) / 2, top, side, side);
             return true;
@@ -207,6 +208,11 @@ namespace PlanetTrader.Client
             _mapDirty = false;
             _probeBar.EnableInClassList("hidden", !_probeMode);
             _probesButton.EnableInClassList("selected", _probeMode);
+            _probeInfo.EnableInClassList("hidden", !_probeMode);
+            _probeInfo.text = $"«{SelectedProbe.Name}», {Fmt.Money(SelectedProbe.Cost)}. {ProbeDescription(SelectedProbe)} " +
+                (_probeMission == ProbeMission.ScanArea
+                    ? "Скан области: кликните по карте — все планеты в круге станут известны (тип и оценка реестра)."
+                    : "Разведка планеты: кликните по планете — узнаете точный запас, подвохи и руины. Без разведки планету не купить.");
             _probesText.text = _game.Probes.Count > 0 ? $"Зонды ({_game.Probes.Count} в полёте)" : "Зонды";
             _zoomValue.text = $"{Mathf.RoundToInt(_zoom * 100)}%";
             RefreshEventLine();
