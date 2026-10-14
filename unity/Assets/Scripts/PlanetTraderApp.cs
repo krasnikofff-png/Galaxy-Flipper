@@ -134,6 +134,7 @@ namespace PlanetTrader.Client
         {
             _map3d = gameObject.AddComponent<SectorMapView>();
             _portrait = gameObject.AddComponent<PlanetPortrait>();
+            _portraits = gameObject.AddComponent<MagnatePortraits>();
             CreateScreen();
             // За экраном выбора персонажа уже видна карта будущей партии: выбор начнёт её с тем же сектором.
             var seed = NewSeed();
@@ -408,10 +409,11 @@ namespace PlanetTrader.Client
         // ------------------------------------------------------------------
 
         /// <summary>Цвет кольца: владелец, у магнатов — свой цвет у каждого.</summary>
-        static Color RingColor(Planet p) => RingColor(p.Owner, p.MagnateId, p.FoundByProbe);
+        Color RingColor(Planet p) => RingColor(p.Owner, p.MagnateId, p.FoundByProbe);
 
-        static Color RingColor(Owner owner, int magnateId, bool foundByProbe) =>
-            owner == Owner.Ai && magnateId == 1 ? new Color(1f, 0.6f, 0.15f) : Fmt.OwnerColor(owner, foundByProbe);
+        /// <summary>Кольцо планеты на карте: у каждого магната свой цвет — тот же, что у рамки его портрета.</summary>
+        Color RingColor(Owner owner, int magnateId, bool foundByProbe) =>
+            owner == Owner.Ai ? MagnateColor(magnateId) : Fmt.OwnerColor(owner, foundByProbe);
 
         static float PlanetRadius(Planet p)
         {

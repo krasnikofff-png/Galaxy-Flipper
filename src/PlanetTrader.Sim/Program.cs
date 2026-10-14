@@ -113,7 +113,7 @@ namespace PlanetTrader.Sim
             var noScouting = RunMany(balance, Strategy.ActiveNoScouting, runs, turns, seed);
             var ignoresPeople = RunMany(balance, Strategy.ActiveIgnoresPeople, runs, turns, seed);
             var calm = MakeBalance(overrides);
-            foreach (var m in calm.Magnates) m.TrickChance = 0;
+            foreach (var m in calm.Magnates.Concat(calm.Sectors.Where(s => s.Magnates != null).SelectMany(s => s.Magnates))) m.TrickChance = 0;
             calm.CartelChance = 0;
             calm.MergerChance = 0;
             var noTricks = RunMany(calm, Strategy.Active, runs, turns, seed);

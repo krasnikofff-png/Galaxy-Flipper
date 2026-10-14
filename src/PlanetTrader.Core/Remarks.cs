@@ -13,7 +13,55 @@ namespace PlanetTrader.Core
             {
                 case Personality.Greedy: return Greedy(kind);
                 case Personality.Cautious: return Cautious(kind);
+                case Personality.Upstart: return Upstart(kind);
+                case Personality.Heir: return Heir(kind);
+                // Шейх о чужих делах не говорит.
+                case Personality.Sheikh: return null;
                 default: return Chaotic(kind);
+            }
+        }
+
+        static string Upstart(DeedKind k)
+        {
+            switch (k)
+            {
+                case DeedKind.Festival: return "Праздник на {p}? Ой, тоже мне баре. Я на свои праздники гостей не зову — дорого.";
+                case DeedKind.School: return "Школу на {p} отгрохали? Я вот без школ разбогатела, и ничего, живу не тужу.";
+                case DeedKind.Wages: return "Зарплату жителям {p}? Балуете! Им дай палец — они всю руку с кольцами отхватят.";
+                case DeedKind.RequestDone: return "Бегаете за жителями {p} с подносиком? Ну-ну. У меня они сами бегают.";
+                case DeedKind.RequestFailed: return "Плюнули на просьбу жителей {p}? Вот это по-нашему, по-деревенски!";
+                case DeedKind.HighTax: return "Налог на {p} подняли? Правильно, нечего жировать. Я своих вообще стригу под ноль.";
+                case DeedKind.Strike: return "На {p} бастуют? Да я б их всех на картошку отправила!";
+                case DeedKind.Riot: return "Разнесли шахту на {p}? Хе-хе. А у меня шахты крепкие, я на них не экономлю. Почти.";
+                case DeedKind.LowballDeal: return "Сбили цену за {p}? Уважаю! Торговаться я тоже люблю — громко и до слёз.";
+                case DeedKind.GenerousDeal: return "Переплатили за {p}? Ну вы и простофиля. Дайте и мне так переплатить.";
+                case DeedKind.BribedRivalResidents: return "Увели чужих жителей! Ух, бойкий. Только моих не трожь, понял?";
+                case DeedKind.CounterBribe: return "Перекупили своих же жителей на {p}? Деньги девать некуда — отдайте мне.";
+                case DeedKind.Education: return "Учите жителей {p}? Умничать начнут. Мои вот считать не умеют, и слава космосу.";
+                case DeedKind.Colony: return "Колонистов на {p} завезли? Ну, хоть кто-то будет на огороде работать.";
+                default: return null;
+            }
+        }
+
+        static string Heir(DeedKind k)
+        {
+            switch (k)
+            {
+                case DeedKind.Festival: return "Праздник на {p}? Мило. Мой последний приём обошёлся дороже вашей планеты.";
+                case DeedKind.School: return "Школа на {p}? Я учился в Академии Туманности Андромеды. Впрочем, вам не понять.";
+                case DeedKind.Wages: return "Зарплаты на {p}... Папа говорил, что жителям надо платить ровно столько, чтобы не ушли. Папа был прав. Как и я.";
+                case DeedKind.RequestDone: return "Исполняете просьбы жителей {p}? Мои жители просят только автограф.";
+                case DeedKind.RequestFailed: return "Не выполнили просьбу на {p}? Бывает у тех, кто всего добился сам. То есть не у меня, у меня всё получается.";
+                case DeedKind.HighTax: return "Высокий налог на {p}? Как вульгарно. Я просто получаю дивиденды.";
+                case DeedKind.Strike: return "Забастовка на {p}? У меня такого не бывает. Мои жители меня обожают. Я спрашивал.";
+                case DeedKind.Riot: return "Бунт на {p}. Позвоните моим юристам — они и не такое улаживали. Хотя нет, они заняты моими делами.";
+                case DeedKind.LowballDeal: return "Купили {p} со скидкой? Я никогда не смотрю на ценник. Это для бедных.";
+                case DeedKind.GenerousDeal: return "Заплатили за {p} щедро? Наконец-то хоть кто-то ведёт себя как я.";
+                case DeedKind.BribedRivalResidents: return "Подкупили чужих жителей? Грубовато. Я предпочитаю, чтобы они сами ко мне просились.";
+                case DeedKind.CounterBribe: return "Перекупили жителей на {p}? Мило. Я бы купил всю планету вместе с покупателем.";
+                case DeedKind.Education: return "Учите жителей {p}? Похвально. Пусть хоть кто-то из них однажды станет похож на меня.";
+                case DeedKind.Colony: return "Колонисты на {p}? Отец основал сорок колоний. Я пока ни одной, но у меня впереди вся жизнь.";
+                default: return null;
             }
         }
 
@@ -93,6 +141,12 @@ namespace PlanetTrader.Core
                     return kind ? "Вы слишком добры к жителям. Это лечится, обращайтесь." : "Мне нравится ваш стиль: жители пусть терпят.";
                 case Personality.Cautious:
                     return kind ? "О ваших планетах хорошо говорят. В нашем секторе это редкость." : "О ваших планетах ходят нехорошие слухи. И не я их распускаю.";
+                case Personality.Upstart:
+                    return kind ? "Добренький вы. Добреньких у нас в деревне первыми и обдирали." : "Жители у вас хмурые, как мои соседи, когда я разбогатела. Красота!";
+                case Personality.Heir:
+                    return kind ? "Ваши жители довольны. Почти как мои. Почти." : "О ваших планетах говорят плохо. Обо мне говорят только хорошее — я плачу за это.";
+                case Personality.Sheikh:
+                    return kind ? "(молча кивает в вашу сторону)" : "(долго смотрит на вас и ничего не говорит)";
                 default:
                     return kind ? "Ваши жители улыбаются. Подозрительно." : "Ваши жители хмурятся. Может, им просто холодно?";
             }

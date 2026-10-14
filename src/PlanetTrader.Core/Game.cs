@@ -509,9 +509,18 @@ namespace PlanetTrader.Core
             var local = new List<Magnate>();
             for (int i = 0; i < count; i++)
             {
-                var m = Magnate.Generate(_magnates.Max(x => (int?)x.Id) + 1 ?? 0, Balance.Magnates[i % Balance.Magnates.Length], _rng);
+                // Сначала — персонажи автора, недостающих придумываем по образцам.
+                int id = _magnates.Max(x => (int?)x.Id) + 1 ?? 0;
+                Magnate m;
+                if (spec.Magnates != null && i < spec.Magnates.Length)
+                {
+                    m = spec.Magnates[i].Clone();
+                    m.Id = id;
+                }
+                else
+                    m = Magnate.Generate(id, Balance.Magnates[i % Balance.Magnates.Length], _rng);
                 m.Sector = sector;
-                AddMagnateCorp(m, spec.MagnateMoney);
+                AddMagnateCorp(m, spec.MagnateMoney * m.MoneyFactor);
                 _magnates.Add(m);
                 local.Add(m);
             }
@@ -607,13 +616,48 @@ namespace PlanetTrader.Core
         public int UpkeepCurvePlanets =>
             PlayerPlanets.Count(p => Balance.DepletedCountsInUpkeepCurve || !p.IsDepleted);
 
-        public double UpkeepMultiplierNow => Balance.UpkeepMultiplier(UpkeepCurvePlanets);
+        /// <summary>Сколько планет считается в множителе содержания сектора: свои целиком, из других секторов — долей.</summary>
+        public double UpkeepCurvePlanetsIn(int sector)
+        {
+            int own = 0, other = 0;
+            foreach (var p in PlayerPlanets)
+            {
+                if (!Balance.DepletedCountsInUpkeepCurve && p.IsDepleted) continue;
+                if (p.Sector == sector) own++;
+                else other++;
+            }
+            return own + Balance.OtherSectorsUpkeepShare * other;
+        }
 
-        /// <summary>Сколько планета игрока стоит в содержании прямо сейчас, с множителем.</summary>
-        public double PlanetUpkeep(Planet p) => p.BaseUpkeep(Balance) * UpkeepMultiplierNow * EventUpkeepFactor;
+        /// <summary>
+        /// Содержание за ход без событий, если к планетам добавить extra (null — как сейчас). Для оценки покупки:
+        /// новая планета дорожит и свой сектор, и, долей, остальные.
+        /// </summary>
+        public double UpkeepWith(Planet extra)
+        {
+            var planets = PlayerPlanets.ToList();
+            if (extra != null && !planets.Contains(extra)) planets.Add(extra);
+            bool Counts(Planet p) => Balance.DepletedCountsInUpkeepCurve || !p.IsDepleted;
+            double total = 0;
+            foreach (var sector in planets.GroupBy(p => p.Sector))
+            {
+                int own = planets.Count(p => p.Sector == sector.Key && Counts(p));
+                int other = planets.Count(p => p.Sector != sector.Key && Counts(p));
+                total += sector.Sum(p => p.BaseUpkeep(Balance)) * Balance.UpkeepMultiplier(own + Balance.OtherSectorsUpkeepShare * other);
+            }
+            return total;
+        }
+
+        /// <summary>Множитель содержания в стартовом секторе.</summary>
+        public double UpkeepMultiplierNow => Balance.UpkeepMultiplier(UpkeepCurvePlanetsIn(0));
+
+        public double UpkeepMultiplierIn(int sector) => Balance.UpkeepMultiplier(UpkeepCurvePlanetsIn(sector));
+
+        /// <summary>Сколько планета игрока стоит в содержании прямо сейчас, с множителем её сектора.</summary>
+        public double PlanetUpkeep(Planet p) => p.BaseUpkeep(Balance) * UpkeepMultiplierIn(p.Sector) * EventUpkeepFactor;
 
         public double UpkeepPerTurn =>
-            PlayerPlanets.Sum(p => p.BaseUpkeep(Balance)) * Balance.UpkeepMultiplier(UpkeepCurvePlanets) * EventUpkeepFactor;
+            PlayerPlanets.GroupBy(p => p.Sector).Sum(s => s.Sum(p => p.BaseUpkeep(Balance)) * UpkeepMultiplierIn(s.Key)) * EventUpkeepFactor;
 
         GalacticEvent Ev => CurrentEvent?.Event;
 
@@ -1659,9 +1703,8 @@ namespace PlanetTrader.Core
             report.Interest = Debt * Balance.InterestPerTurn;
             report.Insurance = InsurancePerTurn;
             report.Guards = GuardsPerTurn;
-            double multiplier = Balance.UpkeepMultiplier(UpkeepCurvePlanets);
             foreach (var p in PlayerPlanets)
-                p.Earned -= p.BaseUpkeep(Balance) * multiplier;
+                p.Earned -= p.BaseUpkeep(Balance) * UpkeepMultiplierIn(p.Sector);
             Money -= report.TotalCosts;
 
             if (Money < 0) CallCollectors(report);
@@ -1973,7 +2016,7 @@ namespace PlanetTrader.Core
         public int MagnatePlanetCount(Magnate m) => MagnatePlanets(m).Count();
 
         /// <summary>Сколько денег магнат держит про запас и не тратит.</summary>
-        double MagnateReserve(Magnate m) => Balance.MagnateReserveTurns * MagnatePlanets(m).Sum(p => p.BaseUpkeep(Balance));
+        double MagnateReserve(Magnate m) => m.ReserveFactor * Balance.MagnateReserveTurns * MagnatePlanets(m).Sum(p => p.BaseUpkeep(Balance));
 
         /// <summary>
         /// Невыплата: недостача уходит в долг. Если долг выше кредитного лимита,
@@ -2124,20 +2167,25 @@ namespace PlanetTrader.Core
                 if (Money - MineCost(p) >= MagnateReserve(m)) BuildMine(p.Id);
 
             // Жители: налог по настроению, праздник, если дело идёт к забастовке, школа и учёба, когда есть деньги.
-            double highTax = m.Personality == Personality.Greedy ? 55 : m.Personality == Personality.Cautious ? 75 : 65;
-            double lowTax = m.Personality == Personality.Greedy ? 35 : m.Personality == Personality.Cautious ? 50 : 45;
+            // Выскочка дерёт налог почти всегда, шейх — бережно.
+            var who = m.Personality;
+            double highTax = who == Personality.Greedy ? 55 : who == Personality.Cautious || who == Personality.Sheikh ? 75 : who == Personality.Upstart ? 40 : 65;
+            double lowTax = who == Personality.Greedy ? 35 : who == Personality.Cautious || who == Personality.Sheikh ? 50 : who == Personality.Upstart ? 20 : 45;
+            // Выскочка наукой не занимается: ни школ, ни учёбы, ни исследований.
+            bool learns = who != Personality.Upstart;
             foreach (var p in PlayerPlanets.Where(x => x.Inhabited).ToList())
             {
                 SetTax(p.Id, p.Loyalty >= highTax ? TaxLevel.High : p.Loyalty >= lowTax ? TaxLevel.Low : TaxLevel.None);
                 if ((p.Loyalty < 40 || p.OnStrike) && Money - b.FestivalCost >= MagnateReserve(m)) HoldFestival(p.Id);
-                bool caring = m.Personality == Personality.Cautious || _rng.Chance(0.3);
+                if (!learns) continue;
+                bool caring = who == Personality.Cautious || who == Personality.Sheikh || _rng.Chance(0.3);
                 if (!p.HasSchool && caring && Money - b.SchoolCost >= MagnateReserve(m) + 1000) BuildSchool(p.Id);
                 if (_rng.Chance(b.MagnateEducateChance) && CanEducate(p, out _) && Money - EducationCost(p) >= MagnateReserve(m))
                     Educate(p.Id, p.Education > 0 ? p.Specialty : Specialties.Natural(p.Resource));
             }
 
-            // Исследует, когда богат: то, что дешевле.
-            if (CurrentResearch == null && _rng.Chance(0.1))
+            // Исследует, когда богат: то, что дешевле. Наследник — охотнее, его учили лучшие профессора галактики.
+            if (learns && CurrentResearch == null && _rng.Chance(who == Personality.Heir ? 0.2 : 0.1))
             {
                 var tech = b.Technologies.Where(CanResearch).OrderBy(ResearchCost).FirstOrDefault();
                 if (tech != null && Money - ResearchCost(tech) >= MagnateReserve(m) + 3 * ResearchCost(tech)) StartResearch(tech.Id);
@@ -2259,13 +2307,18 @@ namespace PlanetTrader.Core
             }
         }
 
-        /// <summary>Во сколько раз игрок богаче среднего магната (от 1 до MagnateMaxAttention).</summary>
+        /// <summary>
+        /// Во сколько раз игрок богаче среднего магната там, где он ведёт дела, — в секторах с его лицензией
+        /// (от 1 до MagnateMaxAttention). Магнаты секторов, куда игрок не ходит, ему не соперники.
+        /// </summary>
         public double Rivalry
         {
             get
             {
-                if (_magnates.Count == 0) return 1;
-                double average = _magnates.Average(MagnateWealth);
+                var rivals = _magnates.Where(m => HasLicense(m.Sector)).ToList();
+                if (rivals.Count == 0) rivals = _magnates;
+                if (rivals.Count == 0) return 1;
+                double average = rivals.Average(MagnateWealth);
                 if (average <= 1) return Balance.MagnateMaxAttention;
                 return Math.Min(Balance.MagnateMaxAttention, Math.Max(1, Capital / average));
             }

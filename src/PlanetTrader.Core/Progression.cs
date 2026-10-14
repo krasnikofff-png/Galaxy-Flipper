@@ -63,8 +63,10 @@ namespace PlanetTrader.Core
         public int Planets = 30, MaxPlanets = 60;
         /// <summary>Планеты богаче: добыча, запас, цена и шахта ×Richness, содержание ×UpkeepFactor.</summary>
         public double Richness = 1, UpkeepFactor = 1;
-        /// <summary>Казна магнатов сектора, когда он открывается. У стартового — MagnateStartMoney.</summary>
+        /// <summary>Казна магнатов сектора, когда он открывается (× MoneyFactor магната). У стартового — MagnateStartMoney.</summary>
         public double MagnateMoney;
+        /// <summary>Именные магнаты сектора (персонажи автора); если их нет — придумываются по образцам из Balance.Magnates.</summary>
+        public Magnate[] Magnates;
 
         public SectorSpec(string name)
         {

@@ -1573,6 +1573,28 @@ public class ProgressionTests
     }
 
     [Fact]
+    public void FireBeltHasTheAuthorsMagnates()
+    {
+        var b = Quiet();
+        b.StartMoney = 100_000;
+        var g = Game.New(b, 3);
+        Assert.True(g.BuyLicense(1).Ok);
+        var local = g.Magnates.Where(m => m.Sector == 1).ToList();
+        Assert.Equal(new[] { "Нова Рики", "Орфей Младший", "Ксенон" }, local.Select(m => m.Name));
+        Assert.Equal(new[] { Personality.Upstart, Personality.Heir, Personality.Sheikh }, local.Select(m => m.Personality));
+        // Казна: наследство ×2, шейх ×3; планеты на старте им достаются бесплатно.
+        double money = b.Sectors[1].MagnateMoney;
+        Assert.Equal(money, local[0].Money);
+        Assert.Equal(money * 2, local[1].Money);
+        Assert.Equal(money * 3, local[2].Money);
+        // Персонажи в Balance не меняются от партии.
+        Assert.Equal(10, b.Sectors[1].Magnates[0].Id);
+        // Шейх о чужих делах молчит.
+        Assert.Null(Remarks.For(Personality.Sheikh, DeedKind.Festival));
+        Assert.NotNull(Remarks.For(Personality.Upstart, DeedKind.Festival));
+    }
+
+    [Fact]
     public void ProbesFlyFromTheSectorExchange()
     {
         var b = Quiet();

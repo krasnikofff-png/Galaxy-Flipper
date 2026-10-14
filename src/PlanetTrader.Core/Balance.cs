@@ -105,6 +105,19 @@ namespace PlanetTrader.Core
             {
                 LicenseLevel = 2, LicenseCost = 15_000, Richness = 1.6, UpkeepFactor = 1.4, MagnateMoney = 20_000,
                 Description = "Планеты богаче: добыча, запас и цена ×1,6, содержание ×1,4. Свои магнаты.",
+                // Персонажи автора. Веса пакостей: подкуп, слух, заказчик, менеджер, учёные, рейдерский захват.
+                Magnates = new[]
+                {
+                    new Magnate(10, "Нова Рики", Personality.Upstart, trickChance: 0.25, auctionInterest: 0.55, bidMin: 1.0, bidMax: 1.4,
+                        trickWeights: new[] { 0.15, 0.45, 0.35, 0.05, 0.0, 0.1 })
+                        { Bio = "Ещё вчера пасла космокоз на захолустной луне, сегодня скупает планеты. Грубая, крикливая, книжек не читает и гордится этим." },
+                    new Magnate(11, "Орфей Младший", Personality.Heir, trickChance: 0.18, auctionInterest: 0.7, bidMin: 0.95, bidMax: 1.35,
+                        trickWeights: new[] { 0.1, 0.2, 0.1, 0.35, 0.1, 0.4 })
+                        { MoneyFactor = 2, ReserveFactor = 0.4, Bio = "Молодой наследник магната, который недавно отошёл от дел. Высокомерный и хвастливый; уверен, что всё заработал сам." },
+                    new Magnate(12, "Ксенон", Personality.Sheikh, trickChance: 0.08, auctionInterest: 0.45, bidMin: 1.0, bidMax: 1.25,
+                        trickWeights: new[] { 0.5, 0.0, 0.0, 0.0, 0.0, 0.5 })
+                        { MoneyFactor = 3, Bio = "Загадочный молчаливый «шейх». Никто не знает, откуда у его семьи столько денег. Говорят, у него есть планета, которой нет ни на одной карте." },
+                },
             },
             new SectorSpec("Лазурная бездна")
             {
@@ -169,6 +182,12 @@ namespace PlanetTrader.Core
         public double DepletedUpkeepShare = 0.7;
         /// <summary>Считаются ли выработанные планеты в множителе содержания.</summary>
         public bool DepletedCountsInUpkeepCurve = false;
+        /// <summary>
+        /// У каждого сектора своя администрация (этап 8): в множителе содержания планеты других секторов считаются
+        /// только этой долей. При 1 кривая общая, и новые секторы не окупаются — каждая их планета дорожит содержание всех;
+        /// при 0 рост взрывается (×2,4 к 1000-му ходу).
+        /// </summary>
+        public double OtherSectorsUpkeepShare = 0.5;
 
         // --- Сделки с планетами ---
         public double ResaleCommission = 0.10;
@@ -510,11 +529,11 @@ namespace PlanetTrader.Core
         /// Множитель содержания всех планет при числе планет L. Растёт до L1 (×1,5),
         /// держится до L2, потом растёт снова.
         /// </summary>
-        public double UpkeepMultiplier(int planetCount)
+        public double UpkeepMultiplier(double planetCount)
         {
             if (planetCount <= 1) return UpkeepCurveA;
-            int growing = Math.Min(planetCount, UpkeepShelfStart) - 1
-                          + Math.Max(0, planetCount - UpkeepShelfEnd);
+            double growing = Math.Min(planetCount, UpkeepShelfStart) - 1
+                             + Math.Max(0, planetCount - UpkeepShelfEnd);
             return UpkeepCurveA * Math.Pow(UpkeepCurveK, growing / UpkeepCurveP);
         }
 

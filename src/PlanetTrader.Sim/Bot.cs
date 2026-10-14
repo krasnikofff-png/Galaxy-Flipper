@@ -315,9 +315,8 @@ namespace PlanetTrader.Sim
             var known = g.KnownReserve(p);
             if (!known.HasValue) return 0;
             var b = g.Balance;
-            int n = g.UpkeepCurvePlanets;
-            double baseUpkeep = g.PlayerPlanets.Sum(x => x.BaseUpkeep(b));
-            double extraUpkeep = (baseUpkeep + p.Type.Upkeep) * b.UpkeepMultiplier(n + 1) - baseUpkeep * b.UpkeepMultiplier(n);
+            // Новая планета дорожит содержание своего сектора и, долей, остальных.
+            double extraUpkeep = g.UpkeepWith(p) - g.UpkeepWith(null);
             // Месторождения восстанавливаются: считаем средний за цикл доход на горизонте в 40 ходов.
             double capacity = g.KnownCapacity(p) ?? known.Value;
             double avgOutput = Planet.CycleAverage(capacity, p.Type.OutputPerTurn, b.RegenTurns[(int)p.Resource]);

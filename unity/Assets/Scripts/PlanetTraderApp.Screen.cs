@@ -518,18 +518,33 @@ namespace PlanetTrader.Client
             if (!shown) return;
             HideTooltip();
             _rivalsList.Clear();
-            foreach (var m in _game.Magnates)
+            // Ряд портретов: каждый магнат в рамке своего цвета, под ним — что он делает и что сказал.
+            var row = new VisualElement();
+            row.AddToClassList("rivals-row");
+            _rivalsList.Add(row);
+            var active = _game.Magnates.Where(x => x.Corp == null || !x.Corp.Bankrupt).ToList();
+            float width = active.Count > 6 ? 96 : 120;
+            foreach (var m in active)
             {
+                var card = new VisualElement();
+                card.AddToClassList("rival-card");
+                card.style.width = width;
+                card.Add(MagnatePortrait(m, width));
+                var name = new Label(m.Name.Split(' ')[0]);
+                name.AddToClassList("rival-name");
+                name.style.color = LookOf(m).color;
+                card.Add(name);
                 var state = new Label();
-                state.AddToClassList("text");
-                _rivalsList.Add(state);
+                state.AddToClassList("rival-state");
+                card.Add(state);
                 var said = _game.RecentRemarks.LastOrDefault(x => x.MagnateId == m.Id && x.Turn >= _game.Turn - 3);
                 if (said != null)
                 {
                     var l = new Label($"<i>«{said.Text}»</i>");
-                    l.AddToClassList("small");
-                    _rivalsList.Add(l);
+                    l.AddToClassList("rival-said");
+                    card.Add(l);
                 }
+                row.Add(card);
             }
             UpdateRivals();
         }
@@ -539,14 +554,15 @@ namespace PlanetTrader.Client
         {
             float t = Mathf.Clamp01((Time.unscaledTime - _rivalsTurnStarted) / RivalsTurnSeconds);
             _rivalsTitle.text = "Ходят соперники" + new string('.', 1 + (int)(Time.unscaledTime * 3) % 3);
-            var magnates = _game.Magnates;
+            var magnates = _game.Magnates.Where(x => x.Corp == null || !x.Corp.Bankrupt).ToList();
             int current = Mathf.Min(magnates.Count - 1, (int)(t * magnates.Count));
-            var states = _rivalsList.Children().Where(c => c.ClassListContains("text")).Cast<Label>().ToList();
-            for (int i = 0; i < magnates.Count && i < states.Count; i++)
+            var cards = _rivalsList.Query(className: "rival-card").ToList();
+            for (int i = 0; i < magnates.Count && i < cards.Count; i++)
             {
                 var m = magnates[i];
-                string state = _game.Turn < m.QuietUntilTurn ? "отбивается от слухов" : i < current ? "походил(а)" : i == current ? "думает" : "ждёт";
-                states[i].text = $"{m.Name}, {m.PersonalityName}: {state}";
+                string state = _game.Turn < m.QuietUntilTurn ? "отбивается от слухов" : i < current ? "походил(а)" : i == current ? "думает…" : "ждёт";
+                cards[i].Q<Label>(className: "rival-state").text = state;
+                cards[i].EnableInClassList("thinking", i == current);
             }
             _rivalsProgress.style.width = Length.Percent(t * 100);
         }

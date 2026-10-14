@@ -22,6 +22,7 @@ namespace PlanetTrader.Client
             public Color Line = new Color(0.32f, 0.27f, 0.18f);
             public Color Accent = new Color(0.86f, 0.62f, 0.27f);
             public float Cut = 10;
+            public float AccentWidth = 1.6f;
         }
 
         /// <summary>Оживить рамки разметки: все элементы с классом <c>frame</c>.</summary>
@@ -39,6 +40,13 @@ namespace PlanetTrader.Client
                 if (style.TryGetValue(CutProp, out var cut)) look.Cut = cut;
                 e.MarkDirtyRepaint();
             });
+            e.generateVisualContent += ctx => Draw(ctx, e, look);
+        }
+
+        /// <summary>Рамка своих цветов (портрет магната — в его цвет); стили USS её не меняют.</summary>
+        public static void Attach(VisualElement e, Color line, Color accent, Color fill, float accentWidth = 1.6f, float cut = 12)
+        {
+            var look = new Look { Line = line, Accent = accent, Fill = fill, AccentWidth = accentWidth, Cut = cut };
             e.generateVisualContent += ctx => Draw(ctx, e, look);
         }
 
@@ -70,7 +78,7 @@ namespace PlanetTrader.Client
             // Засечки: срезанные углы и короткие отрезки вдоль краёв от них.
             float tick = Mathf.Min(28, w / 5);
             p.strokeColor = look.Accent;
-            p.lineWidth = 1.6f;
+            p.lineWidth = look.AccentWidth;
             p.lineCap = LineCap.Butt;
             p.BeginPath();
             p.MoveTo(new Vector2(0.8f, c + tick * 0.6f));

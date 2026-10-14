@@ -258,7 +258,7 @@ namespace PlanetTrader.Client
             ui.Small("Магнаты помнят ваши поступки с жителями. Матильда не подкупает жителей у заботливых, Гуго щадит «родственную душу».");
             ui.Line("Внимание магнатов", $"{Fmt.Percent(g.MagnateAttention)}: чем больше у вас планет, тем чаще пакости");
             if (g.Rivalry > 1)
-                ui.Small($"<color=#ffd27a>Вы богаче среднего магната в {g.Rivalry:0.#} раза — лидера травят все, пакостей больше.</color>");
+                ui.Small($"<color=#ffd27a>Вы богаче среднего магната стартового сектора «{g.Sectors[0].Name}» в {g.Rivalry:0.#} раза — лидера травят все, пакостей больше.</color>");
             ui.Small($"Жители с лояльностью от {Fmt.Amount(b.PoachScientistsBelowLoyalty)} не дают переманить своих учёных. " +
                      "Обитаемые планеты не оспорить в реестре: жители своих не отдают.");
             if (g.CartelActive)
@@ -267,19 +267,26 @@ namespace PlanetTrader.Client
                 ui.Small($"<color=#ffd27a>Вы так богаты, что магнаты могут сговориться против вас (картель).</color> Репутация от {Fmt.Amount(b.CartelReputationShield)} смягчит удар вдвое.");
             ui.Space("m");
 
-            foreach (var m in g.Magnates)
+            foreach (var m in g.Magnates.Where(x => x.Corp == null || !x.Corp.Bankrupt))
             {
                 using (ui.Card())
                 {
                     int planets = g.MagnatePlanetCount(m);
-                    ui.Text($"<b>{m.Name}</b>, {m.PersonalityName}. Планет: {planets}.");
-                    string income = m.LastIncome >= 0 ? $"+{Fmt.Money(m.LastIncome)}" : Fmt.Money(m.LastIncome);
-                    ui.Small($"Казна {Fmt.Money(m.Money)} ({income} за ход), состояние {Fmt.Money(g.MagnateWealth(m))}.");
-                    ui.Small(m.Personality == Personality.Greedy
-                        ? "Скупает выгодные планеты, щедро ставит на аукционах, подкупает жителей с низкой лояльностью. Хвалит жёсткость с жителями."
-                        : m.Personality == Personality.Chaotic
-                            ? "Непредсказуема: ставки вразброс, распускает слухи, переманивает заказчиков и менеджеров."
-                            : "Осторожна: ставит скромно, пакостит редко, переманивает заказчиков. Ценит заботу о жителях.");
+                    string where = m.Sector > 0 ? $" Сектор «{g.Sectors[m.Sector].Name}»." : "";
+                    // Портрет в рамке цвета магната, рядом — кто он и как себя ведёт.
+                    using (ui.Row())
+                    {
+                        ui.Add(MagnatePortrait(m, 118));
+                        using (ui.Box("magnate-about"))
+                        {
+                            string hex = ColorUtility.ToHtmlStringRGB(LookOf(m).color);
+                            ui.Text($"<b><color=#{hex}>{m.Name}</color></b>, {m.PersonalityName}. Планет: {planets}.{where}");
+                            if (!string.IsNullOrEmpty(m.Bio)) ui.Small($"<i>{m.Bio}</i>");
+                            string income = m.LastIncome >= 0 ? $"+{Fmt.Money(m.LastIncome)}" : Fmt.Money(m.LastIncome);
+                            ui.Small($"Казна {Fmt.Money(m.Money)} ({income} за ход), состояние {Fmt.Money(g.MagnateWealth(m))}.");
+                        }
+                    }
+                    ui.Small(m.Habits);
                     if (g.Turn < m.QuietUntilTurn)
                         ui.Small($"Отбивается от ваших слухов до хода {m.QuietUntilTurn}: не покупает и не пакостит.");
                     var said = g.RecentRemarks.LastOrDefault(x => x.MagnateId == m.Id);

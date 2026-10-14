@@ -1342,14 +1342,75 @@
 }
 
 .rivals-card {
-    width: 660px;
-    height: 300px;
+    min-width: 660px;
+    max-width: 1460px;
     padding: 16px 24px;
     --frame-fill: rgba(9, 12, 19, 0.98);
 }
 
 .rivals-fill {
     background-color: var(--orange);
+}
+
+/* Портреты магнатов: 3D-бюст в рамке цвета магната */
+
+.magnate-frame {
+    flex-shrink: 0;
+    padding: 6px;
+    margin-right: 12px;
+}
+
+.magnate-image {
+    flex-grow: 1;
+}
+
+.magnate-about {
+    flex-grow: 1;
+    flex-shrink: 1;
+}
+
+.rivals-row {
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: center;
+    margin: 8px 0 6px 0;
+}
+
+.rival-card {
+    align-items: center;
+    margin: 0 7px 10px 7px;
+}
+
+.rival-card .magnate-frame {
+    margin-right: 0;
+    transition-duration: 0.25s;
+}
+
+.rival-card.thinking .magnate-frame {
+    scale: 1.07 1.07;
+}
+
+.rival-name {
+    font-size: 14px;
+    margin-top: 6px;
+    -unity-font-definition: url("project://database/Assets/Resources/UI/Fonts/Inter-SemiBold.ttf");
+}
+
+.rival-state {
+    font-size: 12px;
+    color: var(--text-dim);
+}
+
+.rival-card.thinking .rival-state {
+    color: #ffd08a;
+}
+
+.rival-said {
+    font-size: 11px;
+    color: var(--muted);
+    white-space: normal;
+    -unity-text-align: upper-center;
+    margin-top: 2px;
 }
 
 /* Секторы над картой: вкладки и карточка лицензии */
