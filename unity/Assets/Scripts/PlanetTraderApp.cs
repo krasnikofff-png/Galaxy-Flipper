@@ -358,6 +358,13 @@ namespace PlanetTrader.Client
                 return;
             }
             // Пока выбирают персонажа, ход не кончается; Esc возвращает к партии, если это можно.
+            // Окно «Важное за ход» закрывают пробел, Enter или Esc — следующий ход не начнётся случайно.
+            if (AlertsOpen)
+            {
+                if (Input.GetKeyDown(KeyCode.Space) || Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.KeypadEnter) || Input.GetKeyDown(KeyCode.Escape))
+                    Later(CloseAlerts);
+                return;
+            }
             if (Input.GetKeyDown(KeyCode.Escape) && !_saves.ClassListContains("hidden"))
             {
                 _saves.AddToClassList("hidden");
@@ -389,6 +396,8 @@ namespace PlanetTrader.Client
             foreach (var e in report.Events) Log(e);
             if (report.Seizures > 0) Log("Денег не хватило: недостача ушла в долг, а долг превысил кредитный лимит.");
             if (_game.Bankrupt) Log("<color=#ff8a7a>Банкротство: планет не осталось, а долг есть. Партия окончена — нажмите «Новая игра».</color>");
+            // Важное — окном, чтобы не потерялось в журнале.
+            ShowAlerts(report.Alerts, report.Turn);
         }
 
         /// <summary>Коротко, что галактическое событие меняет.</summary>

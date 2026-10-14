@@ -134,6 +134,16 @@
                 </ui:VisualElement>
             </ui:VisualElement>
         </ui:VisualElement>
+        <ui:VisualElement name="alerts" class="overlay hidden">
+            <ui:VisualElement class="alerts-card frame">
+                <ui:Label name="alertsTitle" text="Важное за ход" class="title alerts-title" />
+                <ui:ScrollView name="alertsList" mode="Vertical" horizontal-scroller-visibility="Hidden" touch-scroll-type="Clamped" class="alerts-list" />
+                <ui:VisualElement class="alerts-footer">
+                    <ui:Label text="Всё это есть и в журнале событий." class="small alerts-note" />
+                    <ui:Button name="alertsOk" text="Понятно" focusable="false" class="alerts-ok" />
+                </ui:VisualElement>
+            </ui:VisualElement>
+        </ui:VisualElement>
         <ui:VisualElement name="saves" class="overlay hidden">
             <ui:VisualElement class="journal-card saves-card frame">
                 <ui:VisualElement class="panel-head">

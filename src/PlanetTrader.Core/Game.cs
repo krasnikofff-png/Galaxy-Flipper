@@ -43,6 +43,8 @@ namespace PlanetTrader.Core
         public int Seizures;
         /// <summary>События хода. У игроков кооператива список общий.</summary>
         public readonly List<string> Events;
+        /// <summary>Важное для этой корпорации (у каждого игрока своё): интерфейс показывает окном. Строки — и в Events.</summary>
+        public readonly List<Alert> Alerts = new List<Alert>();
 
         public TurnReport(List<string> events = null)
         {
@@ -568,7 +570,8 @@ namespace PlanetTrader.Core
                 if (!announce) continue;
                 string who = Players.Count() > 1 ? $"Корпорация «{_current.Name}»" : "Ваша корпорация";
                 var unlocks = LevelUnlocks(_current.Level);
-                report.Events.Add($"{who} доросла до уровня «{levels[_current.Level].Name}»" + (unlocks.Count > 0 ? ": " + string.Join(", ", unlocks) + "." : "."));
+                Important(report, AlertKind.Good, $"Новый уровень: {levels[_current.Level].Name}",
+                    $"{who} доросла до уровня «{levels[_current.Level].Name}»" + (unlocks.Count > 0 ? ": " + string.Join(", ", unlocks) + "." : "."));
             }
         }
 
@@ -1073,7 +1076,8 @@ namespace PlanetTrader.Core
                 {
                     p.OnStrike = true;
                     RecordDeed(DeedKind.Strike, p);
-                    report.Events.Add($"Забастовка на {p.Type.Name} #{p.Id}: лояльность {Math.Round(p.Loyalty)}, добычи и налогов нет.");
+                    Important(report, AlertKind.Disaster, "Забастовка",
+                        $"Забастовка на {p.Type.Name} #{p.Id}: лояльность {Math.Round(p.Loyalty)}, добычи и налогов нет.", p);
                 }
                 else if (p.OnStrike && p.Loyalty >= b.StrikeEndsAt)
                 {
@@ -1089,7 +1093,8 @@ namespace PlanetTrader.Core
                     p.MineWreckedTurn = Turn;
                     p.MineWreckedByRiot = true;
                     RecordDeed(DeedKind.Riot, p);
-                    report.Events.Add($"Бунт на {p.Type.Name} #{p.Id}: жители разнесли шахту. Страховка бунты не покрывает.");
+                    Important(report, AlertKind.Disaster, "Бунт",
+                        $"Бунт на {p.Type.Name} #{p.Id}: жители разнесли шахту. Страховка бунты не покрывает.", p);
                 }
             }
 
@@ -1291,7 +1296,8 @@ namespace PlanetTrader.Core
                 Money += compensation;
                 p.Earned += compensation;
                 GiveToMagnate(p, m);
-                report.Events.Add($"Реестр отдал {p.Type.Name} #{p.Id} магнату {m.Name}. Компенсация — {compensation}.");
+                Important(report, AlertKind.PlanetLost, "Планету отсудили",
+                    $"Реестр отдал {p.Type.Name} #{p.Id} магнату {m.Name}. Компенсация — {compensation}.", p, m);
             }
         }
 
@@ -1759,6 +1765,7 @@ namespace PlanetTrader.Core
                         report.InsurancePayout += p.Type.MineCost;
                         line += $", страховка выплатила {Math.Round(p.Type.MineCost)}";
                     }
+                    // Метеориты часты, а страховка их покрывает — только в журнал, без окна.
                     report.Events.Add(line + ".");
                 }
 
@@ -2055,7 +2062,8 @@ namespace PlanetTrader.Core
                 SoldPlanets.Add(best);
                 report.Seizures++;
                 TotalSeizures++;
-                report.Events.Add($"Коллекторы забрали планету {best.Type.Name} #{best.Id}");
+                Important(report, AlertKind.PlanetLost, "Коллекторы забрали планету",
+                    $"Коллекторы забрали планету {best.Type.Name} #{best.Id}: денег не хватило, а долг превысил кредитный лимит.", best);
             }
             if (Debt < 0)
             {
@@ -2066,7 +2074,8 @@ namespace PlanetTrader.Core
             if (PlayerPlanetCount == 0 && Debt > 1e-9)
             {
                 Bankrupt = true;
-                report.Events.Add($"Коллекторы забрали последнюю планету, а долг {Math.Round(Debt)} остался. Корпорация обанкротилась.");
+                Important(report, AlertKind.Bankrupt, "Банкротство",
+                    $"Коллекторы забрали последнюю планету, а долг {Math.Round(Debt)} остался. Корпорация обанкротилась.");
             }
         }
 
@@ -2124,10 +2133,12 @@ namespace PlanetTrader.Core
                 {
                     GiveToMagnate(p, m);
                     PlanetsLostToBribes++;
-                    report.Events.Add($"{m.Name} подкупил(а) жителей {p.Type.Name} #{p.Id}: планета теперь у магната.");
+                    Important(report, AlertKind.PlanetLost, "Жители ушли к магнату",
+                        $"{m.Name} подкупил(а) жителей {p.Type.Name} #{p.Id}: планета теперь у магната.", p, m);
                 }
                 else
-                    report.Events.Add($"Жители {p.Type.Name} #{p.Id} отказали {m.Name}: лояльность {Math.Round(p.Loyalty)}.");
+                    Important(report, AlertKind.Good, "Жители не продались",
+                        $"Жители {p.Type.Name} #{p.Id} отказали {m.Name}: лояльность {Math.Round(p.Loyalty)}.", p, m);
             }
         }
 
@@ -2299,8 +2310,9 @@ namespace PlanetTrader.Core
             if (!CartelActive && active.Count >= 2 && Rivalry >= Balance.CartelRivalry && _rng.Chance(Balance.CartelChance))
             {
                 _current.CartelUntilTurn = Turn + Balance.CartelTurns;
-                report.Events.Add($"Магнаты сговорились со скупщиками против вас: {Balance.CartelTurns} ходов биржа платит на {Math.Round(CartelCut * 100)}% меньше" +
-                                  (Reputation >= Balance.CartelReputationShield ? " (репутация смягчила удар вдвое)." : ". Репутация от " + Balance.CartelReputationShield + " смягчила бы удар вдвое."));
+                Important(report, AlertKind.Trick, "Картель против вас",
+                    $"Магнаты сговорились со скупщиками против вас: {Balance.CartelTurns} ходов биржа платит на {Math.Round(CartelCut * 100)}% меньше" +
+                    (Reputation >= Balance.CartelReputationShield ? " (репутация смягчила удар вдвое)." : ". Репутация от " + Balance.CartelReputationShield + " смягчила бы удар вдвое."));
             }
             double crowd = Balance.RivalMagnates > 0 && _magnates.Count > Balance.RivalMagnates ? Balance.RivalMagnates / (double)_magnates.Count : 1;
             foreach (var m in active)
@@ -2353,6 +2365,13 @@ namespace PlanetTrader.Core
             return TrickKind.Rumor;
         }
 
+        /// <summary>Событие, которое серьёзно касается текущей корпорации: строка в журнал и окно «Важное за ход».</summary>
+        static void Important(TurnReport report, AlertKind kind, string title, string text, Planet p = null, Magnate m = null)
+        {
+            report.Events.Add(text);
+            report.Alerts.Add(new Alert { Kind = kind, Title = title, Text = text, PlanetId = p?.Id ?? -1, MagnateId = m?.Id ?? -1 });
+        }
+
         void PlayTrick(Magnate m, TrickKind kind, TurnReport report)
         {
             switch (kind)
@@ -2372,8 +2391,9 @@ namespace PlanetTrader.Core
                     if (m.Money - bribeCost < MagnateReserve(m)) return;
                     m.Money -= bribeCost;
                     _bribes.Add(new BribeAttempt { Id = _nextBribeId++, PlanetId = target.Id, MagnateId = m.Id, ResolveTurn = Turn + Balance.BribeWarningTurns });
-                    report.Events.Add($"{m.Name} подкупает жителей {target.Type.Name} #{target.Id}! Через {Balance.BribeWarningTurns} хода они уйдут, " +
-                                      $"если лояльность не поднимется до {Math.Round(Balance.BribeSuccessLoyalty)}.");
+                    Important(report, AlertKind.Threat, "Магнат подкупает жителей",
+                        $"{m.Name} подкупает жителей {target.Type.Name} #{target.Id}! Через {Balance.BribeWarningTurns} хода они уйдут, " +
+                        $"если лояльность не поднимется до {Math.Round(Balance.BribeSuccessLoyalty)}. Помогут праздник или встречный подкуп.", target, m);
                     return;
                 }
                 case TrickKind.Rumor:
@@ -2408,8 +2428,9 @@ namespace PlanetTrader.Core
                     double compensation = target.MarketValue(Balance) * Balance.ClaimCompensationShare;
                     if (m.Money - compensation < MagnateReserve(m)) return;
                     _claims.Add(new HostileClaim { Id = _nextClaimId++, PlanetId = target.Id, MagnateId = m.Id, ResolveTurn = Turn + Balance.ClaimWarningTurns });
-                    report.Events.Add($"{m.Name} оспаривает в реестре права на {target.Type.Name} #{target.Id}! Через {Balance.ClaimWarningTurns} хода планета уйдёт к нему за полцены, " +
-                                      $"если не оплатить защиту ({Math.Round(ClaimDefenseCost(target))}).");
+                    Important(report, AlertKind.Threat, "Иск в реестре",
+                        $"{m.Name} оспаривает в реестре права на {target.Type.Name} #{target.Id}! Через {Balance.ClaimWarningTurns} хода планета уйдёт к нему за полцены, " +
+                        $"если не оплатить защиту ({Math.Round(ClaimDefenseCost(target))}).", target, m);
                     return;
                 }
                 case TrickKind.PoachScientists:
@@ -2422,8 +2443,9 @@ namespace PlanetTrader.Core
                         .FirstOrDefault();
                     if (target == null) return;
                     target.Education--;
-                    report.Events.Add($"{m.Name} переманил(а) учёных с {target.Type.Name} #{target.Id}: образование упало до уровня {target.Education}. " +
-                                      $"Жители с лояльностью от {Math.Round(Balance.PoachScientistsBelowLoyalty)} не уезжают.");
+                    Important(report, AlertKind.Trick, "Учёных переманили",
+                        $"{m.Name} переманил(а) учёных с {target.Type.Name} #{target.Id}: образование упало до уровня {target.Education}. " +
+                        $"Жители с лояльностью от {Math.Round(Balance.PoachScientistsBelowLoyalty)} не уезжают.", target, m);
                     return;
                 }
                 case TrickKind.PoachManager:
@@ -2432,7 +2454,8 @@ namespace PlanetTrader.Core
                     if (best == null) return;
                     _current.Staff.Remove(best);
                     if (_current.PerformerId == best.Id) _current.PerformerId = -1;
-                    report.Events.Add($"{m.Name} переманил(а) вашего лучшего менеджера — {best.Name}. Действий на ход станет меньше.");
+                    Important(report, AlertKind.Trick, "Менеджера переманили",
+                        $"{m.Name} переманил(а) вашего лучшего менеджера — {best.Name}. Действий на ход станет меньше.", null, m);
                     return;
                 }
             }

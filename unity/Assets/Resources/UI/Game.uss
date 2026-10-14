@@ -1819,3 +1819,126 @@
     border-color: rgba(92, 78, 52, 0.9);
     border-radius: 3px;
 }
+
+/* Окно «Важное за ход»: карточки событий, у каждого вида свой цвет полосы и значка. */
+.alerts-card {
+    width: 780px;
+    max-height: 780px;
+    padding: 16px 20px;
+    --frame-fill: rgba(9, 12, 19, 0.98);
+}
+
+.alerts-title {
+    color: var(--orange);
+    margin-bottom: 10px;
+}
+
+.alerts-list {
+    flex-shrink: 1;
+    max-height: 620px;
+}
+
+.alert-card {
+    flex-direction: row;
+    align-items: flex-start;
+    padding: 10px 12px;
+    margin-bottom: 8px;
+    background-color: var(--card-bg);
+    border-left-width: 3px;
+    border-radius: 3px;
+}
+
+.alert-badge {
+    width: 70px;
+    height: 70px;
+    margin-right: 12px;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    border-radius: 3px;
+    background-color: rgba(255, 255, 255, 0.04);
+}
+
+.alert-badge-icon {
+    width: 34px;
+    height: 34px;
+}
+
+.alert-body {
+    flex-grow: 1;
+    flex-shrink: 1;
+}
+
+.alert-head {
+    flex-direction: row;
+    align-items: center;
+    margin-bottom: 4px;
+}
+
+.alert-kind-icon {
+    width: 16px;
+    height: 16px;
+    margin-right: 6px;
+}
+
+.alert-title {
+    font-size: 16px;
+    -unity-font-definition: url("project://database/Assets/Resources/UI/Fonts/Inter-SemiBold.ttf");
+}
+
+.alert-who {
+    font-size: 13px;
+    color: var(--muted);
+    margin-left: 8px;
+}
+
+.alert-text {
+    font-size: 13px;
+    color: var(--text-dim);
+    white-space: normal;
+}
+
+.alert-go {
+    align-self: flex-start;
+    margin-top: 8px;
+}
+
+.alert-lost { border-left-color: var(--red); }
+.alert-lost .alert-title, .alert-lost .alert-kind-icon, .alert-lost .alert-badge-icon { color: #ff8a7a; }
+.alert-threat { border-left-color: var(--orange); }
+.alert-threat .alert-title, .alert-threat .alert-kind-icon, .alert-threat .alert-badge-icon { color: #ffc067; }
+.alert-disaster { border-left-color: #ff7a45; }
+.alert-disaster .alert-title, .alert-disaster .alert-kind-icon, .alert-disaster .alert-badge-icon { color: #ff9a6b; }
+.alert-trick { border-left-color: #a77bff; }
+.alert-trick .alert-title, .alert-trick .alert-kind-icon, .alert-trick .alert-badge-icon { color: #c6a8ff; }
+.alert-good { border-left-color: var(--green); }
+.alert-good .alert-title, .alert-good .alert-kind-icon, .alert-good .alert-badge-icon { color: #7fe3a8; }
+
+.alerts-footer {
+    flex-direction: row;
+    align-items: center;
+    margin-top: 8px;
+}
+
+.alerts-note {
+    flex-grow: 1;
+}
+
+.alerts-ok {
+    width: 170px;
+    height: 38px;
+    margin: 0;
+    background-color: rgba(120, 74, 20, 0.95);
+    border-width: 1px;
+    border-color: var(--orange);
+    border-radius: 3px;
+    color: #ffd08a;
+    font-size: 16px;
+    -unity-text-align: middle-center;
+    -unity-font-definition: url("project://database/Assets/Resources/UI/Fonts/Inter-SemiBold.ttf");
+}
+
+.alerts-ok:hover {
+    background-color: rgba(150, 94, 28, 1);
+    color: #ffe2b0;
+}

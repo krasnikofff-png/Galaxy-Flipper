@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+using System.Linq;
 using PlanetTrader.Core;
 using Xunit;
 
@@ -289,9 +291,13 @@ public class GameTests
         var probe = g.Balance.ProbeTypes[0];
         while (g.Money >= probe.Cost && g.LaunchScan(probe, p.MapX, p.MapY).Ok) { }
 
-        for (int i = 0; i < 50 && g.TotalSeizures == 0; i++) g.EndTurn();
+        var alerts = new List<Alert>();
+        for (int i = 0; i < 50 && g.TotalSeizures == 0; i++) alerts.AddRange(g.EndTurn().Alerts);
 
         Assert.Equal(1, g.TotalSeizures);
+        Assert.Contains(alerts, a => a.Kind == AlertKind.PlanetLost && a.PlanetId == p.Id);
+        // Банкрот — только если после продажи последней планеты долг остался.
+        Assert.Equal(g.Bankrupt, alerts.Any(a => a.Kind == AlertKind.Bankrupt));
         Assert.Equal(Owner.Registry, p.Owner);
         Assert.Equal(0, g.PlayerPlanetCount);
     }
@@ -863,12 +869,18 @@ public class MagnateTests
     public void BribeTakesPlanetAfterWarning()
     {
         var g = BriberyGame(out var p);
-        g.EndTurn();
+        var warning = g.EndTurn();
         var attempt = g.Bribes.Single();
         Assert.Equal(p.Id, attempt.PlanetId);
-        while (g.Turn <= attempt.ResolveTurn) g.EndTurn();
+        // Предупреждение — в окно «Важное за ход», с планетой и магнатом.
+        var threat = warning.Alerts.Single(a => a.Kind == AlertKind.Threat);
+        Assert.Equal(p.Id, threat.PlanetId);
+        Assert.Equal(attempt.MagnateId, threat.MagnateId);
+        var alerts = new List<Alert>();
+        while (g.Turn <= attempt.ResolveTurn) alerts.AddRange(g.EndTurn().Alerts);
         Assert.Equal(Owner.Ai, p.Owner);
         Assert.Equal(1, g.PlanetsLostToBribes);
+        Assert.Contains(alerts, a => a.Kind == AlertKind.PlanetLost && a.PlanetId == p.Id);
     }
 
     [Fact]
@@ -1020,9 +1032,11 @@ public class MagnateTests
         var claim = g.Claims.Single();
         Assert.Equal(p.Id, claim.PlanetId);
         double money = g.Money;
-        while (g.Turn <= claim.ResolveTurn) g.EndTurn();
+        var alerts = new List<Alert>();
+        while (g.Turn <= claim.ResolveTurn) alerts.AddRange(g.EndTurn().Alerts);
         Assert.Equal(Owner.Ai, p.Owner);
         Assert.True(g.Money > money);
+        Assert.Contains(alerts, a => a.Kind == AlertKind.PlanetLost && a.PlanetId == p.Id && a.MagnateId == claim.MagnateId);
     }
 
     [Fact]

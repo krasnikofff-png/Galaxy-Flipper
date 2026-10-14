@@ -26,6 +26,7 @@ namespace PlanetTrader.Client
     /// -autoShotSectorLocked n — показать сектор n без лицензии (карточка лицензии).
     /// -autoShotSaves n — сыграть n ходов (пустых), сохранить партию вручную и открыть список сохранений;
     /// -autoShotContinue — при запуске продолжить автосохранение (как кнопка «Продолжить партию»).
+    /// -autoShotAlerts — окно «Важное за ход» с примерами всех видов событий.
     /// Без ключа ничего не делает.
     /// </summary>
     public sealed class AutoScreenshot : MonoBehaviour
@@ -37,7 +38,7 @@ namespace PlanetTrader.Client
         int _tab = -1;
         bool _probe, _rivals, _buy, _selectFree, _people, _keepStart;
         int _character, _sector = -1, _lockedSector = -1, _saveTurns = -1;
-        bool _continue;
+        bool _continue, _alerts;
         Vector2[] _clicks = new Vector2[0];
         float[] _wheel, _pan;
 
@@ -94,6 +95,7 @@ namespace PlanetTrader.Client
             shot._people = System.Array.IndexOf(args, "-autoShotPeople") >= 0;
             shot._saveTurns = saveTurns;
             shot._continue = System.Array.IndexOf(args, "-autoShotContinue") >= 0;
+            shot._alerts = System.Array.IndexOf(args, "-autoShotAlerts") >= 0;
         }
 
         IEnumerator Start()
@@ -111,6 +113,11 @@ namespace PlanetTrader.Client
                 // Партия за выбранного персонажа начинается в Update — ждём пару кадров.
                 app.StartAs(_character);
                 yield return null;
+                yield return null;
+            }
+            if (app != null && _alerts)
+            {
+                app.AlertsForShot();
                 yield return null;
             }
             if (app != null && _saveTurns >= 0)

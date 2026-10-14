@@ -155,6 +155,7 @@ namespace PlanetTrader.Client
             CreateMap(root);
             CreateStart(root);
             CreateSaves(root);
+            CreateAlerts(root);
             Icons.AttachAll(root);
             Frames.AttachAll(root);
         }
