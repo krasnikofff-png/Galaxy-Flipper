@@ -116,6 +116,8 @@ namespace PlanetTrader.Client
             route.Add(dash);
             route.Add(new Label("Торговые пути"));
             _legend.Add(route);
+            // Легенда лежит поверх карты: клики проходят сквозь неё к планетам.
+            _legend.Query<VisualElement>().ForEach(e => e.pickingMode = PickingMode.Ignore);
         }
 
         void LegendItem(Color color, string text)
@@ -209,10 +211,11 @@ namespace PlanetTrader.Client
             _probeBar.EnableInClassList("hidden", !_probeMode);
             _probesButton.EnableInClassList("selected", _probeMode);
             _probeInfo.EnableInClassList("hidden", !_probeMode);
-            _probeInfo.text = $"«{SelectedProbe.Name}», {Fmt.Money(SelectedProbe.Cost)}. {ProbeDescription(SelectedProbe)} " +
-                (_probeMission == ProbeMission.ScanArea
-                    ? "Скан области: кликните по карте — все планеты в круге станут известны (тип и оценка реестра)."
-                    : "Разведка планеты: кликните по планете — узнаете точный запас, подвохи и руины. Без разведки с жителями не поговорить.");
+            _probeInfo.text = _probeMission == ProbeMission.ScanArea
+                ? $"Скан области: кликните по карте — все планеты в круге станут известны (тип и оценка реестра). «{SelectedProbe.Name}», {Fmt.Money(SelectedProbe.Cost)}. {ProbeDescription(SelectedProbe)}"
+                : "Разведка планеты: кликните по планете — узнаете точный запас, подвохи и руины. Зонд подберётся сам: самый дешёвый, который долетит. Без разведки с жителями не поговорить.";
+            // Тип зонда выбирают только для скана: разведке он подбирается сам.
+            _probeTypes.EnableInClassList("hidden", _probeMission != ProbeMission.ScanArea);
             _probesText.text = _game.Probes.Count > 0 ? $"Зонды ({_game.Probes.Count} в полёте)" : "Зонды";
             _zoomValue.text = $"{Mathf.RoundToInt(_zoom * 100)}%";
             RefreshEventLine();
@@ -323,9 +326,9 @@ namespace PlanetTrader.Client
                     Disc(paint, Vector2.Lerp(from, ex, d / length), 1.1f, new Color(0.95f, 0.62f, 0.2f, 0.55f));
             }
 
-            if (_probeMode)
+            if (_probeMode && _probeMission == ProbeMission.ScanArea)
             {
-                // Дальность выбранного зонда от каждой точки запуска.
+                // Дальность выбранного зонда от каждой точки запуска (для скана; разведке зонд подбирается сам).
                 var range = new Color(0.4f, 0.7f, 1f, 0.25f);
                 MapRing(paint, b.ExchangeX, b.ExchangeY, SelectedProbe.Range, range);
                 foreach (var own in g.PlayerPlanets)
@@ -508,7 +511,11 @@ namespace PlanetTrader.Client
             string name = p.Knowledge == Knowledge.Silhouette ? $"Силуэт #{p.Id}" : $"{p.Type.Name} #{p.Id}, {p.Resource.RuName()}";
             string tip = $"{name}\n{Fmt.OwnerName(p.Owner, p.FoundByProbe)}";
             if (_probeMode && _probeMission == ProbeMission.Explore && p.Knowledge != Knowledge.Explored && p.Owner != Owner.Player)
-                tip += "\n" + ProbeHint(p.MapX, p.MapY, ProbeMission.Explore);
+            {
+                var probe = CheapestProbe(p);
+                tip += "\n" + Cap(ProbeDistance(p)) + "\n" + (probe == null ? "ни один зонд не долетит"
+                    : $"«{probe.Name}»: {Fmt.Money(probe.Cost)}, результат через {_game.ProbeTurns(probe, p.MapX, p.MapY, ProbeMission.Explore)} х.");
+            }
             return tip;
         }
 
@@ -527,9 +534,11 @@ namespace PlanetTrader.Client
             Act(() => _game.LaunchScan(probe, x, y), $"Зонд «{probe.Name}» отправлен сканировать область.");
         }
 
+        /// <summary>Разведка с карты: зонд подбирается сам — самый дешёвый, который долетит.</summary>
         void LaunchExplore(int planetId)
         {
-            var probe = SelectedProbe;
+            var target = _game.GetPlanet(planetId);
+            var probe = target != null ? CheapestProbe(target) ?? SelectedProbe : SelectedProbe;
             Act(() => _game.LaunchExplore(probe, planetId), $"Зонд «{probe.Name}» отправлен на разведку планеты #{planetId}.");
         }
     }

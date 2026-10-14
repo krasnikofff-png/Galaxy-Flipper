@@ -21,9 +21,9 @@
                 <ui:VisualElement name="mapCanvas" class="map-canvas" />
                 <ui:VisualElement name="mapLabels" class="map-labels" picking-mode="Ignore" />
                 <ui:VisualElement class="map-header" picking-mode="Ignore">
-                    <ui:Label text="ГАЛАКТИЧЕСКАЯ КАРТА" class="panel-title" />
-                    <ui:Label name="sectorName" class="panel-subtitle" />
-                    <ui:Label name="eventLine" class="event-line" />
+                    <ui:Label text="ГАЛАКТИЧЕСКАЯ КАРТА" class="panel-title" picking-mode="Ignore" />
+                    <ui:Label name="sectorName" class="panel-subtitle" picking-mode="Ignore" />
+                    <ui:Label name="eventLine" class="event-line" picking-mode="Ignore" />
                 </ui:VisualElement>
                 <ui:VisualElement name="legend" class="legend" picking-mode="Ignore" />
                 <ui:VisualElement name="probeBar" class="probe-bar hidden">

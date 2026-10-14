@@ -399,7 +399,23 @@ namespace PlanetTrader.Client
             }
         }
 
-        /// <summary>Разведка планеты: строка на каждый зонд — срок, дальность, цена.</summary>
+        /// <summary>Самый дешёвый зонд, который долетит до планеты, или null.</summary>
+        ProbeType CheapestProbe(Planet p) =>
+            _game.Balance.ProbeTypes.Where(t => _game.InRange(t, p.MapX, p.MapY)).OrderBy(t => t.Cost).FirstOrDefault();
+
+        /// <summary>Сколько лететь до планеты и откуда: от ближайшей вашей планеты или от биржи.</summary>
+        string ProbeDistance(Planet p)
+        {
+            var g = _game;
+            var origin = g.LaunchOrigin(p.MapX, p.MapY);
+            bool fromExchange = origin.x == g.Balance.ExchangeX && origin.y == g.Balance.ExchangeY;
+            return $"до планеты {Fmt.Amount(origin.distance * 10)} св. лет {(fromExchange ? "от биржи" : "от вашей планеты")}";
+        }
+
+        /// <summary>
+        /// Разведка планеты одной строкой: самый дешёвый зонд, который долетит, расстояние и срок.
+        /// Зонды подороже нужны только дальним планетам — их и предлагаем, когда дешёвый не долетает.
+        /// </summary>
         void ProbeRows(PanelBuilder ui, Planet p, bool accent)
         {
             var g = _game;
@@ -410,17 +426,21 @@ namespace PlanetTrader.Client
                 ui.InfoRow("rocket", "Зонд в пути", $"разведка через {flying.ResolveTurn - g.Turn + 1} х.");
                 return;
             }
-            var cheapest = g.Balance.ProbeTypes.Where(t => g.InRange(t, p.MapX, p.MapY)).OrderBy(t => t.Cost).FirstOrDefault();
-            foreach (var t in g.Balance.ProbeTypes)
+            var probe = CheapestProbe(p);
+            if (probe == null)
             {
-                bool reach = g.InRange(t, p.MapX, p.MapY);
-                var probe = t;
-                int id = p.Id;
-                ui.ActionRow("rocket", $"Разведать зондом «{t.Name}»",
-                    reach ? $"результат через {g.ProbeTurns(t, p.MapX, p.MapY, ProbeMission.Explore)} х.; летает до {Fmt.Amount(t.Range * 10)} св. лет" : $"не долетит: летает до {Fmt.Amount(t.Range * 10)} св. лет",
-                    Cost(t.Cost), reach && CanAct(t.Cost),
-                    () => Act(() => g.LaunchExplore(probe, id), $"Зонд «{probe.Name}» отправлен на разведку планеты #{id}."), accent: accent && t == cheapest);
+                double farthest = g.Balance.ProbeTypes.Max(t => t.Range);
+                ui.InfoRow("rocket", "Зонды сюда не долетают", $"{ProbeDistance(p)}, а самый дальний летает на {Fmt.Amount(farthest * 10)}");
+                return;
             }
+            // Почему не дешевле: какие зонды не долетают.
+            var tooShort = g.Balance.ProbeTypes.Where(t => t.Cost < probe.Cost).OrderBy(t => t.Cost).ToList();
+            string why = tooShort.Count == 0 ? "" : "; " + string.Join(", ", tooShort.Select(t => $"«{t.Name}» летает только на {Fmt.Amount(t.Range * 10)}"));
+            int id = p.Id;
+            ui.ActionRow("rocket", $"Разведать зондом «{probe.Name}»",
+                $"{ProbeDistance(p)}{why}; результат через {g.ProbeTurns(probe, p.MapX, p.MapY, ProbeMission.Explore)} х.",
+                Cost(probe.Cost), CanAct(probe.Cost),
+                () => Act(() => g.LaunchExplore(probe, id), $"Зонд «{probe.Name}» отправлен на разведку планеты #{id}."), accent: accent);
         }
 
         // ------------------------------------------------------------------

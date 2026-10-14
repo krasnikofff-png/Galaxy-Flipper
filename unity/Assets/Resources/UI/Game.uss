@@ -809,16 +809,6 @@
     border-color: rgba(92, 78, 52, 0.7);
 }
 
-.button.portrait-button {
-    position: absolute;
-    right: 8px;
-    top: 8px;
-    width: 124px;
-    min-height: 26px;
-    font-size: 13px;
-    padding: 2px 6px;
-}
-
 /* Сводка планеты */
 
 .summary {
