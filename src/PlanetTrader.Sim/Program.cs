@@ -368,8 +368,6 @@ namespace PlanetTrader.Sim
                 byType.TryGetValue(kv.Key, out var acc);
                 byType[kv.Key] = (acc.inv + kv.Value.invested, acc.ret + kv.Value.returned);
             }
-            double Roi(string name) => byType.TryGetValue(name, out var v) && v.inv > 0 ? v.ret / v.inv : double.NaN;
-            double iceRoi = Roi("Ледяной карлик"), anomalyRoi = Roi("Аномалия");
             double scout120 = Median(active.Select(r => r.Capital[120])) / Median(noScouting.Select(r => r.Capital[120]));
             double scoutEnd = Median(active.Select(r => r.Capital[End])) / Median(noScouting.Select(r => r.Capital[End]));
             sb.AppendLine($"| Разведка у реестра (этап 3) | для справки: «Активный» с разведкой перед покупкой против того же без неё (с жителями разведка обязательна) | ×{F(scout120, "0.00")} к 120, ×{F(scoutEnd, "0.00")} к {End} | |");
@@ -394,7 +392,6 @@ namespace PlanetTrader.Sim
             double regenShare = active.Sum(r => r.RegeneratingTurns) / (double)Math.Max(1, active.Sum(r => r.PlanetTurns));
             sb.AppendLine($"| Месторождения восстанавливаются (этап 7) | для справки: доля планет-ходов, когда основное месторождение восстанавливается | {F(regenShare * 100, "0")}% | |");
             sb.AppendLine($"| Развитие (этап 7) | для справки: технологий и экстракторов у «Активного» к {End} | {F(Median(active.Select(r => (double)r.Techs)), "0")} технологий, {F(Median(active.Select(r => (double)r.Extractors)), "0")} экстракторов | |");
-            sb.AppendLine($"| Квантий не ломает экономику | Аномалия не сильно выгоднее Льда | Аномалия ×{F(anomalyRoi, "0.00")}, Лёд ×{F(iceRoi, "0.00")} | {Check(anomalyRoi <= iceRoi * 1.3)} |");
             sb.AppendLine();
 
             sb.AppendLine("## Доход на вложенное по типам планет («Активный»)");
