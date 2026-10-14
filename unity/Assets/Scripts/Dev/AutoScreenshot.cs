@@ -17,6 +17,7 @@ namespace PlanetTrader.Client
     /// -autoShotWheel "x,y,шаги" — покрутить колесо мыши в точке (меньше нуля — к себе, приблизить),
     /// -autoShotPan "x,y,dx,dy" — потянуть мышью из точки на dx, dy.
     /// -autoShotBuy — купить свободную планету без шахты, выбрать её и выписать в журнал кнопки правой панели.
+    /// -autoShotPeople — на вашей планете жители и школа (видно учёбу и правила планеты).
     /// -autoShotSelectFree — выбрать свободную планету, которую ещё не разведали (видно кнопку «Разведать зондом»).
     /// -autoShotProbe — включить режим зонда. -autoShotRivals — нажать «Конец хода» перед снимком (пауза «ходят соперники»).
     /// Без ключа ничего не делает.
@@ -28,7 +29,7 @@ namespace PlanetTrader.Client
         bool _reveal;
         float _drag;
         int _tab = -1;
-        bool _probe, _rivals, _buy, _selectFree;
+        bool _probe, _rivals, _buy, _selectFree, _people;
         Vector2[] _clicks = new Vector2[0];
         float[] _wheel, _pan;
 
@@ -72,6 +73,7 @@ namespace PlanetTrader.Client
             shot._rivals = System.Array.IndexOf(args, "-autoShotRivals") >= 0;
             shot._buy = System.Array.IndexOf(args, "-autoShotBuy") >= 0;
             shot._selectFree = System.Array.IndexOf(args, "-autoShotSelectFree") >= 0;
+            shot._people = System.Array.IndexOf(args, "-autoShotPeople") >= 0;
         }
 
         IEnumerator Start()
@@ -111,6 +113,14 @@ namespace PlanetTrader.Client
                 var side = FindAnyObjectByType<UIDocument>().rootVisualElement.Q<ScrollView>("sideScroll");
                 foreach (var b in side.Query<Button>().ToList())
                     Debug.Log($"Кнопка панели: «{b.text}» {(b.enabledSelf ? "" : "(неактивна)")} {(b.resolvedStyle.display == DisplayStyle.None ? "(скрыта)" : "")}");
+            }
+            if (app != null && _people)
+            {
+                var own = app.CurrentGame.PlayerPlanets.First();
+                own.Inhabited = true;
+                own.HasSchool = true;
+                own.Loyalty = 60;
+                app.Select(own.Id);
             }
             if (app != null && _selectFree)
             {
