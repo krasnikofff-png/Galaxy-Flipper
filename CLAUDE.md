@@ -16,6 +16,13 @@
 - `unity/` — прототип в Unity 6 (встроенный рендер, интерфейс на UI Toolkit: `unity/Assets/Resources/UI`, код — `PlanetTraderApp*.cs`). Ядро подключено как пакет. Процедурные планеты — `unity/Assets/Scripts/Planets`, шейдеры — `unity/Assets/Resources/Shaders`, модели построек и жителей — `tools/buildings/make_buildings.py` (Blender), витрина по F2. Как проверять без человека (сборка, автоснимок, автоклики) — `docs/art/README.md`.
 - `tools/UnityCompileCheck` — проверка, что скрипты Unity компилируются без Unity; `tools/planet-preview/planet.py` — быстрое превью планет на Python.
 
+## Навыки проекта
+
+Повторяющиеся задачи записаны навыками в `.claude/skills` — пользоваться ими, а не вспоминать команды:
+- `planet-trader-ship` — проверки, коммит, отправка в GitHub и копия в проект в Загрузках (его автор держит открытым в Unity);
+- `planet-trader-unity-check` — собрать игру и снять экран с ключами автоснимка, вырезать и сравнить кадры;
+- `planet-trader-balance` — опыты и полная проверка баланса симулятором, регрессия, отчёт автору.
+
 ## Проверки перед коммитом
 
 ```
