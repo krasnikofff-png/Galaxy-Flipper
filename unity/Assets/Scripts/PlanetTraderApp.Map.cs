@@ -352,8 +352,6 @@ namespace PlanetTrader.Client
                 // Сама планета — 3D-сфера под интерфейсом; здесь только кольца вокруг неё.
                 if (p.Id == _selectedId) Brackets(paint, center, radius + 9, new Color(0.45f, 0.95f, 0.85f));
                 Ring(paint, center, radius + 4, RingColor(p), 0.8f);
-                if (p.Knowledge == Knowledge.Explored && p.Owner != Owner.Player)
-                    Disc(paint, center + new Vector2(radius + 2, -radius - 2), 3.5f, Color.white);
             }
 
             // Режим скана: круг скана под курсором — зелёный, если зонд долетит.
