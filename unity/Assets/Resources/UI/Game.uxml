@@ -12,7 +12,7 @@
             <ui:VisualElement name="stats" class="stats" picking-mode="Ignore" />
             <ui:VisualElement class="spacer" picking-mode="Ignore" />
             <ui:Button name="endTurnButton" focusable="false" class="end-turn">
-                <ui:Label text="Конец хода" class="end-turn-text" picking-mode="Ignore" />
+                <ui:Label text="Следующий ход" class="end-turn-text" picking-mode="Ignore" />
                 <ui:VisualElement class="icon icon-arrow" />
             </ui:Button>
         </ui:VisualElement>

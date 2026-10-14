@@ -20,8 +20,8 @@ namespace PlanetTrader.Client
         enum Tab { Planet, Market, Orders, Finance, Team, Development, Magnates }
         static readonly string[] TabNames = { "Планета", "Биржа", "Заказы", "Финансы", "Команда", "Развитие", "Магнаты" };
 
-        /// <summary>Сколько секунд длится «ход соперников» после нажатия «Конец хода».</summary>
-        const float RivalsTurnSeconds = 1.2f;
+        /// <summary>Сколько секунд длится «ход соперников» после нажатия «Следующий ход».</summary>
+        const float RivalsTurnSeconds = 2.4f;
         /// <summary>Когда начался ход соперников; меньше нуля — сейчас ход игрока.</summary>
         float _rivalsTurnStarted = -1;
         bool RivalsTurn => _rivalsTurnStarted >= 0;
@@ -294,7 +294,7 @@ namespace PlanetTrader.Client
                             (start.ExtraDeposits.Count > 0 ? $" и вторым месторождением ({start.ExtraDeposits[0].Resource.RuName().ToLowerInvariant()})" : "");
             Log($"Новая партия. Директор — {hero.Name.ToLowerInvariant()}. У вас ледяной карлик с шахтой{extras}, {Fmt.Money(_game.Money)} денег и долг {Fmt.Money(b.StartDebt)}.");
             Log($"За ход можно сделать {_game.ActionsPerTurn} действия: купить, построить шахту, продать планету, запустить зонд, нанять менеджера.");
-            Log("Продажа ресурсов, заказы и кредит действий не тратят. Пробел или Enter — конец хода.");
+            Log("Продажа ресурсов, заказы и кредит действий не тратят. Пробел или Enter — следующий ход.");
             Log("Серые планеты — силуэты: тип и запас неизвестны. Кнопка «Зонды» — скан области или полная разведка планеты.");
             Log("Соперники: " + string.Join(" и ", _game.Magnates.Select(m => $"{m.Name} ({m.PersonalityName})")) + ". Чем больше у вас планет, тем больше они пакостят.");
         }
@@ -328,7 +328,7 @@ namespace PlanetTrader.Client
         // Ход
         // ------------------------------------------------------------------
 
-        /// <summary>«Конец хода»: сначала пауза на ход соперников, потом сам ход.</summary>
+        /// <summary>«Следующий ход»: сначала пауза на ход соперников, потом сам ход.</summary>
         void RequestEndTurn()
         {
             if (RivalsTurn) return;
@@ -348,7 +348,7 @@ namespace PlanetTrader.Client
             MarkDirty();
         }
 
-        /// <summary>Пробел или Enter — конец хода; Esc — выйти из режима зонда. Пока ходят соперники, любая клавиша или клик — пропустить паузу.</summary>
+        /// <summary>Пробел или Enter — следующий ход; Esc — выйти из режима зонда. Пока ходят соперники, любая клавиша или клик — пропустить паузу.</summary>
         void HandleKeys()
         {
             if (RivalsTurn)

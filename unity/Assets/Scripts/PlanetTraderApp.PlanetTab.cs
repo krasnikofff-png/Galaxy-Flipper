@@ -32,6 +32,7 @@ namespace PlanetTrader.Client
 
             PlanetHead(ui, p, silhouette);
             ui.Add(_portraitBox);
+            LoyaltyStrip(ui, p);
             PlanetAlerts(ui, p);
 
             using (ui.Box("actions-card"))
@@ -80,6 +81,80 @@ namespace PlanetTrader.Client
             head.Add(coords);
         }
 
+        /// <summary>
+        /// Лояльность жителей — сразу под окном планеты: от неё зависят добыча, налоги и подкупы магнатов.
+        /// Число и изменение за ход, шкала с зонами (забастовка, риск подкупа, спокойно) и что будет дальше.
+        /// </summary>
+        void LoyaltyStrip(PanelBuilder ui, Planet p)
+        {
+            if (p.Owner != Owner.Player || !p.Inhabited) return;
+            var g = _game;
+            var b = g.Balance;
+            double loyalty = p.Loyalty, change = g.LoyaltyChangePerTurn(p);
+            bool strike = p.OnStrike, risk = !strike && loyalty < b.BribeTargetLoyalty;
+            var red = new Color(1f, 0.42f, 0.36f);
+            var yellow = new Color(1f, 0.8f, 0.35f);
+            var green = new Color(0.4f, 0.88f, 0.52f);
+            var state = strike || loyalty < b.StrikeBelow ? red : risk ? yellow : green;
+
+            var strip = ui.Add(new VisualElement()).WithClass("loyalty");
+            strip.EnableInClassList("alert", strike);
+            var row = new VisualElement().WithClass("loyalty-row");
+            var icon = Icons.Make("people", "loyalty-icon");
+            icon.style.color = state;
+            row.Add(icon);
+            row.Add(new Label("Лояльность жителей").WithClass("loyalty-title"));
+            row.Add(new VisualElement { pickingMode = PickingMode.Ignore }.WithClass("spacer"));
+            var value = new Label(Mathf.RoundToInt((float)loyalty).ToString()).WithClass("loyalty-value");
+            value.style.color = state;
+            row.Add(value);
+            var delta = new Label($"{Signed(change)} за ход").WithClass("loyalty-change");
+            delta.style.color = change > 0 ? green : change < 0 ? red : new Color(0.72f, 0.75f, 0.8f);
+            row.Add(delta);
+            strip.Add(row);
+
+            // Шкала 0–100: зоны забастовки и риска подкупа, заполнение до нынешней лояльности.
+            var bar = new VisualElement().WithClass("loyalty-bar");
+            void Zone(double from, double to, Color color)
+            {
+                var z = new VisualElement { pickingMode = PickingMode.Ignore }.WithClass("loyalty-zone");
+                z.style.left = Length.Percent((float)from);
+                z.style.width = Length.Percent((float)(to - from));
+                z.style.backgroundColor = new Color(color.r, color.g, color.b, 0.16f);
+                bar.Add(z);
+            }
+            Zone(0, b.StrikeBelow, red);
+            Zone(b.StrikeBelow, b.BribeTargetLoyalty, yellow);
+            var fill = new VisualElement { pickingMode = PickingMode.Ignore }.WithClass("loyalty-fill");
+            fill.style.width = Length.Percent(Mathf.Clamp((float)loyalty, 0, 100));
+            fill.style.backgroundColor = state;
+            bar.Add(fill);
+            // Отметки порогов поверх заполнения: забастовка и риск подкупа.
+            foreach (double mark in new[] { b.StrikeBelow, b.BribeTargetLoyalty })
+            {
+                var tick = new VisualElement { pickingMode = PickingMode.Ignore }.WithClass("loyalty-tick");
+                tick.style.left = Length.Percent((float)mark);
+                bar.Add(tick);
+            }
+            strip.Add(bar);
+
+            string status;
+            if (strike)
+                status = $"<b>Забастовка:</b> ни добычи, ни налогов, пока лояльность не поднимется до {Fmt.Amount(b.StrikeEndsAt)}. Помогут праздник, зарплаты, школа.";
+            else if (change < 0)
+            {
+                int turns = Mathf.CeilToInt((float)((loyalty - b.StrikeBelow) / -change));
+                status = loyalty < b.StrikeBelow + 1e-9 ? "Забастовка начнётся в конце хода."
+                    : $"Падает: при нынешних правилах забастовка через {Words.Count(turns, "ход", "хода", "ходов")}" +
+                      (risk ? ", а ниже 50 жителей уже могут подкупить магнаты." : ".");
+            }
+            else if (risk)
+                status = $"Ниже {Fmt.Amount(b.BribeTargetLoyalty)}: магнаты могут подкупить жителей и увести планету.";
+            else
+                status = "Жители довольны.";
+            strip.Add(new Label(status).WithClass("loyalty-status"));
+        }
+
         /// <summary>Что требует внимания прямо сейчас: иски, подкупы, забастовка, эпидемия, авария.</summary>
         void PlanetAlerts(PanelBuilder ui, Planet p)
         {
@@ -88,9 +163,6 @@ namespace PlanetTrader.Client
             if (p.Owner != Owner.Player) return;
             foreach (var x in g.Claims.Where(c => c.PlanetId == p.Id).ToList()) Claim(ui, x, p);
             foreach (var x in g.Bribes.Where(c => c.PlanetId == p.Id).ToList()) Bribe(ui, x, p);
-            if (p.Inhabited && p.OnStrike)
-                using (ui.Card(alert: true))
-                    ui.Small($"<color=#ff8a7a><b>Забастовка.</b></color> Ни добычи, ни налогов, пока лояльность не поднимется до {Fmt.Amount(b.StrikeEndsAt)}. Помогут праздник, зарплаты, школа.");
             if (p.EpidemicTurnsLeft > 0)
                 using (ui.Card(alert: true))
                     ui.Small($"<color=#ff8a7a><b>Эпидемия</b></color> ещё {p.EpidemicTurnsLeft} х.: добыча вполовину.");
@@ -130,8 +202,9 @@ namespace PlanetTrader.Client
             Fact(right, "gear", "Содержание", silhouette ? unknown
                 : $"{Fmt.Money(p.Owner == Owner.Player ? g.PlanetUpkeep(p) : p.Type.Upkeep)} / ход");
             Fact(right, "cube", "Шахта", silhouette ? unknown : Cap(Fmt.MineName(p)));
+            // Лояльность своих жителей — крупно под окном планеты, здесь — кто они.
             string people = silhouette ? unknown : !p.Inhabited ? "Нет" : p.Owner != Owner.Player ? "Есть"
-                : $"лояльность {Mathf.RoundToInt((float)p.Loyalty)}, {Signed(g.LoyaltyChangePerTurn(p))}/ход";
+                : Residents.SpeciesName(Residents.SpeciesOf(Describe(p).Seed));
             Fact(right, "people", "Жители", people);
         }
 
