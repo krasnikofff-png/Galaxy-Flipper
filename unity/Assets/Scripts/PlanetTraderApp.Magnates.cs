@@ -41,19 +41,26 @@ namespace PlanetTrader.Client
 
         Color MagnateColor(int magnateId) => LookOf(_game.GetMagnate(magnateId)).color;
 
-        /// <summary>Портрет магната в рамке его цвета; size — ширина кадра в точках интерфейса.</summary>
+        /// <summary>
+        /// Портрет магната в рамке его цвета; width — ширина кадра в точках интерфейса. Под портретом — тёмная подложка
+        /// со срезанными углами, поверх — линии рамки и засечки; срез углов тот же, что у кадра портрета.
+        /// </summary>
         VisualElement MagnatePortrait(Magnate m, float width, bool highlight = false)
         {
             var (model, color) = LookOf(m);
+            float cut = MagnatePortraits.CornerCut * width;
             var frame = new VisualElement { pickingMode = PickingMode.Ignore };
             frame.AddToClassList("magnate-frame");
             frame.style.width = width;
-            frame.style.height = width * 440f / 360f;
-            Frames.Attach(frame, Color.Lerp(color, Color.black, highlight ? 0.1f : 0.45f), color,
-                Color.Lerp(new Color(0.03f, 0.035f, 0.06f), color, 0.13f), highlight ? 2.4f : 1.6f);
+            frame.style.height = width * MagnatePortraits.Height / MagnatePortraits.Width;
+            Frames.Attach(frame, Color.clear, Color.clear, Color.Lerp(new Color(0.03f, 0.035f, 0.06f), color, 0.13f), 1, cut);
             var image = new Image { image = _portraits.Portrait(m?.Name ?? "?", model, color), scaleMode = ScaleMode.ScaleAndCrop, pickingMode = PickingMode.Ignore };
             image.AddToClassList("magnate-image");
             frame.Add(image);
+            var border = new VisualElement { pickingMode = PickingMode.Ignore };
+            border.AddToClassList("magnate-border");
+            Frames.Attach(border, Color.Lerp(color, Color.black, highlight ? 0.1f : 0.45f), color, Color.clear, highlight ? 2.4f : 1.8f, cut);
+            frame.Add(border);
             // Портрет живой: перерисовывать, пока карточка на экране.
             image.schedule.Execute(() =>
             {

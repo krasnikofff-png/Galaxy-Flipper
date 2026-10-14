@@ -523,7 +523,7 @@ namespace PlanetTrader.Client
             row.AddToClassList("rivals-row");
             _rivalsList.Add(row);
             var active = _game.Magnates.Where(x => x.Corp == null || !x.Corp.Bankrupt).ToList();
-            float width = active.Count > 6 ? 96 : 120;
+            float width = active.Count > 6 ? 104 : 132;
             foreach (var m in active)
             {
                 var card = new VisualElement();

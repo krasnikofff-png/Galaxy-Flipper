@@ -1356,12 +1356,20 @@
 
 .magnate-frame {
     flex-shrink: 0;
-    padding: 6px;
     margin-right: 12px;
 }
 
 .magnate-image {
     flex-grow: 1;
+}
+
+/* Линии рамки и засечки — поверх портрета. */
+.magnate-border {
+    position: absolute;
+    left: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
 }
 
 .magnate-about {

@@ -276,7 +276,7 @@ namespace PlanetTrader.Client
                     // Портрет в рамке цвета магната, рядом — кто он и как себя ведёт.
                     using (ui.Row())
                     {
-                        ui.Add(MagnatePortrait(m, 118));
+                        ui.Add(MagnatePortrait(m, 132));
                         using (ui.Box("magnate-about"))
                         {
                             string hex = ColorUtility.ToHtmlStringRGB(LookOf(m).color);

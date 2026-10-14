@@ -506,3 +506,6 @@ unity/*.sln
 
 # Резервные копии Blender
 *.blend1
+
+# Окружение и модель глубины для портретов магнатов (tools/portraits)
+tools/portraits/.cache/
