@@ -152,20 +152,73 @@ namespace PlanetTrader.Client
             return Open(box);
         }
 
-        /// <summary>Большая кнопка: значок, крупная надпись и строка пояснения под ней.</summary>
-        public Button BigButton(string icon, string title, string sub, string cls, bool enabled, Action onClick)
+        /// <summary>
+        /// Строка действия: значок, что делаем, что это даст и сколько стоит. Вся строка — кнопка.
+        /// accent — главное действие сейчас (подсвечено), danger — необратимое (продажа).
+        /// </summary>
+        public Button ActionRow(string icon, string title, string effect, string cost, bool enabled, Action onClick, bool accent = false, bool danger = false)
         {
             var b = new Button(() => _run(onClick)) { focusable = false };
-            b.AddToClassList("big-button");
-            b.AddToClassList(cls);
-            b.Add(Icons.Make(icon, "big-icon"));
-            var text = new VisualElement { pickingMode = PickingMode.Ignore };
-            text.AddToClassList("big-text");
-            text.Add(new Label(title) { pickingMode = PickingMode.Ignore }.WithClass("big-title"));
-            if (!string.IsNullOrEmpty(sub)) text.Add(new Label(sub) { pickingMode = PickingMode.Ignore }.WithClass("big-sub"));
-            b.Add(text);
+            b.AddToClassList("action-item");
+            if (accent) b.AddToClassList("accent");
+            if (danger) b.AddToClassList("danger");
+            FillActionRow(b, icon, title, effect, cost);
             b.SetEnabled(enabled);
             return Add(b);
+        }
+
+        /// <summary>Строка-сведение в списке действий: выглядит как действие, но не нажимается (стройка идёт, зонд летит).</summary>
+        public VisualElement InfoRow(string icon, string title, string effect)
+        {
+            var row = new VisualElement();
+            row.AddToClassList("action-item");
+            row.AddToClassList("info");
+            FillActionRow(row, icon, title, effect, null);
+            return Add(row);
+        }
+
+        static void FillActionRow(VisualElement row, string icon, string title, string effect, string cost)
+        {
+            row.Add(Icons.Make(icon, "ai-icon"));
+            var text = new VisualElement { pickingMode = PickingMode.Ignore };
+            text.AddToClassList("ai-text");
+            text.Add(new Label(title) { pickingMode = PickingMode.Ignore }.WithClass("ai-title"));
+            if (!string.IsNullOrEmpty(effect)) text.Add(new Label(effect) { pickingMode = PickingMode.Ignore }.WithClass("ai-effect"));
+            row.Add(text);
+            if (!string.IsNullOrEmpty(cost)) row.Add(new Label(cost) { pickingMode = PickingMode.Ignore }.WithClass("ai-cost"));
+        }
+
+        /// <summary>Подзаголовок внутри карточки действий.</summary>
+        public Label Section(string text) => Label(text, "actions-section");
+
+        /// <summary>Какие сворачиваемые блоки открыты: помним между пересборками панели.</summary>
+        static readonly HashSet<string> OpenFolds = new HashSet<string>();
+
+        /// <summary>Сворачиваемый блок «Подробнее»: заголовок со стрелкой, содержимое — всё до конца using.</summary>
+        public IDisposable Fold(string title, string key)
+        {
+            var fold = new VisualElement();
+            fold.AddToClassList("fold");
+            bool open = OpenFolds.Contains(key);
+            fold.EnableInClassList("open", open);
+            var head = new Button { focusable = false };
+            head.AddToClassList("fold-head");
+            head.Add(Icons.Make("chevron", "fold-arrow"));
+            head.Add(new Label(title) { pickingMode = PickingMode.Ignore });
+            var body = new VisualElement();
+            body.AddToClassList("fold-body");
+            head.clicked += () =>
+            {
+                bool now = !fold.ClassListContains("open");
+                fold.EnableInClassList("open", now);
+                if (now) OpenFolds.Add(key);
+                else OpenFolds.Remove(key);
+            };
+            fold.Add(head);
+            fold.Add(body);
+            Add(fold);
+            _stack.Push(body);
+            return new Closer(_stack);
         }
 
         /// <summary>Ряд элементов слева направо.</summary>

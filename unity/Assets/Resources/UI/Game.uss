@@ -152,19 +152,22 @@
     color: var(--text-dim);
 }
 
+.stat.reputation > .stat-icon {
+    color: var(--cyan);
+}
+
 .tabs {
-    flex-direction: row;
+    width: 118px;
     flex-shrink: 0;
-    margin: 0 8px;
+    margin-right: 12px;
 }
 
 .tab {
     flex-direction: row;
     align-items: center;
     height: 40px;
-    flex-shrink: 0;
-    margin: 0 0 0 4px;
-    padding: 0 7px;
+    margin: 0 0 5px 0;
+    padding: 0 9px;
     font-size: 13px;
     white-space: nowrap;
     color: var(--text-dim);
@@ -187,9 +190,9 @@
 }
 
 .tab-icon {
-    width: 15px;
-    height: 15px;
-    margin-right: 5px;
+    width: 16px;
+    height: 16px;
+    margin-right: 7px;
 }
 
 .end-turn {
@@ -474,10 +477,11 @@
 }
 
 .side {
-    width: 570px;
+    width: 650px;
     min-height: 0;
+    flex-direction: row;
     margin-left: 8px;
-    padding: 12px 8px 10px 16px;
+    padding: 12px 8px 10px 12px;
 }
 
 .side-scroll {
@@ -797,7 +801,7 @@
 }
 
 .portrait {
-    height: 250px;
+    height: 205px;
     margin-bottom: 10px;
     overflow: hidden;
     background-color: #05060c;
@@ -815,189 +819,258 @@
     padding: 2px 6px;
 }
 
-.chips {
+/* Сводка планеты */
+
+.summary {
     flex-direction: row;
     margin-bottom: 10px;
+    padding: 4px 0;
     background-color: var(--card-bg);
     border-width: 1px;
     border-color: var(--card-line);
     border-radius: 3px;
 }
 
-.chip {
+.summary-col {
     flex-grow: 1;
     flex-basis: 0;
-    flex-direction: row;
-    align-items: center;
-    padding: 7px 8px;
+    padding: 0 10px;
+}
+
+.summary-col.first {
     border-right-width: 1px;
     border-color: var(--card-line);
 }
 
-.chip.last {
-    border-right-width: 0;
+.fact {
+    padding: 4px 0;
 }
 
-.chip-icon {
-    width: 24px;
-    height: 24px;
-    margin-right: 8px;
-    color: var(--green);
-}
-
-.chip-label {
-    font-size: 11px;
-    color: var(--muted);
-}
-
-.chip-value {
-    font-size: 14px;
-    -unity-font-definition: url("project://database/Assets/Resources/UI/Fonts/Inter-SemiBold.ttf");
-    white-space: normal;
-}
-
-.stat-grid {
-    flex-direction: row;
-    margin-bottom: 10px;
-}
-
-.stat-col {
-    flex-grow: 1;
-    flex-basis: 0;
-    padding: 4px 10px;
-    background-color: var(--card-bg);
-    border-width: 1px;
-    border-color: var(--card-line);
-    border-radius: 3px;
-}
-
-.stat-col.first {
-    margin-right: 8px;
-}
-
-.stat-row {
-    min-height: 38px;
-    justify-content: center;
-    border-bottom-width: 1px;
-    border-color: rgba(255, 255, 255, 0.05);
-}
-
-.stat-row.last {
-    border-bottom-width: 0;
-}
-
-.stat-row-main {
+.fact-main {
     flex-direction: row;
     align-items: center;
 }
 
-.stat-row-icon {
+.fact-icon {
+    width: 15px;
+    height: 15px;
+    margin-right: 8px;
+    color: var(--gold);
+}
+
+.fact-label {
+    flex-grow: 1;
+    font-size: 12px;
+    color: var(--muted);
+}
+
+.fact-value {
+    font-size: 13px;
+    -unity-font-definition: url("project://database/Assets/Resources/UI/Fonts/Inter-SemiBold.ttf");
+    -unity-text-align: middle-right;
+}
+
+.bar.fact-bar {
+    height: 3px;
+    margin: 3px 0 0 23px;
+}
+
+/* Действия планеты */
+
+.actions-card {
+    margin-bottom: 10px;
+    padding: 8px 10px 10px 10px;
+    background-color: rgba(240, 164, 58, 0.04);
+    border-width: 1px;
+    border-color: rgba(214, 162, 78, 0.35);
+    border-radius: 3px;
+}
+
+.actions-head {
+    flex-direction: row;
+    align-items: center;
+    margin-bottom: 2px;
+}
+
+.actions-title {
+    font-size: 17px;
+    color: var(--orange);
+    -unity-font-definition: url("project://database/Assets/Resources/UI/Fonts/Inter-SemiBold.ttf");
+}
+
+.actions-left {
+    font-size: 12px;
+    color: var(--muted);
+}
+
+.actions-section {
+    font-size: 11px;
+    letter-spacing: 1px;
+    color: var(--muted);
+    margin: 9px 0 4px 2px;
+}
+
+.action-item {
+    flex-direction: row;
+    align-items: center;
+    min-height: 40px;
+    margin: 0 0 4px 0;
+    padding: 4px 10px;
+    color: var(--text);
+    -unity-text-align: middle-left;
+    white-space: normal;
+    background-color: var(--button-bg);
+    border-width: 1px;
+    border-color: rgba(92, 78, 52, 0.55);
+    border-radius: 3px;
+    transition-duration: 0.12s;
+}
+
+.action-item:hover {
+    background-color: var(--button-hover);
+    border-color: rgba(240, 164, 58, 0.7);
+}
+
+.action-item:active {
+    background-color: var(--button-active);
+}
+
+.action-item:disabled {
+    opacity: 0.4;
+}
+
+.action-item.accent {
+    background-color: rgba(120, 74, 20, 0.55);
+    border-color: var(--orange);
+}
+
+.action-item.accent > .ai-icon,
+.action-item.accent .ai-title {
+    color: #ffd08a;
+}
+
+.action-item.danger {
+    background-color: rgba(70, 18, 16, 0.85);
+    border-color: rgba(220, 70, 58, 0.85);
+}
+
+.action-item.danger .ai-title {
+    color: var(--red);
+}
+
+.action-item.quiet {
+    background-color: rgba(0, 0, 0, 0);
+    border-color: rgba(255, 255, 255, 0.08);
+}
+
+.action-item.quiet .ai-title {
+    color: var(--text-dim);
+}
+
+.action-item.info {
+    background-color: rgba(255, 255, 255, 0.025);
+    border-color: rgba(255, 255, 255, 0.05);
+}
+
+.ai-icon {
     width: 18px;
     height: 18px;
     margin-right: 10px;
     color: var(--gold);
 }
 
-.stat-row-name {
+.ai-text {
     flex-grow: 1;
+    flex-shrink: 1;
+}
+
+.ai-title {
+    font-size: 14px;
+    -unity-font-definition: url("project://database/Assets/Resources/UI/Fonts/Inter-SemiBold.ttf");
+    white-space: normal;
+}
+
+.ai-effect {
+    font-size: 12px;
+    color: var(--text-dim);
+    white-space: normal;
+}
+
+.ai-cost {
+    flex-shrink: 0;
+    margin-left: 10px;
+    font-size: 12px;
+    color: #ffc36b;
+    -unity-text-align: middle-right;
+}
+
+.rule-row {
+    flex-direction: row;
+    align-items: center;
+    margin-bottom: 4px;
+}
+
+.rule-label {
+    width: 70px;
     font-size: 13px;
     color: var(--text-dim);
 }
 
-.stat-row-value {
-    font-size: 15px;
-    -unity-font-definition: url("project://database/Assets/Resources/UI/Fonts/Inter-SemiBold.ttf");
-    -unity-text-align: middle-right;
-}
-
-.stat-row > .bar {
-    margin: 3px 0 4px 28px;
-    height: 4px;
-}
-
-.big-buttons {
-    flex-direction: row;
-    margin-bottom: 12px;
-}
-
-.big-button {
+.rule-choice {
     flex-grow: 1;
-    flex-basis: 0;
+}
+
+.rule-choice > .segment {
+    font-size: 12px;
+    min-height: 30px;
+}
+
+.actions-card .check-text {
+    font-size: 13px;
+}
+
+/* Подробнее */
+
+.fold {
+    margin-bottom: 4px;
+    border-top-width: 1px;
+    border-color: rgba(255, 255, 255, 0.06);
+}
+
+.fold-head {
     flex-direction: row;
     align-items: center;
-    min-height: 58px;
+    height: 32px;
     margin: 0;
-    padding: 6px 14px;
-    border-width: 1px;
-    border-radius: 3px;
+    padding: 0 4px;
+    font-size: 14px;
+    color: var(--text-dim);
+    background-color: rgba(0, 0, 0, 0);
+    border-width: 0;
+}
+
+.fold-head:hover {
+    color: var(--orange);
+}
+
+.fold-arrow {
+    width: 14px;
+    height: 14px;
+    margin-right: 8px;
     transition-duration: 0.12s;
 }
 
-.big-button.second {
-    margin-left: 8px;
+.fold.open > .fold-head > .fold-arrow {
+    rotate: 90deg;
 }
 
-.big-icon {
-    width: 30px;
-    height: 30px;
-    margin-right: 12px;
+.fold-body {
+    display: none;
+    padding: 2px 4px 8px 26px;
 }
 
-.big-text {
-    flex-grow: 1;
-    flex-shrink: 1;
-    align-items: center;
-}
-
-.big-title {
-    font-size: 17px;
-    -unity-font-definition: url("project://database/Assets/Resources/UI/Fonts/Inter-SemiBold.ttf");
-    -unity-text-align: middle-center;
-    white-space: normal;
-}
-
-.big-sub {
-    font-size: 13px;
-    -unity-text-align: middle-center;
-    white-space: normal;
-}
-
-.big-primary {
-    color: #2b1803;
-    background-color: rgb(236, 157, 52);
-    border-color: rgb(255, 196, 110);
-}
-
-.big-primary:hover {
-    background-color: rgb(248, 174, 70);
-}
-
-.big-primary:active {
-    background-color: rgb(210, 136, 40);
-}
-
-.big-danger {
-    color: var(--red);
-    background-color: rgba(70, 18, 16, 0.85);
-    border-color: rgba(220, 70, 58, 0.85);
-}
-
-.big-danger:hover {
-    background-color: rgba(96, 24, 20, 0.95);
-}
-
-.big-plain {
-    color: var(--text);
-    background-color: var(--button-bg);
-    border-color: var(--button-line);
-}
-
-.big-plain:hover {
-    background-color: var(--button-hover);
-}
-
-.big-button:disabled {
-    opacity: 0.4;
+.fold.open > .fold-body {
+    display: flex;
 }
 
 /* Текст панели */

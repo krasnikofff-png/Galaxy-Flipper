@@ -11,7 +11,6 @@
             </ui:VisualElement>
             <ui:VisualElement name="stats" class="stats" picking-mode="Ignore" />
             <ui:VisualElement class="spacer" picking-mode="Ignore" />
-            <ui:VisualElement name="tabs" class="tabs" />
             <ui:Button name="endTurnButton" focusable="false" class="end-turn">
                 <ui:Label text="Конец хода" class="end-turn-text" picking-mode="Ignore" />
                 <ui:VisualElement class="icon icon-arrow" />
@@ -54,6 +53,7 @@
                 </ui:VisualElement>
             </ui:VisualElement>
             <ui:VisualElement name="side" class="side frame">
+                <ui:VisualElement name="tabs" class="tabs" />
                 <ui:ScrollView name="sideScroll" mode="Vertical" horizontal-scroller-visibility="Hidden" touch-scroll-type="Clamped" class="side-scroll" />
             </ui:VisualElement>
         </ui:VisualElement>

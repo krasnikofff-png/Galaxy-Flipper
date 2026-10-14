@@ -134,6 +134,7 @@ namespace PlanetTrader.Client
             AddStat(stats, "capital", "layers", "Капитал");
             AddStat(stats, "costs", "flame", "Расходы");
             AddStat(stats, "actions", "bolt", "Действия");
+            AddStat(stats, "reputation", "star", "Репутация");
 
             for (int i = 0; i < TabNames.Length; i++)
             {
@@ -369,6 +370,7 @@ namespace PlanetTrader.Client
             _statValues["capital"].text = Fmt.Money(g.Capital);
             _statValues["costs"].text = $"{Fmt.Money(g.CostsPerTurn)} / ход";
             _statValues["actions"].text = $"{g.ActionsLeft}/{g.ActionsPerTurn}";
+            _statValues["reputation"].text = Mathf.RoundToInt((float)g.Reputation).ToString();
             for (int i = 0; i < _tabs.childCount; i++)
                 _tabs[i].EnableInClassList("selected", i == (int)_tab);
         }
