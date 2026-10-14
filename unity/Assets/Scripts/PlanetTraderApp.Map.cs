@@ -212,7 +212,7 @@ namespace PlanetTrader.Client
             _probeInfo.text = $"«{SelectedProbe.Name}», {Fmt.Money(SelectedProbe.Cost)}. {ProbeDescription(SelectedProbe)} " +
                 (_probeMission == ProbeMission.ScanArea
                     ? "Скан области: кликните по карте — все планеты в круге станут известны (тип и оценка реестра)."
-                    : "Разведка планеты: кликните по планете — узнаете точный запас, подвохи и руины. Без разведки планету не купить.");
+                    : "Разведка планеты: кликните по планете — узнаете точный запас, подвохи и руины. Без разведки с жителями не поговорить.");
             _probesText.text = _game.Probes.Count > 0 ? $"Зонды ({_game.Probes.Count} в полёте)" : "Зонды";
             _zoomValue.text = $"{Mathf.RoundToInt(_zoom * 100)}%";
             RefreshEventLine();

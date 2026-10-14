@@ -89,6 +89,7 @@ namespace PlanetTrader.Sim
             Directory.CreateDirectory(outDir);
 
             var results = Strategy.All.ToDictionary(s => s, s => RunMany(balance, s, runs, turns, seed));
+            var noScouting = RunMany(balance, Strategy.ActiveNoScouting, runs, turns, seed);
             var ignoresPeople = RunMany(balance, Strategy.ActiveIgnoresPeople, runs, turns, seed);
             var calm = MakeBalance(overrides);
             foreach (var m in calm.Magnates) m.TrickChance = 0;
@@ -96,7 +97,7 @@ namespace PlanetTrader.Sim
             calm.MergerChance = 0;
             var noTricks = RunMany(calm, Strategy.Active, runs, turns, seed);
             var report = new StringBuilder();
-            WriteReport(report, results, ignoresPeople, noTricks, runs, overrides);
+            WriteReport(report, results, noScouting, ignoresPeople, noTricks, runs, overrides);
             WriteCurvesCsv(Path.Combine(outDir, "curves.csv"), results, turns);
 
             if (brakes)
@@ -288,7 +289,7 @@ namespace PlanetTrader.Sim
 
         static string Check(bool ok) => ok ? "✅" : "❌";
 
-        static void WriteReport(StringBuilder sb, Dictionary<Strategy, List<RunResult>> results,
+        static void WriteReport(StringBuilder sb, Dictionary<Strategy, List<RunResult>> results, List<RunResult> noScouting,
             List<RunResult> ignoresPeople, List<RunResult> noTricks, int runs, List<string> overrides)
         {
             sb.AppendLine("# Отчёт симулятора экономики");
@@ -369,6 +370,9 @@ namespace PlanetTrader.Sim
             }
             double Roi(string name) => byType.TryGetValue(name, out var v) && v.inv > 0 ? v.ret / v.inv : double.NaN;
             double iceRoi = Roi("Ледяной карлик"), anomalyRoi = Roi("Аномалия");
+            double scout120 = Median(active.Select(r => r.Capital[120])) / Median(noScouting.Select(r => r.Capital[120]));
+            double scoutEnd = Median(active.Select(r => r.Capital[End])) / Median(noScouting.Select(r => r.Capital[End]));
+            sb.AppendLine($"| Разведка у реестра (этап 3) | для справки: «Активный» с разведкой перед покупкой против того же без неё (с жителями разведка обязательна) | ×{F(scout120, "0.00")} к 120, ×{F(scoutEnd, "0.00")} к {End} | |");
             double StrikeShare(List<RunResult> rs) => rs.Sum(r => r.StrikeTurns) / (double)Math.Max(1, rs.Sum(r => r.InhabitedTurns));
             double InhabitedRoi(List<RunResult> rs) => rs.Sum(r => r.InhabitedReturned) / Math.Max(1, rs.Sum(r => r.InhabitedInvested));
             double strikeCare = StrikeShare(active), strikeIgnore = StrikeShare(ignoresPeople);

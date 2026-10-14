@@ -13,14 +13,18 @@ namespace PlanetTrader.Sim
         public bool Develops;
         /// <summary>Берёт кредит, чтобы купить выгодную планету.</summary>
         public bool UsesCredit;
+        /// <summary>Перед покупкой полностью разведывает планету зондом, а не верит оценке реестра.</summary>
+        public bool Explores;
         /// <summary>Следит за лояльностью жителей: налоги по настроению, праздники, школы, просьбы.</summary>
         public bool CaresForPeople;
 
-        public static readonly Strategy Passive = new Strategy { Name = "Пассивный", CaresForPeople = true };
-        public static readonly Strategy Active = new Strategy { Name = "Активный", Develops = true, CaresForPeople = true };
-        public static readonly Strategy ActiveCredit = new Strategy { Name = "Активный + кредит", Develops = true, UsesCredit = true, CaresForPeople = true };
+        public static readonly Strategy Passive = new Strategy { Name = "Пассивный", Explores = true, CaresForPeople = true };
+        public static readonly Strategy Active = new Strategy { Name = "Активный", Develops = true, Explores = true, CaresForPeople = true };
+        public static readonly Strategy ActiveCredit = new Strategy { Name = "Активный + кредит", Develops = true, UsesCredit = true, Explores = true, CaresForPeople = true };
+        /// <summary>Для справки, окупается ли разведка: тот же активный, но у реестра покупает по оценке (обитаемые всё равно разведывает).</summary>
+        public static readonly Strategy ActiveNoScouting = new Strategy { Name = "Активный без разведки", Develops = true, CaresForPeople = true };
         /// <summary>Для проверки этапа 4: тот же активный, но жителей не замечает.</summary>
-        public static readonly Strategy ActiveIgnoresPeople = new Strategy { Name = "Активный, жители побоку", Develops = true };
+        public static readonly Strategy ActiveIgnoresPeople = new Strategy { Name = "Активный, жители побоку", Develops = true, Explores = true };
 
         public static readonly Strategy[] All = { Passive, Active, ActiveCredit };
     }
@@ -343,9 +347,9 @@ namespace PlanetTrader.Sim
                     return;
                 }
 
-                if (!g.ExploredEnoughToBuy(pick))
+                if ((_s.Explores || !g.ExploredEnoughToBuy(pick)) && pick.Knowledge != Knowledge.Explored)
                 {
-                    // Без разведки купить нельзя: её разведает ExploreAhead.
+                    // Вслепую не покупаем (а с жителями без разведки и не поговорить): её разведает ExploreAhead.
                     skip.Add(pick.Id);
                     continue;
                 }
@@ -382,7 +386,8 @@ namespace PlanetTrader.Sim
             double budget = g.Money - Buffer(g) + (borrow ? g.AvailableCredit : 0);
 
             var candidates = g.PlanetsForSale
-                .Where(p => p.Knowledge == Knowledge.Scanned && !g.ProbeHeadingTo(p.Id))
+                // Без разведки бот разведывает только обитаемые: жители иначе не продают.
+                .Where(p => p.Knowledge == Knowledge.Scanned && !g.ProbeHeadingTo(p.Id) && (_s.Explores || !g.ExploredEnoughToBuy(p)))
                 .Select(p => (planet: p, ratio: PaybackRatio(g, p)))
                 .Where(x => x.ratio >= MinPaybackRatio)
                 .OrderByDescending(x => x.ratio)

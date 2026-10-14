@@ -101,17 +101,17 @@ namespace PlanetTrader.Client
             head.Add(coords);
         }
 
-        /// <summary>Ряд коротких характеристик: тип, ресурс, владелец, что о планете известно.</summary>
+        /// <summary>Ряд коротких характеристик: тип, стоимость, владелец, что о планете известно.</summary>
         void PlanetChips(PanelBuilder ui, Planet p, bool silhouette, bool exact)
         {
             var chips = ui.Add(new VisualElement());
             chips.AddToClassList("chips");
-            chips.Add(Chip("planet", "Тип", silhouette ? "неизвестен" : p.Type.Name, null));
-            chips.Add(Chip(silhouette ? "cube" : ResourceIcon(p.Resource), silhouette ? "Ресурс" : "Ресурс (основной)",
-                silhouette ? "неизвестен" : p.Resource.RuName(), silhouette ? (Color?)null : Fmt.ResourceColor(p.Resource)));
-            chips.Add(Chip("flag", "Владелец", p.Owner == Owner.Player ? "вы" : p.Owner == Owner.Ai ? (_game.GetMagnate(p.MagnateId)?.Name.Split(' ')[0] ?? "магнат") : "реестр",
+            chips.Add(Chip("planet", "Тип", silhouette ? "Неизвестен" : p.Type.Name, null));
+            chips.Add(Chip("coins", exact ? "Рыночная стоимость" : "Стоимость (оценка)",
+                silhouette ? "?" : Fmt.Money(_game.KnownValue(p) ?? 0), new Color(0.84f, 0.64f, 0.31f)));
+            chips.Add(Chip("flag", "Владелец", p.Owner == Owner.Player ? "Вы" : p.Owner == Owner.Ai ? (_game.GetMagnate(p.MagnateId)?.Name.Split(' ')[0] ?? "Магнат") : "Реестр",
                 RingColor(p)));
-            var last = Chip("eye", "Знание", silhouette ? "силуэт" : exact ? "разведана" : "скан", new Color(0.37f, 0.78f, 1f));
+            var last = Chip("eye", "Знание", silhouette ? "Силуэт" : exact ? "Разведана" : "Скан", new Color(0.37f, 0.78f, 1f));
             last.AddToClassList("last");
             chips.Add(last);
         }
@@ -147,6 +147,8 @@ namespace PlanetTrader.Client
 
             const string unknown = "?";
             double known = silhouette ? 0 : g.KnownReserve(p) ?? 0;
+            StatRow(left, silhouette ? "cube" : ResourceIcon(p.Resource), "Ресурс (основной)", silhouette ? unknown : p.Resource.RuName(), null, false,
+                silhouette ? (Color?)null : Fmt.ResourceColor(p.Resource));
             if (silhouette)
                 StatRow(left, "layers", "Запас", unknown, null, false);
             else if (exact)
@@ -155,8 +157,7 @@ namespace PlanetTrader.Client
                 StatRow(left, "layers", "Запас", $"≈ {Fmt.Amount(p.EstimatedReserve)}", null, false);
             StatRow(left, "pickaxe", "Добыча", silhouette ? unknown
                 : $"{Fmt.Amount(p.Type.OutputPerTurn)} / ход, на {(exact ? "" : "≈")}{Fmt.Amount(known / p.Type.OutputPerTurn)} х.", null, false);
-            StatRow(left, "tag", "Рыночная цена", silhouette ? unknown : $"{Fmt.Money(g.Market.Price(p.Resource))} за ед.", null, false);
-            StatRow(left, "coins", exact ? "Рыночная стоимость" : "Стоимость (оценка)", silhouette ? unknown : Fmt.Money(g.KnownValue(p) ?? 0), null, true);
+            StatRow(left, "tag", "Рыночная цена", silhouette ? unknown : $"{Fmt.Money(g.Market.Price(p.Resource))} за ед.", null, true);
 
             string upkeep = p.Owner == Owner.Player ? $"{Fmt.Money(g.PlanetUpkeep(p))} / ход" : $"{Fmt.Money(p.Type.Upkeep)} / ход";
             StatRow(right, "gear", "Содержание", silhouette ? unknown : upkeep, null, false);
@@ -167,14 +168,17 @@ namespace PlanetTrader.Client
             StatRow(right, "station", "До биржи", $"{Fmt.Amount(g.DistanceToExchange(p) * 10)} св. лет, {g.ShipTurns(p)} х.", null, true);
         }
 
-        static void StatRow(VisualElement col, string icon, string name, string value, float? share, bool last)
+        static void StatRow(VisualElement col, string icon, string name, string value, float? share, bool last, Color? iconColor = null)
         {
             var row = new VisualElement();
             row.AddToClassList("stat-row");
             if (last) row.AddToClassList("last");
             var main = new VisualElement();
             main.AddToClassList("stat-row-main");
-            main.Add(Icons.Make(icon, "stat-row-icon"));
+            var i = Icons.Make(icon, "stat-row-icon");
+            // Значок ресурса — цветом ресурса, как на карте и в «Рынке».
+            if (iconColor.HasValue) i.style.color = iconColor.Value;
+            main.Add(i);
             main.Add(new Label(name).WithClass("stat-row-name"));
             main.Add(new Label(value).WithClass("stat-row-value"));
             row.Add(main);
@@ -209,8 +213,9 @@ namespace PlanetTrader.Client
                         Auction(ui, p, silhouette, exact);
                     else
                     {
+                        string blind = silhouette ? " вслепую" : exact ? "" : " по оценке";
                         using (ui.Box("big-buttons"))
-                            ui.BigButton("coins", "Купить", $"за {Fmt.Money(price)} · {Doer(Skill.Negotiation)}", "big-primary",
+                            ui.BigButton("coins", $"Купить{blind}", $"за {Fmt.Money(price)} · {Doer(Skill.Negotiation)}", "big-primary",
                                 g.ActionsLeft > 0 && g.Money >= price,
                                 () => Act(() => g.BuyPlanet(p.Id), $"Куплена планета {p.Type.Name} #{p.Id} за {Fmt.Money(price)}."));
                     }
@@ -262,12 +267,12 @@ namespace PlanetTrader.Client
         }
 
         /// <summary>
-        /// Свободная планета ещё не разведана: купить её нельзя, главная кнопка — разведать самым дешёвым зондом, который долетит.
+        /// Обитаемая планета ещё не разведана: жители с игроком не говорят, главная кнопка — разведать самым дешёвым зондом, который долетит.
         /// </summary>
         void ExploreFirst(PanelBuilder ui, Planet p)
         {
             var g = _game;
-            ui.Small("Купить планету можно только после полной разведки зондом: она покажет настоящий запас, подвохи и руины.");
+            ui.Small("Жители продают планету только тому, кто её разведал: зонд покажет настоящий запас, подвохи и руины.");
             using (ui.Box("big-buttons"))
             {
                 var flying = g.Probes.FirstOrDefault(x => x.TargetPlanetId == p.Id);

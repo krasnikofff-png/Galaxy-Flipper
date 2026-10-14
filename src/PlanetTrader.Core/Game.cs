@@ -510,7 +510,6 @@ namespace PlanetTrader.Core
                 return ActionResult.Fail("Планета обитаема: её продают сами жители, сделайте им предложение");
             }
             if (p.SoldAtAuction) return ActionResult.Fail("Планета продаётся с аукциона: сделайте ставку");
-            if (!ExploredEnoughToBuy(p)) return ActionResult.Fail(NeedExploration);
             double price = PurchasePrice(p);
             if (Money < price) return ActionResult.Fail("Не хватает денег");
             var a = SpendAction(Skill.Negotiation);
@@ -520,10 +519,11 @@ namespace PlanetTrader.Core
             return ActionResult.Success;
         }
 
-        const string NeedExploration = "Сначала разведайте планету зондом";
+        const string NeedExploration = "Жители говорят только с тем, кто разведал планету: сначала разведайте её зондом";
 
-        /// <summary>Можно ли игроку покупать эту планету: по правилам — только разведанную.</summary>
-        public bool ExploredEnoughToBuy(Planet p) => !Balance.RequireExplorationToBuy || p.Knowledge == Knowledge.Explored;
+        /// <summary>Можно ли игроку покупать эту планету: обитаемую — только разведанную, у реестра — и по оценке.</summary>
+        public bool ExploredEnoughToBuy(Planet p) =>
+            !p.Inhabited || !Balance.ResidentsNeedExploration || p.Knowledge == Knowledge.Explored;
 
         void Acquire(Planet p, double price)
         {
@@ -957,7 +957,6 @@ namespace PlanetTrader.Core
             var p = GetPlanet(planetId);
             if (p == null || !p.SoldAtAuction) return ActionResult.Fail("Планета не продаётся с аукциона");
             if (p.IsDepleted) return ActionResult.Fail("Планета выработана");
-            if (!ExploredEnoughToBuy(p)) return ActionResult.Fail(NeedExploration);
             double bid = BidPrice(p, factor);
             if (Money < bid) return ActionResult.Fail("Не хватает денег");
             double strength = bid * (1 + Balance.NegotiationPriceStep * Edge(Skill.Negotiation));
