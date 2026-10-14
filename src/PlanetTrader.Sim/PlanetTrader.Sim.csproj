@@ -6,6 +6,8 @@
     <LangVersion>9.0</LangVersion>
     <Nullable>disable</Nullable>
     <RootNamespace>PlanetTrader.Sim</RootNamespace>
+    <!-- Партии считаются параллельно: серверная сборка мусора меньше тормозит потоки. -->
+    <ServerGarbageCollection>true</ServerGarbageCollection>
   </PropertyGroup>
 
   <ItemGroup>

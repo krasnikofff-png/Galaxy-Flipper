@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Text;
+using System.Threading.Tasks;
 using PlanetTrader.Core;
 
 namespace PlanetTrader.Sim
@@ -57,6 +58,8 @@ namespace PlanetTrader.Sim
         static int End = 1000;
         /// <summary>Сколько игроков в партии (кооператив): каждым играет свой бот того же стиля, отчёт — по первому.</summary>
         static int Players = 1;
+        /// <summary>--threads n: сколько партий считать одновременно (по умолчанию — по числу ядер).</summary>
+        static int Threads = Environment.ProcessorCount;
         static int Mid => End / 2;
         static int Q3 => End * 3 / 4;
         /// <summary>Начало игры (30, 60, 120) и дальше по четвертям партии.</summary>
@@ -84,6 +87,7 @@ namespace PlanetTrader.Sim
                     case "--brakes": brakes = true; break;
                     case "--trace": trace = args[++i]; break;
                     case "--players": Players = int.Parse(args[++i]); break;
+                    case "--threads": Threads = Math.Max(1, int.Parse(args[++i])); break;
                     case "--compare": compare = args[++i]; break;
                     default:
                         Console.Error.WriteLine("Использование: sim [--runs 30] [--turns 1000] [--seed 1] [--out docs/sim] [--set Param=value]... [--brakes]");
@@ -189,11 +193,16 @@ namespace PlanetTrader.Sim
             f.SetValue(target, value);
         }
 
+        /// <summary>
+        /// Партии считаются параллельно, по одной на ядро: у каждой свой генератор и свои объекты, баланс только читается.
+        /// Итог тот же, что при подсчёте по очереди, — партия номер i всегда со своим зерном и на своём месте в списке.
+        /// </summary>
         static List<RunResult> RunMany(Balance b, Strategy s, int runs, int turns, ulong seed, StartCharacter character = null)
         {
-            var list = new List<RunResult>();
-            for (int i = 0; i < runs; i++) list.Add(RunOne(b, s, turns, seed + (ulong)i * 7919, character));
-            return list;
+            var results = new RunResult[runs];
+            Parallel.For(0, runs, new ParallelOptions { MaxDegreeOfParallelism = Threads },
+                i => results[i] = RunOne(b, s, turns, seed + (ulong)i * 7919, character));
+            return results.ToList();
         }
 
         /// <summary>

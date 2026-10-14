@@ -1713,8 +1713,13 @@ namespace PlanetTrader.Core
             report.Interest = Debt * Balance.InterestPerTurn;
             report.Insurance = InsurancePerTurn;
             report.Guards = GuardsPerTurn;
+            // Множитель — один на сектор: считаем его раз, а не для каждой планеты (у магнатов их сотни).
+            var multipliers = new Dictionary<int, double>();
             foreach (var p in PlayerPlanets)
-                p.Earned -= p.BaseUpkeep(Balance) * UpkeepMultiplierIn(p.Sector);
+            {
+                if (!multipliers.TryGetValue(p.Sector, out double m)) multipliers[p.Sector] = m = UpkeepMultiplierIn(p.Sector);
+                p.Earned -= p.BaseUpkeep(Balance) * m;
+            }
             Money -= report.TotalCosts;
 
             if (Money < 0) CallCollectors(report);
@@ -1723,6 +1728,8 @@ namespace PlanetTrader.Core
         void ProducePlayer(TurnReport report)
         {
             double techBonus = OutputBonus;
+            // Инженеры берегут шахты от аварий и метеоритов. За время добычи их не прибавляется, поэтому бонус считаем один раз.
+            double engineers = SpecialtyBonus(Specialty.Engineers);
             foreach (var p in PlayerPlanets)
             {
                 // Шахта, которая достроилась в этот ход, начнёт добывать со следующего.
@@ -1738,7 +1745,7 @@ namespace PlanetTrader.Core
                 if (!mainWorks && extras.Count == 0) continue;
 
                 // Метеорит разбивает основную шахту; страховка возмещает её стоимость.
-                if (p.Mine != MineState.None && _rng.Chance(Balance.MeteorChance * (Ev?.MeteorFactor ?? 1) * (1 - SpecialtyBonus(Specialty.Engineers))))
+                if (p.Mine != MineState.None && _rng.Chance(Balance.MeteorChance * (Ev?.MeteorFactor ?? 1) * (1 - engineers)))
                 {
                     p.Mine = MineState.None;
                     p.AccidentTurnsLeft = 0;
@@ -1763,7 +1770,7 @@ namespace PlanetTrader.Core
                     report.Events.Add($"Эпидемия на {p.Type.Name} #{p.Id}: {Balance.EpidemicTurns} хода добыча вполовину, лояльность {Math.Round(p.Loyalty)}.");
                 }
 
-                if (p.AccidentTurnsLeft == 0 && _rng.Chance(Balance.AccidentChance * (Ev?.AccidentFactor ?? 1) * (1 - SpecialtyBonus(Specialty.Engineers))))
+                if (p.AccidentTurnsLeft == 0 && _rng.Chance(Balance.AccidentChance * (Ev?.AccidentFactor ?? 1) * (1 - engineers)))
                 {
                     p.AccidentTurnsLeft = Balance.AccidentTurns;
                     report.Accidents++;

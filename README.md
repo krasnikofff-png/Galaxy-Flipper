@@ -46,7 +46,7 @@ dotnet run --project src/PlanetTrader.Sim -c Release -- --brakes          # + т
 dotnet run --project src/PlanetTrader.Sim -c Release -- --set OrderChancePerTurn=0.3 --set InterestPerTurn=0.03
 ```
 
-`--set` меняет любой числовой параметр из `Balance.cs` без правки кода, в том числе элементы массивов: `--set EducationCost[1]=800`. Ещё есть `--runs`, `--turns`, `--seed`, `--out` и `--trace "Активный"` (одна партия по ходам).
+`--set` меняет любой числовой параметр из `Balance.cs` без правки кода, в том числе элементы массивов: `--set EducationCost[1]=800`. Ещё есть `--runs`, `--turns`, `--seed`, `--out`, `--threads` (сколько партий считать одновременно; по умолчанию — по числу ядер, итог от этого не зависит) и `--trace "Активный"` (одна партия по ходам).
 
 ## Правила ядра
 
