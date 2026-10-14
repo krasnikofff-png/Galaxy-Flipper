@@ -32,6 +32,8 @@ namespace PlanetTrader.Core
         public double ScanRadius;
         /// <summary>Шанс найти скрытую планету при скане области.</summary>
         public double FindChance;
+        /// <summary>С какого уровня корпорации доступен (номер с нуля).</summary>
+        public int MinLevel;
 
         public ProbeType(string name, double cost, double range, double speed, double scanRadius, double findChance)
         {

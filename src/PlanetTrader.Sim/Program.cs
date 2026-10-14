@@ -16,6 +16,8 @@ namespace PlanetTrader.Sim
         public double[] Capital;   // по ходам, индекс = номер хода
         public int[] Planets;
         public int SecondPlanetTurn = -1;
+        /// <summary>На каком ходу корпорация впервые дошла до уровня i; −1 — не дошла.</summary>
+        public int[] LevelTurns;
         public int FirstActionsLimitTurn = -1;
         public int TurnsActionsExhausted;
         public int Seizures;
@@ -195,6 +197,8 @@ namespace PlanetTrader.Sim
             r.Capital[0] = g.Capital;
             r.Planets[0] = g.PlayerPlanetCount;
             double startDebt = g.Debt;
+            r.LevelTurns = Enumerable.Repeat(-1, b.CorporationLevels.Length).ToArray();
+            r.LevelTurns[g.Level] = 0;
 
             for (int t = 1; t <= turns; t++)
             {
@@ -225,6 +229,8 @@ namespace PlanetTrader.Sim
                 if (Checkpoints.Contains(t) && g.Magnates.Count > 0) r.MagnateWealthAt[t] = g.Magnates.Average(g.MagnateWealth);
                 r.Planets[t] = g.PlayerPlanetCount;
                 if (r.SecondPlanetTurn < 0 && g.PlayerPlanetCount >= 2) r.SecondPlanetTurn = t;
+                for (int l = 0; l <= g.Level; l++)
+                    if (r.LevelTurns[l] < 0) r.LevelTurns[l] = t;
                 foreach (var p in g.PlayerPlanets.Where(p => p.Inhabited))
                 {
                     r.InhabitedTurns++;
@@ -359,6 +365,19 @@ namespace PlanetTrader.Sim
             sb.AppendLine($"| Кредит — осознанный риск («Активный + кредит») | есть и выигрыши, и потери планет | обогнали активного: {F(creditWinShare * 100, "0")}%, коллекторы: {F(seizedShare * 100, "0")}%, банкротства: {F(borrowers.Count == 0 ? double.NaN : borrowers.Count(r => r.Bankrupt) * 100.0 / borrowers.Count, "0")}% | {Check(creditWinShare > 0 && seizedShare > 0)} |");
             sb.AppendLine($"| Решения важны уже в первой сессии | разброс капитала t30 ≥30% | {F(spread30 * 100, "0")}% (p90/p10) | {Check(spread30 >= 0.3)} |");
             sb.AppendLine($"| Менеджеры нужны | упор в лимит действий к 40-му ходу | первый раз на ходу {F(firstLimit, "0")} | {Check(firstLimit <= 40)} |");
+            // Уровни корпорации: медиана хода, когда «Активный» дошёл до каждого (по партиям, где дошёл).
+            var b = MakeBalance(overrides);
+            var levels = active[0].LevelTurns.Length;
+            var levelTurns = Enumerable.Range(1, levels - 1).Select(l =>
+            {
+                var reached = active.Where(r => r.LevelTurns[l] >= 0).Select(r => (double)r.LevelTurns[l]).ToList();
+                return (name: b.CorporationLevels[l].Name, turn: reached.Count > 0 ? Median(reached) : double.NaN, share: reached.Count / (double)active.Count);
+            }).ToList();
+            var firstLevel = levelTurns.FirstOrDefault();
+            var lastLevel = levelTurns.LastOrDefault();
+            sb.AppendLine($"| Уровни корпорации растянуты на партию (этап 8) | второй уровень — к 20–45-му ходу, последний — к 150–500-му | " +
+                          string.Join(", ", levelTurns.Select(x => $"{x.name} {F(x.turn, "0")}" + (x.share < 1 ? $" ({F(x.share * 100, "0")}% партий)" : ""))) +
+                          $" | {Check(levelTurns.Count > 0 && firstLevel.turn >= 20 && firstLevel.turn <= 45 && lastLevel.turn >= 150 && lastLevel.turn <= 500)} |");
 
             // Квантий: доход на вложенное по типам планет.
             var byType = new Dictionary<string, (double inv, double ret)>();

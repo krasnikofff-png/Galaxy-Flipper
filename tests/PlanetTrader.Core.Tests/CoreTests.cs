@@ -1383,3 +1383,77 @@ public class DevelopmentTests
         Assert.Empty(g.Bribes);
     }
 }
+
+public class ProgressionTests
+{
+    static Balance Quiet() => new Balance
+    {
+        AccidentChance = 0,
+        AiBuyChance = 0,
+        AiResaleChance = 0,
+        OrderChancePerTurn = 0,
+        DiscoveryChancePerTurn = 0,
+        MarketNoise = 0,
+        Events = new GalacticEvent[0],
+        MeteorChance = 0,
+        EpidemicChance = 0,
+    };
+
+    [Fact]
+    public void StartupHasOneManagerAndNoLongRangeProbe()
+    {
+        var b = Quiet();
+        var g = Game.New(b, 3);
+        Assert.Equal(0, g.Level);
+        Assert.Equal(1, g.MaxManagers);
+        Assert.True(g.HireManager(0).Ok);
+        var second = g.HireManager(0);
+        Assert.False(second.Ok);
+        Assert.Contains("Контора", second.Error);
+
+        var far = b.ProbeTypes.Last();
+        Assert.False(g.ProbeUnlocked(far));
+        var launch = g.LaunchScan(far, 0.5, 0.5);
+        Assert.False(launch.Ok);
+        Assert.Contains("Контора", launch.Error);
+        Assert.DoesNotContain(far, g.UnlockedProbes);
+    }
+
+    [Fact]
+    public void LevelGrowsWithCapitalAndNeverDrops()
+    {
+        var b = Quiet();
+        var g = Game.New(b, 3);
+        // Порог второго уровня — чуть ниже нынешнего капитала: к концу хода корпорация дорастёт.
+        b.CorporationLevels[1].Capital = g.Capital - 1;
+        var report = g.EndTurn();
+        Assert.Equal(1, g.Level);
+        Assert.Equal(2, g.MaxManagers);
+        Assert.True(g.ProbeUnlocked(b.ProbeTypes.Last()));
+        Assert.Contains(report.Events, e => e.Contains("«Контора»") && e.Contains("Дальнобой") && e.Contains("до 2 менеджеров"));
+
+        // Капитал упал — уровень остаётся.
+        b.CorporationLevels[1].Capital = g.Capital * 10;
+        g.EndTurn();
+        Assert.Equal(1, g.Level);
+    }
+
+    [Fact]
+    public void RichStartBeginsHigher()
+    {
+        var b = Quiet();
+        b.StartMoney = 40_000;
+        var g = Game.New(b, 3);
+        Assert.Equal(2, g.Level);
+        Assert.Equal("Компания", g.LevelInfo.Name);
+        Assert.Equal("Корпорация", g.NextLevel.Name);
+    }
+
+    [Fact]
+    public void LevelUnlocksAreListed()
+    {
+        var g = Game.New(Quiet(), 3);
+        Assert.Equal(new[] { "1 менеджер", "зонд «Москит»", "зонд «Стандарт»" }, g.LevelUnlocks(0));
+        Assert.Equal(new[] { "до 5 менеджеров" }, g.LevelUnlocks(4));
+    }
+}

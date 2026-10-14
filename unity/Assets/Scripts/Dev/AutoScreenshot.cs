@@ -92,7 +92,7 @@ namespace PlanetTrader.Client
                     break;
                 }
                 var g = app.CurrentGame;
-                g.LaunchScan(g.Balance.ProbeTypes[2], 0.85, 0.2);
+                g.LaunchScan(g.UnlockedProbes.Last(), 0.85, 0.2);
             }
             if (app != null && _buy)
             {

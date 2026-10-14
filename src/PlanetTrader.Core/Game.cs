@@ -126,6 +126,8 @@ namespace PlanetTrader.Core
         public double Debt { get => _current.Debt; private set => _current.Debt = value; }
         /// <summary>Сколько нанято менеджеров (без директора).</summary>
         public int Managers => _current.Staff.Count(m => !m.IsDirector);
+        /// <summary>Сколько менеджеров можно держать на нынешнем уровне корпорации.</summary>
+        public int MaxManagers => LevelInfo.Managers;
         /// <summary>Сколько действий осталось у всей команды.</summary>
         public int ActionsLeft => _current.Staff.Sum(m => m.ActionsLeft);
         public IReadOnlyList<Manager> Staff => _current.Staff;
@@ -262,6 +264,7 @@ namespace PlanetTrader.Core
                         p.Knowledge = Knowledge.Scanned;
                 g._current = corp;
                 g.RefreshCandidates();
+                g.UpdateLevel(null, false);
             }
             g._current = g._corps[0];
             g.Market.SectorFactor = Math.Pow(Math.Max(1, players), balance.MarketGrowthPower);
@@ -359,6 +362,52 @@ namespace PlanetTrader.Core
 
         /// <summary>Капитал = деньги − долг + стоимость планет + стоимость склада.</summary>
         public double Capital => Money - Debt + PlanetsValue + StockValue;
+
+        // ------------------------------------------------------------------
+        // Уровень корпорации
+        // ------------------------------------------------------------------
+
+        /// <summary>Уровень текущей корпорации, номер с нуля.</summary>
+        public int Level => _current.Level;
+        public CorporationLevel LevelInfo => Balance.CorporationLevels[Level];
+        /// <summary>Следующий уровень; null — выше некуда.</summary>
+        public CorporationLevel NextLevel => Level + 1 < Balance.CorporationLevels.Length ? Balance.CorporationLevels[Level + 1] : null;
+        public bool ProbeUnlocked(ProbeType t) => t.MinLevel <= Level;
+        /// <summary>Зонды, которые корпорации уже по уровню.</summary>
+        public IEnumerable<ProbeType> UnlockedProbes => Balance.ProbeTypes.Where(ProbeUnlocked);
+
+        /// <summary>Что открывает уровень: строки для интерфейса и событий.</summary>
+        public List<string> LevelUnlocks(int level)
+        {
+            var levels = Balance.CorporationLevels;
+            var list = new List<string>();
+            int managers = levels[level].Managers, before = level > 0 ? levels[level - 1].Managers : 0;
+            if (managers > before)
+                list.Add(level == 0 ? Words.Count(managers, "менеджер", "менеджера", "менеджеров") : $"до {Words.Count(managers, "менеджера", "менеджеров", "менеджеров")}");
+            foreach (var t in Balance.ProbeTypes.Where(t => t.MinLevel == level))
+                list.Add($"зонд «{t.Name}»");
+            return list;
+        }
+
+        /// <summary>Ближайший следующий уровень, где выполняется условие; null — такого нет.</summary>
+        public CorporationLevel NextLevelWith(Func<CorporationLevel, bool> test) =>
+            Balance.CorporationLevels.Skip(Level + 1).FirstOrDefault(test);
+
+        /// <summary>Поднять уровень, если капитал дорос до следующего; announce — сказать об этом в событиях хода.</summary>
+        void UpdateLevel(TurnReport report, bool announce)
+        {
+            var levels = Balance.CorporationLevels;
+            if (_current.Level + 1 >= levels.Length || Capital < levels[_current.Level + 1].Capital) return;
+            double capital = Capital;
+            while (_current.Level + 1 < levels.Length && capital >= levels[_current.Level + 1].Capital)
+            {
+                _current.Level++;
+                if (!announce) continue;
+                string who = Players.Count() > 1 ? $"Корпорация «{_current.Name}»" : "Ваша корпорация";
+                var unlocks = LevelUnlocks(_current.Level);
+                report.Events.Add($"{who} доросла до уровня «{levels[_current.Level].Name}»" + (unlocks.Count > 0 ? ": " + string.Join(", ", unlocks) + "." : "."));
+            }
+        }
 
         /// <summary>Запас, который знает игрок: точный у своих и разведанных, оценка у просканированных, null у силуэтов.</summary>
         public double? KnownReserve(Planet p)
@@ -1188,6 +1237,7 @@ namespace PlanetTrader.Core
 
         ActionResult Launch(ProbeType t, ProbeMission mission, double x, double y, int planetId)
         {
+            if (!ProbeUnlocked(t)) return ActionResult.Fail($"Зонд «{t.Name}» откроется на уровне «{Balance.CorporationLevels[t.MinLevel].Name}»");
             if (Money < t.Cost) return ActionResult.Fail("Не хватает денег");
             double findBonus = Balance.GeologyFindStep * Edge(Skill.Geology);
             var a = SpendAction(Skill.Geology);
@@ -1279,7 +1329,10 @@ namespace PlanetTrader.Core
         /// <summary>Нанять кандидата: работает со следующего хода, зарплата — каждый ход. Тратит действие.</summary>
         public ActionResult HireManager(int candidateIndex = 0)
         {
-            if (Managers >= Balance.MaxManagers) return ActionResult.Fail("Больше менеджеров нанять нельзя");
+            if (Managers >= MaxManagers)
+                return ActionResult.Fail(NextLevelWith(l => l.Managers > MaxManagers) is CorporationLevel more
+                    ? $"Больше менеджеров — на уровне «{more.Name}»"
+                    : "Больше менеджеров нанять нельзя");
             if (candidateIndex < 0 || candidateIndex >= _current.Candidates.Count) return ActionResult.Fail("Нет такого кандидата");
             var a = SpendAction();
             if (!a.Ok) return a;
@@ -1431,6 +1484,9 @@ namespace PlanetTrader.Core
 
             Turn++;
             EachCorp(_ => ResetActions());
+            // Уровень — по капиталу на начало нового хода; магнаты растут по тем же правилам.
+            Each(r => UpdateLevel(r, true));
+            Run(rivals, r => UpdateLevel(r, false));
             Each(_ => { if (Turn >= _current.NextCandidatesTurn) RefreshCandidates(); });
             _lastReports = reports;
             return shared;

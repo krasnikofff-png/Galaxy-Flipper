@@ -56,7 +56,6 @@ namespace PlanetTrader.Core
         /// <summary>Зарплата менеджера со средними навыками; за каждое очко навыков выше или ниже среднего — ± эта доля.</summary>
         public double ManagerSalary = 60;
         public double ManagerSalaryPerSkill = 0.12;
-        public int MaxManagers = 3;
         /// <summary>Сколько кандидатов на выбор и раз во сколько ходов они меняются.</summary>
         public int ManagerCandidates = 3;
         public int CandidateRefreshTurns = 8;
@@ -81,6 +80,20 @@ namespace PlanetTrader.Core
         /// его действие сбережётся для шахты. Заметно лучший в деле всё равно возьмётся за него.
         /// </summary>
         public double SpecialistReserve = 0.6;
+
+        // --- Уровни корпорации (этап 8, допущения) ---
+        /// <summary>
+        /// Уровень растёт с капиталом и не падает. Пороги — по кривой капитала «Активного» бота: Контора к ~30-му ходу,
+        /// Компания к ~70-му, Корпорация к ~130-му, Концерн к ~250-му. Больше менеджеров — больше действий за ход.
+        /// </summary>
+        public CorporationLevel[] CorporationLevels =
+        {
+            new CorporationLevel("Стартап", 0, managers: 1),
+            new CorporationLevel("Контора", 10_000, managers: 2),
+            new CorporationLevel("Компания", 30_000, managers: 3),
+            new CorporationLevel("Корпорация", 100_000, managers: 4),
+            new CorporationLevel("Концерн", 300_000, managers: 5),
+        };
 
         // --- Содержание: кривая с полкой ---
         public double UpkeepCurveA = 1.0;
@@ -144,12 +157,15 @@ namespace PlanetTrader.Core
         public double AiResaleChance = 0.10;
 
         // --- Разведка и зонды (этап 3, всё — допущения) ---
-        /// <summary>Зонды: дороже — дальше, быстрее и шире скан. «Стандарт» соответствует старому зонду из таблицы (400, 60%).</summary>
+        /// <summary>
+        /// Зонды: дороже — дальше, быстрее и шире скан. «Стандарт» соответствует старому зонду из таблицы (400, 60%).
+        /// «Дальнобой» открывается на втором уровне корпорации.
+        /// </summary>
         public ProbeType[] ProbeTypes =
         {
             new ProbeType("Москит", cost: 150, range: 0.35, speed: 0.35, scanRadius: 0.12, findChance: 0.30),
             new ProbeType("Стандарт", cost: 400, range: 0.70, speed: 0.50, scanRadius: 0.20, findChance: 0.60),
-            new ProbeType("Дальнобой", cost: 900, range: 1.50, speed: 0.90, scanRadius: 0.30, findChance: 0.80),
+            new ProbeType("Дальнобой", cost: 900, range: 1.50, speed: 0.90, scanRadius: 0.30, findChance: 0.80) { MinLevel = 1 },
         };
         /// <summary>Сколько ходов зонд изучает планету при полной разведке, сверх полёта.</summary>
         public int ExploreTurnsOnSite = 0;

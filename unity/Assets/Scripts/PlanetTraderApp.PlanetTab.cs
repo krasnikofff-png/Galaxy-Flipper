@@ -401,7 +401,7 @@ namespace PlanetTrader.Client
 
         /// <summary>Самый дешёвый зонд, который долетит до планеты, или null.</summary>
         ProbeType CheapestProbe(Planet p) =>
-            _game.Balance.ProbeTypes.Where(t => _game.InRange(t, p.MapX, p.MapY)).OrderBy(t => t.Cost).FirstOrDefault();
+            _game.UnlockedProbes.Where(t => _game.InRange(t, p.MapX, p.MapY)).OrderBy(t => t.Cost).FirstOrDefault();
 
         /// <summary>Сколько лететь до планеты и откуда: от ближайшей вашей планеты или от биржи.</summary>
         string ProbeDistance(Planet p)
@@ -429,12 +429,21 @@ namespace PlanetTrader.Client
             var probe = CheapestProbe(p);
             if (probe == null)
             {
+                // Долетит зонд, который ещё не по уровню корпорации, — скажем, когда он откроется.
+                var later = g.Balance.ProbeTypes.Where(t => !g.ProbeUnlocked(t) && g.InRange(t, p.MapX, p.MapY)).OrderBy(t => t.MinLevel).FirstOrDefault();
+                if (later != null)
+                {
+                    var level = g.Balance.CorporationLevels[later.MinLevel];
+                    ui.InfoRow("rocket", $"Сюда долетит только «{later.Name}»",
+                        $"{ProbeDistance(p)}; зонд откроется на уровне «{level.Name}» — при капитале от {Fmt.Money(level.Capital)}");
+                    return;
+                }
                 double farthest = g.Balance.ProbeTypes.Max(t => t.Range);
                 ui.InfoRow("rocket", "Зонды сюда не долетают", $"{ProbeDistance(p)}, а самый дальний летает на {Fmt.Amount(farthest * 10)}");
                 return;
             }
             // Почему не дешевле: какие зонды не долетают.
-            var tooShort = g.Balance.ProbeTypes.Where(t => t.Cost < probe.Cost).OrderBy(t => t.Cost).ToList();
+            var tooShort = g.UnlockedProbes.Where(t => t.Cost < probe.Cost).OrderBy(t => t.Cost).ToList();
             string why = tooShort.Count == 0 ? "" : "; " + string.Join(", ", tooShort.Select(t => $"«{t.Name}» летает только на {Fmt.Amount(t.Range * 10)}"));
             int id = p.Id;
             ui.ActionRow("rocket", $"Разведать зондом «{probe.Name}»",
@@ -510,7 +519,8 @@ namespace PlanetTrader.Client
                     ui.Small("Полная разведка показывает точный запас, подвохи и руины. Зонды летят от ближайшей вашей планеты или от биржи. " +
                              "Дороже — дальше и быстрее летает, шире сканирует область и чаще находит скрытые планеты.");
                     foreach (var t in g.Balance.ProbeTypes)
-                        ui.Line($"«{t.Name}», {Fmt.Money(t.Cost)}", ProbeDescription(t));
+                        ui.Line($"«{t.Name}», {Fmt.Money(t.Cost)}", ProbeDescription(t) +
+                            (g.ProbeUnlocked(t) ? "" : $" Откроется на уровне корпорации «{g.Balance.CorporationLevels[t.MinLevel].Name}»."));
                 }
         }
 

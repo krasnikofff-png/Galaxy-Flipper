@@ -203,7 +203,17 @@ namespace PlanetTrader.Client
             }
         }
 
-        ProbeType SelectedProbe => _game.Balance.ProbeTypes[Mathf.Clamp(_probeTypeIndex, 0, _game.Balance.ProbeTypes.Length - 1)];
+        /// <summary>Выбранный для скана зонд; если он ещё не по уровню — лучший из доступных.</summary>
+        ProbeType SelectedProbe
+        {
+            get
+            {
+                var chosen = _game.Balance.ProbeTypes[Mathf.Clamp(_probeTypeIndex, 0, _game.Balance.ProbeTypes.Length - 1)];
+                return _game.ProbeUnlocked(chosen) ? chosen : _game.UnlockedProbes.OrderBy(t => t.Cost).Last();
+            }
+        }
+
+        string LevelName(int level) => _game.Balance.CorporationLevels[level].Name;
 
         void RefreshMap()
         {
@@ -212,14 +222,19 @@ namespace PlanetTrader.Client
             _probesButton.EnableInClassList("selected", _probeMode);
             _probeInfo.EnableInClassList("hidden", !_probeMode);
             _probeInfo.text = _probeMission == ProbeMission.ScanArea
-                ? $"Скан области: кликните по карте — все планеты в круге станут известны (тип и оценка реестра). «{SelectedProbe.Name}», {Fmt.Money(SelectedProbe.Cost)}. {ProbeDescription(SelectedProbe)}"
+                ? $"Скан области: кликните по карте — все планеты в круге станут известны (тип и оценка реестра). «{SelectedProbe.Name}», {Fmt.Money(SelectedProbe.Cost)}. {ProbeDescription(SelectedProbe)}" +
+                  string.Concat(_game.Balance.ProbeTypes.Where(t => !_game.ProbeUnlocked(t)).Select(t => $" «{t.Name}» откроется на уровне корпорации «{LevelName(t.MinLevel)}»."))
                 : "Разведка планеты: кликните по планете — узнаете точный запас, подвохи и руины. Зонд подберётся сам: самый дешёвый, который долетит. Без разведки с жителями не поговорить.";
             // Тип зонда выбирают только для скана: разведке он подбирается сам.
             _probeTypes.EnableInClassList("hidden", _probeMission != ProbeMission.ScanArea);
             _probesText.text = _game.Probes.Count > 0 ? $"Зонды ({_game.Probes.Count} в полёте)" : "Зонды";
             _zoomValue.text = $"{Mathf.RoundToInt(_zoom * 100)}%";
             RefreshEventLine();
-            PanelBuilder.Select(_probeTypes, _probeTypeIndex);
+            PanelBuilder.Select(_probeTypes, System.Array.IndexOf(_game.Balance.ProbeTypes, SelectedProbe));
+            // Зонды не по уровню корпорации — серые; где откроются, сказано в пояснении под кнопками.
+            var types = _game.Balance.ProbeTypes;
+            for (int i = 0; i < types.Length && i < _probeTypes.childCount; i++)
+                _probeTypes[i].SetEnabled(_game.ProbeUnlocked(types[i]));
             PanelBuilder.Select(_probeMissions, (int)_probeMission);
             if (!LayoutMap()) return;
 

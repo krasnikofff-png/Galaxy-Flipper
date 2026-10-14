@@ -17,6 +17,8 @@ namespace PlanetTrader.Core
 
         public double Money;
         public double Debt;
+        /// <summary>Уровень корпорации, номер в Balance.CorporationLevels. Растёт с капиталом и не падает.</summary>
+        public int Level;
         /// <summary>Команда: первым — директор (несколько действий за ход), дальше нанятые менеджеры.</summary>
         public readonly List<Manager> Staff = new List<Manager>();
         /// <summary>Кандидаты на работу; обновляются раз в несколько ходов.</summary>

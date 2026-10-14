@@ -25,6 +25,7 @@ namespace PlanetTrader.Client
         ScrollView _sideScroll, _actionsList, _journalList;
         Label _turnValue, _tooltip, _rivalsTitle, _actionsCount;
         readonly Dictionary<string, Label> _statValues = new Dictionary<string, Label>();
+        VisualElement _levelFill;
 
         /// <summary>Состояние игры изменилось — пересобрать панели в конце кадра.</summary>
         bool _dirty = true;
@@ -131,6 +132,7 @@ namespace PlanetTrader.Client
             AddStat(stats, "money", "coins", "Деньги");
             AddStat(stats, "debt", "coins", "Долг");
             AddStat(stats, "capital", "layers", "Капитал");
+            AddLevelStat(stats);
             AddStat(stats, "costs", "flame", "Расходы");
             AddStat(stats, "actions", "bolt", "Действия");
             AddStat(stats, "reputation", "star", "Репутация");
@@ -170,6 +172,32 @@ namespace PlanetTrader.Client
             stat.Add(text);
             parent.Add(stat);
             _statValues[key] = value;
+        }
+
+        /// <summary>Уровень корпорации: название и полоска до следующего. Клик — вкладка «Развитие», где все уровни.</summary>
+        void AddLevelStat(VisualElement parent)
+        {
+            AddStat(parent, "level", "rank", "Уровень");
+            var stat = parent[parent.childCount - 1];
+            var bar = new VisualElement { pickingMode = PickingMode.Ignore };
+            bar.AddToClassList("level-bar");
+            _levelFill = new VisualElement { pickingMode = PickingMode.Ignore };
+            _levelFill.AddToClassList("level-fill");
+            bar.Add(_levelFill);
+            stat[1].Add(bar);
+            stat.Query<VisualElement>().ForEach(e => { if (e != stat) e.pickingMode = PickingMode.Ignore; });
+            stat.AddToClassList("clickable");
+            stat.RegisterCallback<ClickEvent>(_ => Later(() => _tab = Tab.Development));
+            stat.RegisterCallback<PointerMoveEvent>(e => ShowTooltip(LevelTooltip(), _screen.WorldToLocal(e.position)));
+            stat.RegisterCallback<PointerLeaveEvent>(_ => HideTooltip());
+        }
+
+        string LevelTooltip()
+        {
+            var g = _game;
+            var next = g.NextLevel;
+            if (next == null) return $"Уровень «{g.LevelInfo.Name}» — высший.";
+            return $"До уровня «{next.Name}»: капитал {Fmt.Money(g.Capital)} из {Fmt.Money(next.Capital)}.\nОткроет: {string.Join(", ", g.LevelUnlocks(g.Level + 1))}.";
         }
 
         static string ResourceIcon(Resource r)
@@ -367,6 +395,8 @@ namespace PlanetTrader.Client
             _statValues["money"].text = Fmt.Money(g.Money);
             _statValues["debt"].text = Fmt.Money(g.Debt);
             _statValues["capital"].text = Fmt.Money(g.Capital);
+            _statValues["level"].text = g.LevelInfo.Name;
+            _levelFill.style.width = Length.Percent(LevelProgress() * 100);
             _statValues["costs"].text = $"{Fmt.Money(g.CostsPerTurn)} / ход";
             _statValues["actions"].text = $"{g.ActionsLeft}/{g.ActionsPerTurn}";
             _statValues["reputation"].text = Mathf.RoundToInt((float)g.Reputation).ToString();

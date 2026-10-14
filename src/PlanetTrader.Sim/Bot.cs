@@ -59,7 +59,7 @@ namespace PlanetTrader.Sim
 
         public void PlayTurn(Game g)
         {
-            if (_ranOutOfActions && g.Managers < g.Balance.MaxManagers && IncomePerTurn(g) > 3 * g.Balance.ManagerSalary)
+            if (_ranOutOfActions && g.Managers < g.MaxManagers && IncomePerTurn(g) > 3 * g.Balance.ManagerSalary)
                 g.HireManager(BestCandidate(g));
             _ranOutOfActions = false;
 
@@ -404,7 +404,7 @@ namespace PlanetTrader.Sim
         }
 
         static ProbeType CheapestProbe(Game g, double x, double y) =>
-            g.Balance.ProbeTypes.Where(t => g.InRange(t, x, y)).OrderBy(t => t.Cost).FirstOrDefault();
+            g.UnlockedProbes.Where(t => g.InRange(t, x, y)).OrderBy(t => t.Cost).FirstOrDefault();
 
         /// <summary>
         /// Один скан за раз: туда, где больше всего силуэтов на единицу цены зонда.
@@ -417,7 +417,7 @@ namespace PlanetTrader.Sim
 
             ProbeType bestType = null;
             double bestX = 0, bestY = 0, bestScore = 0;
-            foreach (var t in g.Balance.ProbeTypes)
+            foreach (var t in g.UnlockedProbes)
             {
                 if (g.Money - t.Cost < Buffer(g) + 1500) continue;
                 foreach (var target in silhouettes)

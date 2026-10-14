@@ -122,8 +122,10 @@ namespace PlanetTrader.Client
             }
 
             ui.Space("m");
-            ui.Header($"Кандидаты (нанято {g.Managers} из {b.MaxManagers})");
+            ui.Header($"Кандидаты (нанято {g.Managers} из {g.MaxManagers})");
             ui.Small($"Новые кандидаты — раз в {b.CandidateRefreshTurns} ходов. Нанятый работает со следующего хода. Магнаты переманивают лучших.");
+            if (g.NextLevelWith(l => l.Managers > g.MaxManagers) is CorporationLevel more)
+                ui.Small($"Сколько менеджеров держать, зависит от уровня корпорации: с уровня «{more.Name}» (капитал от {Fmt.Money(more.Capital)}) — до {more.Managers}.");
             for (int i = 0; i < g.Candidates.Count; i++)
             {
                 var c = g.Candidates[i];
@@ -132,16 +134,58 @@ namespace PlanetTrader.Client
                     ui.Text($"<b>{c.Name}</b> — зарплата {Fmt.Money(c.Salary)} за ход, сильная сторона: {c.BestSkill.RuName()}");
                     ui.Small(SkillsLine(c));
                     int index = i;
-                    ui.Button("Нанять · 1 действие", g.ActionsLeft > 0 && g.Managers < b.MaxManagers,
+                    ui.Button("Нанять · 1 действие", g.ActionsLeft > 0 && g.Managers < g.MaxManagers,
                         () => Act(() => g.HireManager(index), $"Нанят(а) {c.Name}."));
                 }
             }
+        }
+
+        /// <summary>Уровень корпорации: где мы, сколько до следующего и что он откроет; ниже — все уровни.</summary>
+        void LevelSection(PanelBuilder ui)
+        {
+            var g = _game;
+            var levels = g.Balance.CorporationLevels;
+            ui.Header("Уровень корпорации");
+            using (ui.Card())
+            {
+                ui.Text($"<b>{g.LevelInfo.Name}</b> — уровень {g.Level + 1} из {levels.Length}");
+                var next = g.NextLevel;
+                if (next != null)
+                {
+                    ui.Add(PanelBuilder.MakeBar(LevelProgress(), new Color(0.84f, 0.64f, 0.31f)).WithClass("wide"));
+                    ui.Line($"До «{next.Name}»", $"капитал {Fmt.Money(g.Capital)} из {Fmt.Money(next.Capital)}");
+                    ui.Line("Откроет", string.Join(", ", g.LevelUnlocks(g.Level + 1)));
+                }
+                else
+                    ui.Small("Выше уровня пока нет.");
+                ui.Small("Уровень растёт с капиталом и не падает, даже если дела пойдут хуже. Проверяется в конце хода.");
+            }
+            using (ui.Fold("Все уровни", "levels"))
+            {
+                for (int i = 0; i < levels.Length; i++)
+                {
+                    string state = i < g.Level ? "<color=#7be38b>пройден</color>" : i == g.Level ? "<color=#ffd27a>сейчас</color>" : $"капитал от {Fmt.Money(levels[i].Capital)}";
+                    ui.Line($"{i + 1}. {levels[i].Name}", $"{state} — {string.Join(", ", g.LevelUnlocks(i))}");
+                }
+            }
+        }
+
+        /// <summary>Сколько пройдено от порога нынешнего уровня до следующего, 0–1; на последнем — 1.</summary>
+        float LevelProgress()
+        {
+            var g = _game;
+            var next = g.NextLevel;
+            if (next == null) return 1;
+            double from = g.LevelInfo.Capital;
+            return Mathf.Clamp01((float)((g.Capital - from) / (next.Capital - from)));
         }
 
         /// <summary>Дерево технологий: что изучено, что идёт, что можно начать.</summary>
         void DevelopmentTab(PanelBuilder ui)
         {
             var g = _game;
+            LevelSection(ui);
+            ui.Space("l");
             ui.Header("Исследования");
             if (g.CurrentResearch != null)
             {
@@ -396,7 +440,7 @@ namespace PlanetTrader.Client
 
             ui.Space("l");
             ui.Header("Менеджеры");
-            ui.Line("Нанято", $"{g.Managers} из {b.MaxManagers}, зарплаты {Fmt.Money(g.SalariesPerTurn)} за ход — подробнее во вкладке «Команда»");
+            ui.Line("Нанято", $"{g.Managers} из {g.MaxManagers}, зарплаты {Fmt.Money(g.SalariesPerTurn)} за ход — подробнее во вкладке «Команда»");
 
             ui.Space("l");
             ui.Header("Расходы за ход");
