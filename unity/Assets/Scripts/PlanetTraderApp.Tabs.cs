@@ -209,7 +209,9 @@ namespace PlanetTrader.Client
                     if (!g.IsResearched(t.Id) && g.CurrentResearch?.Technology != t)
                     {
                         var missing = t.Requires.Where(x => !g.IsResearched(x)).Select(x => g.Balance.Technologies.First(y => y.Id == x).Name).ToList();
-                        if (missing.Count > 0)
+                        if (!g.HasLicense(t.Sector))
+                            ui.Small($"Нужна лицензия на сектор «{g.Sectors[t.Sector].Name}»" + (missing.Count > 0 ? ", и сначала: " + string.Join(", ", missing) : ""));
+                        else if (missing.Count > 0)
                             ui.Small("Сначала: " + string.Join(", ", missing));
                         else
                         {
@@ -329,7 +331,7 @@ namespace PlanetTrader.Client
                 ui.Label("Продать", "header");
             }
 
-            foreach (var r in ResourceTypes.All)
+            foreach (var r in g.KnownResources)
             {
                 double stock = g.Stock(r);
                 double price = g.Market.Price(r);
@@ -355,7 +357,7 @@ namespace PlanetTrader.Client
             var b = g.Balance;
             ui.Small($"Каждая продажа роняет цену: на {Fmt.Percent(b.SalesImpact)}, если продать столько, сколько составляет глубина рынка. " +
                      $"За ход цена возвращается к базовой на {Fmt.Percent(b.PriceRecovery)} разрыва. " +
-                     "Глубина: " + string.Join(", ", ResourceTypes.All.Select(r => $"{r.RuName()} {Fmt.Amount(b.Depth(r))}")) + ". " +
+                     "Глубина: " + string.Join(", ", g.KnownResources.Select(r => $"{r.RuName()} {Fmt.Amount(b.Depth(r))}")) + ". " +
                      "Серым после склада — груз в пути с дальних планет.");
         }
 

@@ -42,6 +42,8 @@ namespace PlanetTrader.Core
         public double RegenFactor = 1;
         /// <summary>Прибавка к лояльности жителей за ход на всех ваших обитаемых планетах.</summary>
         public double LoyaltyBonus;
+        /// <summary>Исследовать можно только с лицензией на этот сектор: технология для его ресурса.</summary>
+        public int Sector;
 
         public Technology(string id, string name, double cost, int turns, string description)
         {
@@ -181,6 +183,7 @@ namespace PlanetTrader.Core
                 case Resource.Metal: return Specialty.Engineers;
                 case Resource.Gas: return Specialty.Chemists;
                 case Resource.Biomass: return Specialty.Biologists;
+                case Resource.Deuterium: return Specialty.Chemists;
                 default: return Specialty.Physicists;
             }
         }

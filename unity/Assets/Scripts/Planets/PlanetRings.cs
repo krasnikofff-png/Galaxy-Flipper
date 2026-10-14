@@ -18,7 +18,8 @@ namespace PlanetTrader.Visuals
         public static Style For(PlanetLook look, int seed)
         {
             var rnd = new System.Random(seed * 13 + 5);
-            double chance = look == PlanetLook.Gas ? 0.75 : look == PlanetLook.Ice ? 0.25 : look == PlanetLook.Rocky || look == PlanetLook.Crystal ? 0.1 : 0;
+            double chance = look == PlanetLook.Gas ? 0.75 : look == PlanetLook.Ice ? 0.25
+                : look == PlanetLook.Rocky || look == PlanetLook.Crystal || look == PlanetLook.Ocean ? 0.1 : 0;
             if (rnd.NextDouble() >= chance) return null;
             float inner = 1.25f + (float)rnd.NextDouble() * 0.2f;
             var s = new Style { Inner = inner, Outer = inner + 0.5f + (float)rnd.NextDouble() * 0.45f, Seed = seed };

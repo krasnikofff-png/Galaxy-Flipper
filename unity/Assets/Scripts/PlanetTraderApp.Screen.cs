@@ -54,6 +54,7 @@ namespace PlanetTrader.Client
 
         sealed class MarketCard
         {
+            public VisualElement Root;
             public Label Price, Change;
             public VisualElement ChangeBox, ChangeIcon;
             public Sparkline Line;
@@ -210,6 +211,8 @@ namespace PlanetTrader.Client
                 case Resource.Gas: return "flame";
                 case Resource.Biomass: return "leaf";
                 case Resource.Crystals: return "gem";
+                case Resource.Plasma: return "plasma";
+                case Resource.Deuterium: return "drop";
                 default: return "spark";
             }
         }
@@ -229,7 +232,7 @@ namespace PlanetTrader.Client
             name.AddToClassList("mc-name");
             head.Add(name);
             card.Add(head);
-            var m = new MarketCard { Price = new Label(), ChangeBox = new VisualElement(), Change = new Label(), Line = new Sparkline() };
+            var m = new MarketCard { Root = card, Price = new Label(), ChangeBox = new VisualElement(), Change = new Label(), Line = new Sparkline() };
             m.Price.AddToClassList("mc-price");
             m.ChangeBox.AddToClassList("mc-change");
             m.Change.AddToClassList("label-text");
@@ -408,9 +411,12 @@ namespace PlanetTrader.Client
         void RefreshMarket()
         {
             var g = _game;
+            // Плазма и Дейтерий появляются на бирже с лицензией на их сектор.
+            var known = new HashSet<Resource>(g.KnownResources);
             foreach (var r in ResourceTypes.All)
             {
                 var m = _market[r];
+                m.Root.EnableInClassList("hidden", !known.Contains(r));
                 double price = g.Market.Price(r);
                 double toBase = price / g.Balance.BasePrice(r) - 1;
                 m.Price.text = Fmt.Money(price);

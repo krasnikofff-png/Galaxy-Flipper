@@ -42,6 +42,8 @@ namespace PlanetTrader.Core
         public int QuietUntilTurn;
         /// <summary>Корпорация магната: казна, планеты, статистика — как у игрока.</summary>
         public Corporation Corp;
+        /// <summary>Сектор, где магнат живёт: покупает планеты, ставит на аукционах и пакостит там.</summary>
+        public int Sector;
         double _money;
         /// <summary>Казна: магнат покупает планеты, подкупает и учит жителей на свои деньги.</summary>
         public double Money

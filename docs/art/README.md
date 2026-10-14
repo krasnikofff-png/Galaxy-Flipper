@@ -12,7 +12,7 @@
 | Аномалия (квантий) | тёмная поверхность со светящимися разломами |
 
 - `planets-preview.png` — превью из `tools/planet-preview/planet.py` (Python, numpy): быстро пробовать облик. Запуск: `python3 tools/planet-preview/planet.py jungle 7 600`.
-- `planets-unity-check.png` — настоящий рендер Unity (6000.0.58): все шесть типов кодом `PlanetSnapshots` из редактора.
+- `planets-unity-check.png` — настоящий рендер Unity (6000.0.58): все восемь типов (шесть исходных, вулканическая и океан этапа 8) кодом `PlanetSnapshots` из редактора.
 - `sector-map-3d.png` — собранная игра: карта сектора с 3D-планетами (все планеты открыты для снимка) и 3D-кадр выбранной планеты справа.
 
 ## В Unity
@@ -95,7 +95,7 @@
 ## Проверка без человека
 
 ```bash
-# снимок шести типов настоящим рендером (из папки репозитория; путь к проекту — полный, иначе Unity CLI может найти другой проект с тем же именем)
+# снимок всех типов настоящим рендером (из папки репозитория; путь к проекту — полный, иначе Unity CLI может найти другой проект с тем же именем)
 unity run "$PWD/unity" -- -executeMethod PlanetTrader.EditorTools.PlanetSnapshots.RenderFromCommandLine -snapOut "$PWD/docs/art/planets-unity-check.png"
 # снимок построек на четырёх планетах
 unity run "$PWD/unity" -- -executeMethod PlanetTrader.EditorTools.PlanetSnapshots.RenderBuildingsFromCommandLine -snapOut "$PWD/docs/art/buildings-unity.png"
@@ -113,7 +113,8 @@ unity run "$PWD/unity" -- -executeMethod PlanetTrader.EditorTools.BuildTools.Bui
 # -autoShotTab 3 открывает вкладку (0 — «Планета» … 6 — «Магнаты»), -autoShotProbe включает режим зонда,
 # -autoShotRivals снимает паузу «ходят соперники», -autoShotClicks "1134,20;500,420" кликает мышью
 # в точки интерфейса (экран 1600×900) — так проверяются кнопки без человека;
-# партия начинается за Геолога, -autoShotCharacter 2 — за Филантропа, -autoShotStart оставляет экран выбора персонажа.
+# партия начинается за Геолога, -autoShotCharacter 2 — за Филантропа, -autoShotStart оставляет экран выбора персонажа;
+# -autoShotSector 1 покупает лицензию и показывает «Огненный пояс», -autoShotSectorLocked 1 — карточку лицензии.
 # Снимок делается и тогда, когда окно игры не в фокусе.
 unity/Build/PlanetTrader.app/Contents/MacOS/unity -screen-fullscreen 0 -screen-width 1600 -screen-height 900 -autoShot /tmp/map.png -autoShotDelay 10 -autoShotReveal
 ```

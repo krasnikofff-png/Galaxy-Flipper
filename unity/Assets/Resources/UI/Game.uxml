@@ -22,7 +22,7 @@
                 <ui:VisualElement name="mapLabels" class="map-labels" picking-mode="Ignore" />
                 <ui:VisualElement class="map-header" picking-mode="Ignore">
                     <ui:Label text="ГАЛАКТИЧЕСКАЯ КАРТА" class="panel-title" picking-mode="Ignore" />
-                    <ui:Label name="sectorName" class="panel-subtitle" picking-mode="Ignore" />
+                    <ui:VisualElement name="sectorTabs" class="sector-tabs" />
                     <ui:Label name="eventLine" class="event-line" picking-mode="Ignore" />
                 </ui:VisualElement>
                 <ui:VisualElement name="legend" class="legend" picking-mode="Ignore" />
@@ -33,6 +33,11 @@
                     <ui:Button name="probeDone" text="Готово" focusable="false" class="button probe-done" />
                 </ui:VisualElement>
                 <ui:Label name="probeInfo" class="probe-info hidden" picking-mode="Ignore" />
+                <ui:VisualElement name="sectorLock" class="sector-lock frame hidden">
+                    <ui:Label name="sectorLockTitle" class="title" />
+                    <ui:Label name="sectorLockText" class="sector-lock-text" />
+                    <ui:Button name="sectorLockBuy" focusable="false" class="character-pick sector-buy" />
+                </ui:VisualElement>
                 <ui:VisualElement class="map-tools">
                     <ui:Button name="centerButton" focusable="false" class="tool-button">
                         <ui:VisualElement class="icon icon-target" />

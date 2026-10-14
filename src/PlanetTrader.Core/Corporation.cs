@@ -19,6 +19,8 @@ namespace PlanetTrader.Core
         public double Debt;
         /// <summary>Стартовый персонаж директора; null — средний директор.</summary>
         public StartCharacter Character;
+        /// <summary>Лицензии на секторы (номера в Balance.Sectors); стартовый сектор открыт всем.</summary>
+        public readonly HashSet<int> Licenses = new HashSet<int> { 0 };
         /// <summary>Уровень корпорации, номер в Balance.CorporationLevels. Растёт с капиталом и не падает.</summary>
         public int Level;
         /// <summary>Команда: первым — директор (несколько действий за ход), дальше нанятые менеджеры.</summary>

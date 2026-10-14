@@ -14,6 +14,8 @@ namespace PlanetTrader.Core
         public double AverageReserve;
         /// <summary>Относительная частота в секторе.</summary>
         public double Weight;
+        /// <summary>Встречается только в этом секторе (новые ресурсы этапа 8); −1 — во всех.</summary>
+        public int OnlySector = -1;
 
         public PlanetType(string name, Resource resource, double price, double upkeep,
             double mineCost, double output, double reserve, double weight)
@@ -27,6 +29,15 @@ namespace PlanetTrader.Core
             AverageReserve = reserve;
             Weight = weight;
         }
+    }
+
+    public static class PlanetTypes
+    {
+        /// <summary>Тот же тип в богатом секторе: добыча, запас, цена и шахта × richness, содержание × upkeep.</summary>
+        public static PlanetType Scaled(this PlanetType t, double richness, double upkeep) =>
+            richness == 1 && upkeep == 1 ? t
+                : new PlanetType(t.Name, t.Resource, t.Price * richness, t.Upkeep * upkeep, t.MineCost * richness,
+                    t.OutputPerTurn * richness, t.AverageReserve * richness, t.Weight) { OnlySector = t.OnlySector };
     }
 
     /// <summary>
@@ -80,6 +91,27 @@ namespace PlanetTrader.Core
         /// его действие сбережётся для шахты. Заметно лучший в деле всё равно возьмётся за него.
         /// </summary>
         public double SpecialistReserve = 0.6;
+
+        // --- Секторы (этап 8, допущения) ---
+        /// <summary>
+        /// Решение автора: у каждого сектора своя карта; лицензию продают за уровень корпорации и деньги, репутация не нужна.
+        /// Планеты новых секторов дороже, но выгоднее на одно место в кривой содержания: добыча растёт быстрее содержания.
+        /// Число планет стартового сектора — SectorPlanets и MaxSectorPlanets.
+        /// </summary>
+        public SectorSpec[] Sectors =
+        {
+            new SectorSpec("Окраина") { Description = "Стартовый сектор: скромные планеты, все шесть ресурсов." },
+            new SectorSpec("Огненный пояс")
+            {
+                LicenseLevel = 2, LicenseCost = 15_000, Richness = 1.6, UpkeepFactor = 1.4, MagnateMoney = 20_000,
+                Description = "Планеты богаче: добыча, запас и цена ×1,6, содержание ×1,4. Свои магнаты.",
+            },
+            new SectorSpec("Лазурная бездна")
+            {
+                LicenseLevel = 4, LicenseCost = 60_000, Richness = 2.5, UpkeepFactor = 2, MagnateMoney = 80_000,
+                Description = "Самые богатые планеты: добыча, запас и цена ×2,5, содержание ×2. Свои магнаты.",
+            },
+        };
 
         // --- Стартовые персонажи (этап 8, допущения; выбрал автор) ---
         /// <summary>
@@ -154,7 +186,8 @@ namespace PlanetTrader.Core
         public double MarketNoise = 0.08;
         /// <summary>Нижний предел цены как доля базовой (допущение).</summary>
         public double MinPriceShare = 0.20;
-        public double[] MarketDepth = { 150, 120, 140, 50, 35, 10 };
+        /// <summary>Плазма и Дейтерий (этап 8) — свои рынки: в новых секторах продажи не роняют цены старых ресурсов.</summary>
+        public double[] MarketDepth = { 150, 120, 140, 50, 35, 10, 30, 20 };
         /// <summary>
         /// В кооперативе рынок глубже: глубина × (число игроков)^это. Магнаты цены не двигают —
         /// продают по текущей цене биржи, её роняют только игроки.
@@ -391,7 +424,7 @@ namespace PlanetTrader.Core
         /// За сколько ходов месторождение восстанавливается после истощения, по ресурсам:
         /// биомасса отрастает быстро, квантий — очень долго. Разные сроки — чтобы всё не кончалось разом.
         /// </summary>
-        public int[] RegenTurns = { 10, 24, 14, 6, 32, 45 };
+        public int[] RegenTurns = { 10, 24, 14, 6, 32, 45, 20, 28 };
         /// <summary>Шанс одного и двух дополнительных месторождений у планеты.</summary>
         public double OneExtraDepositChance = 0.5;
         public double TwoExtraDepositsChance = 0.2;
@@ -441,6 +474,8 @@ namespace PlanetTrader.Core
             new Technology("regen", "Ускоренная регенерация", 2500, 5, "Месторождения на ваших планетах восстанавливаются на 30% быстрее.") { RegenFactor = 0.7, Requires = new[] { "biomass" } },
             new Technology("crystals", "Кристаллические резонаторы", 3500, 6, "Добыча кристаллов на дополнительных месторождениях.") { UnlocksResource = Resource.Crystals, Requires = new[] { "enrich" } },
             new Technology("quantium", "Квантовые ловушки", 5000, 7, "Добыча квантия на дополнительных месторождениях.") { UnlocksResource = Resource.Quantium, Requires = new[] { "crystals", "gas" } },
+            new Technology("plasma", "Плазменные ловушки", 3000, 5, "Добыча плазмы на дополнительных месторождениях. Нужна лицензия на «Огненный пояс».") { UnlocksResource = Resource.Plasma, Requires = new[] { "gas" }, Sector = 1 },
+            new Technology("deuterium", "Дейтериевые фильтры", 4000, 6, "Добыча дейтерия на дополнительных месторождениях. Нужна лицензия на «Лазурную бездну».") { UnlocksResource = Resource.Deuterium, Requires = new[] { "ice" }, Sector = 2 },
         };
 
         // --- Карта и доставка (допущения) ---
@@ -460,10 +495,13 @@ namespace PlanetTrader.Core
             new PlanetType("Джунгли", Resource.Biomass, 2200, 55, 800, 15, 1170, 5),
             new PlanetType("Кристальная", Resource.Crystals, 2600, 60, 1000, 13, 936, 4),
             new PlanetType("Аномалия", Resource.Quantium, 4200, 90, 1600, 8, 480, 2),
+            // Новые ресурсы (этап 8): только в своих секторах; там же их цены и запасы умножаются на богатство сектора.
+            new PlanetType("Вулканическая", Resource.Plasma, 3000, 65, 1100, 11, 880, 6) { OnlySector = 1 },
+            new PlanetType("Океан", Resource.Deuterium, 3600, 75, 1300, 9, 650, 6) { OnlySector = 2 },
         };
 
         /// <summary>Базовые цены ресурсов, в порядке enum Resource.</summary>
-        public double[] BaseResourcePrice = { 10, 14, 12, 28, 40, 110 };
+        public double[] BaseResourcePrice = { 10, 14, 12, 28, 40, 110, 60, 85 };
 
         public double BasePrice(Resource r) => BaseResourcePrice[(int)r];
         public double Depth(Resource r) => MarketDepth[(int)r];

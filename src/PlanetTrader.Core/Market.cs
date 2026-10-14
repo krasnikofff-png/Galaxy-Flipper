@@ -8,12 +8,16 @@ namespace PlanetTrader.Core
         readonly Balance _b;
         readonly double[] _price = new double[ResourceTypes.Count];
         /// <summary>Множитель события: к какой цене тянется рынок, пока событие идёт.</summary>
-        readonly double[] _eventFactor = { 1, 1, 1, 1, 1, 1 };
+        readonly double[] _eventFactor = new double[ResourceTypes.Count];
 
         public Market(Balance balance)
         {
             _b = balance;
-            foreach (var r in ResourceTypes.All) _price[(int)r] = balance.BasePrice(r);
+            foreach (var r in ResourceTypes.All)
+            {
+                _price[(int)r] = balance.BasePrice(r);
+                _eventFactor[(int)r] = 1;
+            }
         }
 
         public double Price(Resource r) => _price[(int)r];

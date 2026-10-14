@@ -13,7 +13,7 @@ namespace PlanetTrader.EditorTools
     public static class PlanetSnapshots
     {
         const int Tile = 480;
-        static readonly int[] Seeds = { 7, 7, 7, 7, 7, 7 };
+        static readonly int[] Seeds = { 7, 7, 7, 7, 7, 7, 7, 7 };
 
         [MenuItem("Planet Trader/Снимок планет")]
         static void RenderFromMenu()
@@ -661,9 +661,13 @@ namespace PlanetTrader.EditorTools
 
                 var rt = new RenderTexture(Tile, Tile, 24, RenderTextureFormat.ARGB32) { antiAliasing = 8 };
                 cam.targetTexture = rt;
-                var sheet = new Texture2D(Tile * 3, Tile * 2, TextureFormat.RGB24, false);
+                // Все облики: шесть исходных и два этапа 8 (вулканическая, океан) — четыре в ряд.
+                int looks = System.Enum.GetValues(typeof(PlanetLook)).Length;
+                const int cols = 4;
+                int rows = (looks + cols - 1) / cols;
+                var sheet = new Texture2D(Tile * cols, Tile * rows, TextureFormat.RGB24, false);
 
-                for (int i = 0; i < 6; i++)
+                for (int i = 0; i < looks; i++)
                 {
                     var look = (PlanetLook)i;
                     var pivot = new GameObject("Ось").transform;
@@ -679,7 +683,7 @@ namespace PlanetTrader.EditorTools
 
                     cam.Render();
                     RenderTexture.active = rt;
-                    sheet.ReadPixels(new Rect(0, 0, Tile, Tile), (i % 3) * Tile, (1 - i / 3) * Tile);
+                    sheet.ReadPixels(new Rect(0, 0, Tile, Tile), (i % cols) * Tile, (rows - 1 - i / cols) * Tile);
                     RenderTexture.active = null;
                     Object.DestroyImmediate(pivot.gameObject);
                 }

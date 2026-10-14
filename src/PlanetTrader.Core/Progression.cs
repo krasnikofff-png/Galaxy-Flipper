@@ -46,6 +46,32 @@ namespace PlanetTrader.Core
         }
     }
 
+    /// <summary>
+    /// Сектор галактики (этап 8). У каждого своя карта, своя биржа-станция в центре и свои магнаты; цены на ресурсы общие.
+    /// Стартовый сектор открыт всем, остальные — по лицензии: её продают с нужного уровня корпорации.
+    /// Сектор появляется, когда первую лицензию на него покупает хоть кто-то из игроков.
+    /// </summary>
+    public sealed class SectorSpec
+    {
+        public string Name;
+        /// <summary>Чем сектор хорош — для интерфейса.</summary>
+        public string Description;
+        /// <summary>С какого уровня корпорации продают лицензию (номер в CorporationLevels).</summary>
+        public int LicenseLevel;
+        public double LicenseCost;
+        /// <summary>Планет при открытии и предел открытий. У стартового сектора — SectorPlanets и MaxSectorPlanets из Balance.</summary>
+        public int Planets = 30, MaxPlanets = 60;
+        /// <summary>Планеты богаче: добыча, запас, цена и шахта ×Richness, содержание ×UpkeepFactor.</summary>
+        public double Richness = 1, UpkeepFactor = 1;
+        /// <summary>Казна магнатов сектора, когда он открывается. У стартового — MagnateStartMoney.</summary>
+        public double MagnateMoney;
+
+        public SectorSpec(string name)
+        {
+            Name = name;
+        }
+    }
+
     public static class Words
     {
         /// <summary>Число со словом в нужной форме: 1 менеджер, 2 менеджера, 5 менеджеров.</summary>

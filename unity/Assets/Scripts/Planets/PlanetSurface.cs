@@ -18,6 +18,10 @@ namespace PlanetTrader.Visuals
         Crystal,
         /// <summary>Аномалия (квантий): тёмная поверхность со светящимися разломами.</summary>
         Anomaly,
+        /// <summary>Вулканическая (плазма): чёрный базальт, лавовые реки и озёра, кратеры вулканов, пепел.</summary>
+        Volcanic,
+        /// <summary>Океан (дейтерий): глубокая вода, отмели, редкие острова и атоллы.</summary>
+        Ocean,
     }
 
     /// <summary>Точка поверхности: цвет, высота (для рельефа), блеск, свечение.</summary>
@@ -53,6 +57,8 @@ namespace PlanetTrader.Visuals
                 case Resource.Gas: return PlanetLook.Gas;
                 case Resource.Biomass: return PlanetLook.Jungle;
                 case Resource.Crystals: return PlanetLook.Crystal;
+                case Resource.Plasma: return PlanetLook.Volcanic;
+                case Resource.Deuterium: return PlanetLook.Ocean;
                 default: return PlanetLook.Anomaly;
             }
         }
@@ -66,6 +72,8 @@ namespace PlanetTrader.Visuals
                 case PlanetLook.Rocky: return new PlanetStyle { Atmosphere = C(240, 170, 110), Clouds = 0.12f, CloudTint = C(235, 205, 170) };
                 case PlanetLook.Gas: return new PlanetStyle { Atmosphere = C(255, 210, 150), Clouds = 0, Smooth = true };
                 case PlanetLook.Crystal: return new PlanetStyle { Atmosphere = C(190, 140, 255), Clouds = 0.15f, CloudTint = C(220, 210, 255) };
+                case PlanetLook.Volcanic: return new PlanetStyle { Atmosphere = C(255, 120, 60), Clouds = 0.22f, CloudTint = C(110, 100, 98) };
+                case PlanetLook.Ocean: return new PlanetStyle { Atmosphere = C(80, 170, 255), Clouds = 0.5f };
                 default: return new PlanetStyle { Atmosphere = C(200, 90, 255), Clouds = 0 };
             }
         }
@@ -87,6 +95,8 @@ namespace PlanetTrader.Visuals
                 case PlanetLook.Rocky: return Rocky(n, q);
                 case PlanetLook.Gas: return Gas(n, q);
                 case PlanetLook.Crystal: return Crystal(n, q);
+                case PlanetLook.Volcanic: return Volcanic(n, q);
+                case PlanetLook.Ocean: return Ocean(n, q);
                 default: return Anomaly(n, q);
             }
         }
@@ -232,6 +242,64 @@ namespace PlanetTrader.Visuals
                 Spec = 0.2f,
                 Glow = glowColor * (Mathf.Pow(fiss, 1.2f) * 1.6f),
             };
+        }
+
+        static SurfaceSample Volcanic(PlanetNoise n, Vector3 q)
+        {
+            var qw = Warp(n, q, 1.6f, 0.5f);
+            float elev = n.Fbm(qw * 1.3f, 7);
+            // Лавовые реки — по гребням шума, озёра — в низинах.
+            float river = Sat((n.Ridged(qw * 2.6f, 5, 41) - 0.8f) * 6);
+            float lake = Sat((-elev - 0.22f) * 6);
+            float crust = Sat(n.Fbm(q * 9, 3, 57) * 2 + 0.5f);
+            var rock = Mix(V(36, 30, 28), V(84, 70, 60), Sat(elev + 0.5f));
+            rock = Mix(rock, V(24, 20, 20), crust * 0.4f);
+            // Вулканы: конус с жерлом на части клеток.
+            n.Cells(q, 6, 5.5f, out float cd, out _, out int cid);
+            bool volcano = cid % 4 == 0;
+            float cone = volcano ? Sat(1 - cd / 0.35f) : 0;
+            float vent = volcano ? Sat(1 - cd / 0.07f) : 0;
+            rock = Mix(rock, V(100, 84, 72), cone * 0.45f);
+            float hot = Mathf.Max(river, Mathf.Max(lake, vent));
+            var lava = Mix(V(255, 80, 15), V(255, 205, 90), Sat(n.Fbm(q * 12, 3, 23) + 0.5f));
+            return new SurfaceSample
+            {
+                Color = Mix(rock, lava * 0.85f, hot * 0.85f),
+                Height = elev * 0.10f + cone * 0.16f - vent * 0.1f - river * 0.03f - lake * 0.02f,
+                Spec = hot * 0.3f,
+                Glow = lava * (hot * 1.3f),
+            };
+        }
+
+        static SurfaceSample Ocean(PlanetNoise n, Vector3 q)
+        {
+            var qw = Warp(n, q, 1.3f, 0.35f);
+            // Суши мало: острова и атоллы поднимаются из глубины.
+            float elev = n.Fbm(qw * 1.6f, 7) * 1.25f - 0.36f;
+            float lat = Mathf.Abs(q.y);
+            var s = new SurfaceSample();
+            if (elev <= 0)
+            {
+                float depth = Sat(-elev * 3);
+                var sea = Mix(V(45, 205, 205), V(20, 115, 180), Sat(depth / 0.12f));
+                sea = Mix(sea, V(10, 42, 110), Sat((depth - 0.12f) / 0.88f));
+                // Течения — чуть светлее, полосами вдоль широт.
+                float current = n.Fbm(Vector3.Scale(q, new Vector3(2, 7, 2)), 4, 140);
+                sea = Mix(sea, sea * 1.25f, Sat(current * 2.5f) * 0.35f);
+                sea = Mix(sea, V(225, 238, 248), Sat((lat - 0.88f) * 10));
+                s.Color = sea;
+                s.Height = -0.01f;
+                s.Spec = 1;
+                return s;
+            }
+            float beach = Sat(1 - elev * 22);
+            var land = Mix(V(55, 135, 65), V(115, 155, 80), Sat(n.Fbm(q * 9, 3, 33) + 0.5f));
+            land = Mix(land, V(232, 218, 170), beach);
+            land = Mix(land, V(235, 240, 245), Sat((lat - 0.8f) * 8));
+            s.Color = land;
+            s.Height = elev * 0.15f;
+            s.Spec = 0.1f;
+            return s;
         }
 
         /// <summary>Плотность облаков 0…1 для типа с облаками.</summary>

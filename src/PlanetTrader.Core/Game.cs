@@ -77,6 +77,10 @@ namespace PlanetTrader.Core
         int _nextEventTurn;
         GalacticEvent _lastEvent;
         readonly List<Planet> _planets = new List<Planet>();
+        /// <summary>Открытые секторы: у них есть планеты и магнаты. Стартовый открыт всегда.</summary>
+        readonly HashSet<int> _openSectors = new HashSet<int> { 0 };
+        /// <summary>Типы планет каждого сектора: в богатых — с множителями.</summary>
+        readonly Dictionary<int, PlanetType[]> _sectorTypes = new Dictionary<int, PlanetType[]>();
         readonly List<Order> _orders = new List<Order>();
         readonly List<Probe> _probes = new List<Probe>();
         List<Shipment> _shipments => _current.Shipments;
@@ -172,7 +176,7 @@ namespace PlanetTrader.Core
         public int PlayerPlanetCount => _planets.Count(p => p.OwnerCorp == _current);
 
         /// <summary>Планеты, которые игрок может купить прямо сейчас.</summary>
-        public IEnumerable<Planet> PlanetsForSale => _planets.Where(p => p.Owner == Owner.Registry && !p.IsDepleted);
+        public IEnumerable<Planet> PlanetsForSale => _planets.Where(p => p.Owner == Owner.Registry && !p.IsDepleted && HasLicense(p.Sector));
 
         public double Stock(Resource r) => _stock[(int)r];
 
@@ -297,23 +301,48 @@ namespace PlanetTrader.Core
             }
         }
 
-        PlanetType RandomType()
+        /// <summary>Типы планет сектора: в стартовом — как в Balance, в богатых — с множителями сектора.</summary>
+        public PlanetType[] SectorTypes(int sector)
         {
-            double total = Balance.PlanetTypes.Sum(t => t.Weight);
+            if (_sectorTypes.TryGetValue(sector, out var types)) return types;
+            var spec = Balance.Sectors[sector];
+            types = Balance.PlanetTypes.Where(t => t.OnlySector < 0 || t.OnlySector == sector)
+                .Select(t => t.Scaled(spec.Richness, spec.UpkeepFactor)).ToArray();
+            _sectorTypes[sector] = types;
+            return types;
+        }
+
+        /// <summary>Какие ресурсы встречаются в секторе: шесть общих и, в новых секторах, свой.</summary>
+        public IEnumerable<Resource> SectorResources(int sector) => SectorTypes(sector).Select(t => t.Resource);
+
+        /// <summary>Ресурсы, с которыми корпорация имеет дело: из секторов, где у неё лицензия, и те, что лежат на складе.</summary>
+        public IEnumerable<Resource> KnownResources =>
+            ResourceTypes.All.Where(r => _current.Licenses.Any(s => SectorOpen(s) && SectorResources(s).Contains(r)) || _stock[(int)r] + InTransit(r) > 0);
+
+        /// <summary>Ресурсы открытых секторов: только их заказывают и просят жители.</summary>
+        Resource[] OpenResources => ResourceTypes.All.Where(r => _openSectors.Any(s => SectorResources(s).Contains(r))).ToArray();
+
+        /// <summary>Тип планеты с основным ресурсом r в секторе.</summary>
+        public PlanetType TypeIn(int sector, Resource r) => SectorTypes(sector).First(t => t.Resource == r);
+
+        PlanetType RandomType(int sector = 0)
+        {
+            var types = SectorTypes(sector);
+            double total = types.Sum(t => t.Weight);
             double roll = _rng.NextDouble() * total;
-            foreach (var t in Balance.PlanetTypes)
+            foreach (var t in types)
             {
                 roll -= t.Weight;
                 if (roll < 0) return t;
             }
-            return Balance.PlanetTypes[Balance.PlanetTypes.Length - 1];
+            return types[types.Length - 1];
         }
 
-        Planet GeneratePlanet(PlanetType type)
+        Planet GeneratePlanet(PlanetType type, int sector = 0)
         {
             double spread = Balance.ReserveSpread;
             double reserve = Math.Round(type.AverageReserve * _rng.Range(1 - spread, 1 + spread));
-            var p = new Planet(_nextPlanetId++, type, reserve);
+            var p = new Planet(_nextPlanetId++, type, reserve) { Sector = sector };
             PlaceOnMap(p);
             Survey(p);
             return p;
@@ -332,10 +361,10 @@ namespace PlanetTrader.Core
 
             double roll = _surveyRng.NextDouble();
             int extra = roll < Balance.TwoExtraDepositsChance ? 2 : roll < Balance.OneExtraDepositChance ? 1 : 0;
-            var others = ResourceTypes.All.Where(r => r != p.Resource).OrderBy(_ => _surveyRng.NextULong()).Take(extra);
+            var others = SectorResources(p.Sector).Where(r => r != p.Resource).OrderBy(_ => _surveyRng.NextULong()).Take(extra);
             foreach (var r in others)
             {
-                double output = Math.Round(Balance.TypeOf(r).OutputPerTurn * _surveyRng.Range(Balance.ExtraOutputMin, Balance.ExtraOutputMax), 1);
+                double output = Math.Round(TypeIn(p.Sector, r).OutputPerTurn * _surveyRng.Range(Balance.ExtraOutputMin, Balance.ExtraOutputMax), 1);
                 double capacity = Math.Round(output * _surveyRng.Range(Balance.ExtraCapacityTurnsMin, Balance.ExtraCapacityTurnsMax));
                 p.ExtraDeposits.Add(new Deposit { Resource = r, OutputPerTurn = Math.Max(1, output), Capacity = capacity, InitialCapacity = capacity, Reserve = capacity });
             }
@@ -355,6 +384,7 @@ namespace PlanetTrader.Core
                 double gap = Geometry.Distance(x, y, Balance.ExchangeX, Balance.ExchangeY);
                 foreach (var other in _planets)
                 {
+                    if (other.Sector != p.Sector) continue;
                     double dx = other.MapX - x, dy = other.MapY - y;
                     gap = Math.Min(gap, Math.Sqrt(dx * dx + dy * dy));
                 }
@@ -412,7 +442,95 @@ namespace PlanetTrader.Core
                 list.Add(level == 0 ? Words.Count(managers, "менеджер", "менеджера", "менеджеров") : $"до {Words.Count(managers, "менеджера", "менеджеров", "менеджеров")}");
             foreach (var t in Balance.ProbeTypes.Where(t => t.MinLevel == level))
                 list.Add($"зонд «{t.Name}»");
+            foreach (var s in Balance.Sectors.Where((s, i) => i > 0 && s.LicenseLevel == level))
+                list.Add($"лицензия на сектор «{s.Name}»");
             return list;
+        }
+
+        // ------------------------------------------------------------------
+        // Секторы и лицензии
+        // ------------------------------------------------------------------
+
+        public IReadOnlyList<SectorSpec> Sectors => Balance.Sectors;
+        public bool HasLicense(int sector) => _current.Licenses.Contains(sector);
+        /// <summary>Открыт ли сектор: у него есть планеты и магнаты (лицензию на него уже кто-то купил).</summary>
+        public bool SectorOpen(int sector) => _openSectors.Contains(sector);
+
+        /// <summary>Почему лицензию сейчас не купить; null — можно.</summary>
+        public string LicenseBlocker(int sector)
+        {
+            if (sector < 0 || sector >= Balance.Sectors.Length) return "Такого сектора нет";
+            if (HasLicense(sector)) return "Лицензия уже есть";
+            var spec = Balance.Sectors[sector];
+            if (Level < spec.LicenseLevel) return $"Лицензию продают с уровня «{Balance.CorporationLevels[spec.LicenseLevel].Name}»";
+            if (Money < spec.LicenseCost) return "Не хватает денег";
+            return null;
+        }
+
+        /// <summary>
+        /// Лицензия на сектор: его планеты можно покупать и разведывать, зонды летят от его биржи и ваших планет в нём.
+        /// Первая лицензия открывает сектор: появляются планеты и свои магнаты. Окрестности биржи видны сканом.
+        /// </summary>
+        public ActionResult BuyLicense(int sector)
+        {
+            string blocker = LicenseBlocker(sector);
+            if (blocker != null) return ActionResult.Fail(blocker);
+            var a = SpendAction(Skill.Negotiation);
+            if (!a.Ok) return a;
+            var spec = Balance.Sectors[sector];
+            Money -= spec.LicenseCost;
+            _current.Licenses.Add(sector);
+            if (!SectorOpen(sector)) OpenSector(sector);
+            int seen = 0;
+            foreach (var p in _planets.Where(x => x.Sector == sector && x.Knowledge == Knowledge.Silhouette))
+                if (Geometry.Distance(p.MapX, p.MapY, Balance.ExchangeX, Balance.ExchangeY) <= Balance.StartScanRadius)
+                {
+                    p.Knowledge = Knowledge.Scanned;
+                    seen++;
+                }
+            Notices.Add($"Лицензия на сектор «{spec.Name}» куплена. Планет в секторе {_planets.Count(x => x.Sector == sector)}, у биржи видно {seen}. " +
+                        $"Магнаты сектора: {string.Join(", ", _magnates.Where(m => m.Sector == sector).Select(m => m.Name))}.");
+            return ActionResult.Success;
+        }
+
+        /// <summary>Сектор появляется: планеты, свои магнаты, часть планет — у них, с шахтами.</summary>
+        void OpenSector(int sector)
+        {
+            var spec = Balance.Sectors[sector];
+            _openSectors.Add(sector);
+            var fresh = new List<Planet>();
+            for (int i = 0; i < spec.Planets; i++)
+            {
+                var p = GeneratePlanet(RandomType(sector), sector);
+                _planets.Add(p);
+                fresh.Add(p);
+            }
+            int count = Balance.PlanetsPerMagnate <= 0 || Balance.Magnates.Length == 0 ? 0 : Math.Max(1, (int)Math.Round(spec.Planets / (double)Balance.PlanetsPerMagnate));
+            var local = new List<Magnate>();
+            for (int i = 0; i < count; i++)
+            {
+                var m = Magnate.Generate(_magnates.Max(x => (int?)x.Id) + 1 ?? 0, Balance.Magnates[i % Balance.Magnates.Length], _rng);
+                m.Sector = sector;
+                AddMagnateCorp(m, spec.MagnateMoney);
+                _magnates.Add(m);
+                local.Add(m);
+            }
+            int aiCount = (int)Math.Round(spec.Planets * Balance.AiStartShare);
+            int k = 0;
+            foreach (var p in fresh.OrderBy(_ => _rng.NextULong()).Take(aiCount))
+            {
+                if (local.Count == 0) break;
+                p.OwnerCorp = local[k++ % local.Count].Corp;
+                p.Mine = MineState.Working;
+            }
+        }
+
+        /// <summary>Корпорация нового магната: казна и директор.</summary>
+        void AddMagnateCorp(Magnate m, double money)
+        {
+            m.Corp = new Corporation(_corps.Max(x => x.Id) + 1, m.Name) { Magnate = m, Money = money, Reputation = Balance.StartReputation };
+            m.Corp.Staff.Add(Manager.Director(_nextManagerId++, m.Name, Balance.BaseActionsPerTurn));
+            _corps.Add(m.Corp);
         }
 
         /// <summary>Ближайший следующий уровень, где выполняется условие; null — такого нет.</summary>
@@ -578,6 +696,7 @@ namespace PlanetTrader.Core
         {
             var p = GetPlanet(planetId);
             if (p == null || p.Owner != Owner.Registry) return ActionResult.Fail("Планета не продаётся");
+            if (!HasLicense(p.Sector)) return NoLicense(p);
             if (p.IsDepleted) return ActionResult.Fail("Планета выработана");
             if (p.Inhabited)
             {
@@ -593,6 +712,8 @@ namespace PlanetTrader.Core
             Acquire(p, price);
             return ActionResult.Success;
         }
+
+        ActionResult NoLicense(Planet p) => ActionResult.Fail($"Нет лицензии на сектор «{Balance.Sectors[p.Sector].Name}»");
 
         const string NeedExploration = "Жители говорят только с тем, кто разведал планету: сначала разведайте её зондом";
 
@@ -645,6 +766,7 @@ namespace PlanetTrader.Core
             accepted = false;
             var p = GetPlanet(planetId);
             if (p == null || p.Owner != Owner.Registry) return ActionResult.Fail("Планета не продаётся");
+            if (!HasLicense(p.Sector)) return NoLicense(p);
             if (!p.Inhabited) return ActionResult.Fail("Планета необитаема, её продаёт реестр");
             if (p.IsDepleted) return ActionResult.Fail("Планета выработана");
             if (Turn < p.NoTalksUntilTurn) return ActionResult.Fail($"Жители обиделись и не разговаривают до хода {p.NoTalksUntilTurn}");
@@ -940,7 +1062,8 @@ namespace PlanetTrader.Core
                 else
                 {
                     r.Kind = RequestKind.Resource;
-                    r.Resource = ResourceTypes.All[_rng.Range(0, ResourceTypes.Count)];
+                    var open = OpenResources;
+                    r.Resource = open[_rng.Range(0, open.Length)];
                     r.Amount = Math.Max(5, Math.Round(b.TypeOf(r.Resource).OutputPerTurn * _rng.Range(1.0, 3.0) / 5) * 5);
                     report.Events.Add($"Жители {p.Type.Name} #{p.Id} просят {r.Amount} ({r.Resource.RuName()}) за {b.RequestTurns} ходов.");
                 }
@@ -1014,7 +1137,7 @@ namespace PlanetTrader.Core
             double chance = 1;
             factor *= 1 + Balance.NegotiationPriceStep * Edge(Skill.Negotiation);
             double basePrice = Math.Max(1, p.BasePrice());
-            foreach (var m in ActiveMagnates)
+            foreach (var m in ActiveMagnates.Where(x => x.Sector == p.Sector))
             {
                 // Магнат ставит в своих пределах, но не больше, чем есть в казне.
                 double max = Math.Min(m.BidMax, m.Money / basePrice);
@@ -1031,6 +1154,7 @@ namespace PlanetTrader.Core
             won = false;
             var p = GetPlanet(planetId);
             if (p == null || !p.SoldAtAuction) return ActionResult.Fail("Планета не продаётся с аукциона");
+            if (!HasLicense(p.Sector)) return NoLicense(p);
             if (p.IsDepleted) return ActionResult.Fail("Планета выработана");
             double bid = BidPrice(p, factor);
             if (Money < bid) return ActionResult.Fail("Не хватает денег");
@@ -1040,7 +1164,7 @@ namespace PlanetTrader.Core
 
             Magnate rival = null;
             double rivalBid = 0;
-            foreach (var m in ActiveMagnates)
+            foreach (var m in ActiveMagnates.Where(x => x.Sector == p.Sector))
             {
                 if (!_rng.Chance(m.AuctionInterest)) continue;
                 double x = p.BasePrice() * _rng.Range(m.BidMin, m.BidMax);
@@ -1213,13 +1337,14 @@ namespace PlanetTrader.Core
         // Зонды
         // ------------------------------------------------------------------
 
-        /// <summary>Откуда полетит зонд к точке: ближайшая ваша планета или биржа.</summary>
-        public (double x, double y, double distance) LaunchOrigin(double x, double y)
+        /// <summary>Откуда полетит зонд к точке сектора: ближайшая ваша планета в этом секторе или его биржа.</summary>
+        public (double x, double y, double distance) LaunchOrigin(double x, double y, int sector = 0)
         {
             double bx = Balance.ExchangeX, by = Balance.ExchangeY;
             double best = Geometry.Distance(bx, by, x, y);
             foreach (var p in PlayerPlanets)
             {
+                if (p.Sector != sector) continue;
                 double d = Geometry.Distance(p.MapX, p.MapY, x, y);
                 if (d < best)
                 {
@@ -1231,23 +1356,29 @@ namespace PlanetTrader.Core
             return (bx, by, best);
         }
 
-        public bool InRange(ProbeType t, double x, double y) => LaunchOrigin(x, y).distance <= t.Range + 1e-9;
+        public (double x, double y, double distance) LaunchOrigin(Planet p) => LaunchOrigin(p.MapX, p.MapY, p.Sector);
+
+        public bool InRange(ProbeType t, double x, double y, int sector = 0) => LaunchOrigin(x, y, sector).distance <= t.Range + 1e-9;
+        public bool InRange(ProbeType t, Planet p) => InRange(t, p.MapX, p.MapY, p.Sector);
 
         /// <summary>Через сколько ходов будет результат: 1 — уже к следующему ходу.</summary>
-        public int ProbeTurns(ProbeType t, double x, double y, ProbeMission mission)
+        public int ProbeTurns(ProbeType t, double x, double y, ProbeMission mission, int sector = 0)
         {
-            int flight = Math.Max(1, (int)Math.Ceiling(LaunchOrigin(x, y).distance / t.Speed));
+            int flight = Math.Max(1, (int)Math.Ceiling(LaunchOrigin(x, y, sector).distance / t.Speed));
             return flight + (mission == ProbeMission.Explore ? Balance.ExploreTurnsOnSite : 0);
         }
+
+        public int ProbeTurns(ProbeType t, Planet p) => ProbeTurns(t, p.MapX, p.MapY, ProbeMission.Explore, p.Sector);
 
         /// <summary>Летит ли уже зонд разведывать эту планету.</summary>
         public bool ProbeHeadingTo(int planetId) => _probes.Any(x => x.TargetPlanetId == planetId);
 
         /// <summary>Скан области: все планеты в радиусе станут просканированными, и, может быть, найдётся скрытая.</summary>
-        public ActionResult LaunchScan(ProbeType t, double x, double y)
+        public ActionResult LaunchScan(ProbeType t, double x, double y, int sector = 0)
         {
-            if (!InRange(t, x, y)) return ActionResult.Fail($"«{t.Name}» не долетит: слишком далеко от ваших планет и биржи");
-            return Launch(t, ProbeMission.ScanArea, x, y, -1);
+            if (!HasLicense(sector)) return ActionResult.Fail($"Нет лицензии на сектор «{Balance.Sectors[sector].Name}»");
+            if (!InRange(t, x, y, sector)) return ActionResult.Fail($"«{t.Name}» не долетит: слишком далеко от ваших планет и биржи");
+            return Launch(t, ProbeMission.ScanArea, x, y, -1, sector);
         }
 
         /// <summary>Полная разведка планеты: точный запас и сюрпризы.</summary>
@@ -1257,11 +1388,12 @@ namespace PlanetTrader.Core
             if (p == null) return ActionResult.Fail("Нет такой планеты");
             if (p.Knowledge == Knowledge.Explored || IsMine(p)) return ActionResult.Fail("Планета уже разведана");
             if (ProbeHeadingTo(planetId)) return ActionResult.Fail("К планете уже летит зонд");
-            if (!InRange(t, p.MapX, p.MapY)) return ActionResult.Fail($"«{t.Name}» не долетит: слишком далеко от ваших планет и биржи");
-            return Launch(t, ProbeMission.Explore, p.MapX, p.MapY, planetId);
+            if (!HasLicense(p.Sector)) return NoLicense(p);
+            if (!InRange(t, p)) return ActionResult.Fail($"«{t.Name}» не долетит: слишком далеко от ваших планет и биржи");
+            return Launch(t, ProbeMission.Explore, p.MapX, p.MapY, planetId, p.Sector);
         }
 
-        ActionResult Launch(ProbeType t, ProbeMission mission, double x, double y, int planetId)
+        ActionResult Launch(ProbeType t, ProbeMission mission, double x, double y, int planetId, int sector)
         {
             if (!ProbeUnlocked(t)) return ActionResult.Fail($"Зонд «{t.Name}» откроется на уровне «{Balance.CorporationLevels[t.MinLevel].Name}»");
             if (Money < t.Cost) return ActionResult.Fail("Не хватает денег");
@@ -1270,9 +1402,10 @@ namespace PlanetTrader.Core
             if (!a.Ok) return a;
 
             Money -= t.Cost;
-            var origin = LaunchOrigin(x, y);
+            var origin = LaunchOrigin(x, y, sector);
             _probes.Add(new Probe
             {
+                Sector = sector,
                 CorporationId = _current.Id,
                 FindBonus = findBonus,
                 Id = _nextProbeId++,
@@ -1284,7 +1417,7 @@ namespace PlanetTrader.Core
                 TargetY = y,
                 TargetPlanetId = planetId,
                 LaunchTurn = Turn,
-                ResolveTurn = Turn + ProbeTurns(t, x, y, mission) - 1,
+                ResolveTurn = Turn + ProbeTurns(t, x, y, mission, sector) - 1,
             });
             return ActionResult.Success;
         }
@@ -1304,16 +1437,16 @@ namespace PlanetTrader.Core
             int scanned = 0;
             foreach (var p in _planets)
             {
-                if (p.Knowledge != Knowledge.Silhouette) continue;
+                if (p.Knowledge != Knowledge.Silhouette || p.Sector != probe.Sector) continue;
                 if (Geometry.Distance(p.MapX, p.MapY, probe.TargetX, probe.TargetY) > probe.Type.ScanRadius) continue;
                 p.Knowledge = Knowledge.Scanned;
                 scanned++;
             }
             string line = $"Зонд «{probe.Type.Name}» просканировал область: новых планет в скане — {scanned}";
-            if (SectorFull) line += ". Скрытых планет в секторе не осталось";
+            if (IsSectorFull(probe.Sector)) line += ". Скрытых планет в секторе не осталось";
             else if (_rng.Chance(probe.Type.FindChance + probe.FindBonus))
             {
-                var found = GeneratePlanet(RandomType());
+                var found = GeneratePlanet(RandomType(probe.Sector), probe.Sector);
                 PlaceOnMap(found, probe.TargetX, probe.TargetY, probe.Type.ScanRadius);
                 found.FoundByProbe = true;
                 found.Knowledge = Knowledge.Scanned;
@@ -1726,7 +1859,7 @@ namespace PlanetTrader.Core
         public double ResearchCost(Technology t) => Math.Round(t.Cost * (1 - SpecialtyBonus(Specialty.Physicists)));
 
         public bool CanResearch(Technology t) =>
-            !_researched.Contains(t.Id) && t.Requires.All(_researched.Contains) && CurrentResearch?.Technology != t;
+            !_researched.Contains(t.Id) && t.Requires.All(_researched.Contains) && CurrentResearch?.Technology != t && HasLicense(t.Sector);
 
         /// <summary>Начать исследование: платите сразу, тратите действие, результат через несколько ходов.</summary>
         public ActionResult StartResearch(string techId)
@@ -1734,6 +1867,7 @@ namespace PlanetTrader.Core
             var t = Balance.Technologies.FirstOrDefault(x => x.Id == techId);
             if (t == null) return ActionResult.Fail("Нет такой технологии");
             if (CurrentResearch != null) return ActionResult.Fail("Уже идёт исследование: " + CurrentResearch.Technology.Name);
+            if (!HasLicense(t.Sector)) return ActionResult.Fail($"Нужна лицензия на сектор «{Balance.Sectors[t.Sector].Name}»");
             if (!CanResearch(t)) return ActionResult.Fail("Сначала нужны: " + string.Join(", ", t.Requires.Where(r => !_researched.Contains(r))
                 .Select(r => Balance.Technologies.First(x => x.Id == r).Name)));
             double cost = ResearchCost(t);
@@ -1886,7 +2020,8 @@ namespace PlanetTrader.Core
             // Репутация: при 0 заказов вдвое меньше, при 100 — в полтора раза больше.
             if (!_rng.Chance(Balance.OrderChancePerTurn * (0.5 + Reputation / 100) * (Ev?.OrderChanceFactor ?? 1))) return;
 
-            var r = ResourceTypes.All[_rng.Range(0, ResourceTypes.Count)];
+            var open = OpenResources;
+            var r = open[_rng.Range(0, open.Length)];
             var type = Balance.TypeOf(r);
             double amount = type.OutputPerTurn * _rng.Range(Balance.OrderMinTurnsOfOutput, Balance.OrderMaxTurnsOfOutput + 1);
             amount = Math.Max(1, Math.Round(amount / 5) * 5);
@@ -1900,16 +2035,21 @@ namespace PlanetTrader.Core
             report.Events.Add($"{o.Customer}: нужно {o.Amount} ({r.RuName()}) за {Balance.OrderDeadlineTurns} ходов, с доставкой");
         }
 
-        /// <summary>В секторе открыты все планеты: новые не находятся ни зондами, ни случайно. Новые секторы — на этапе 8.</summary>
-        public bool SectorFull => _planets.Count >= Balance.MaxSectorPlanets;
+        /// <summary>В секторе открыты все планеты: новые не находятся ни зондами, ни случайно.</summary>
+        public bool IsSectorFull(int sector = 0) =>
+            _planets.Count(p => p.Sector == sector) >= (sector == 0 ? Balance.MaxSectorPlanets : Balance.Sectors[sector].MaxPlanets);
 
-        /// <summary>Случайное открытие: новая планета попадает в реестр, её видят все, в том числе ИИ.</summary>
+        /// <summary>Случайные открытия в открытых секторах: новая планета попадает в реестр, её видят все, в том числе ИИ.</summary>
         void Discover(TurnReport report)
         {
-            if (SectorFull || !_rng.Chance(Balance.DiscoveryChancePerTurn)) return;
-            var p = GeneratePlanet(RandomType());
-            _planets.Add(p);
-            report.Events.Add($"Открыта новая планета {p.Type.Name} #{p.Id}");
+            foreach (int sector in _openSectors.OrderBy(x => x).ToList())
+            {
+                if (IsSectorFull(sector) || !_rng.Chance(Balance.DiscoveryChancePerTurn)) continue;
+                var p = GeneratePlanet(RandomType(sector), sector);
+                _planets.Add(p);
+                if (Players.Any(c => c.Licenses.Contains(sector)))
+                    report.Events.Add($"Открыта новая планета {p.Type.Name} #{p.Id}" + (sector > 0 ? $" в секторе «{Balance.Sectors[sector].Name}»" : ""));
+            }
         }
 
         /// <summary>Подкуп, о котором предупредили: если лояльность так и не поднялась, планета уходит к магнату.</summary>
@@ -2018,7 +2158,7 @@ namespace PlanetTrader.Core
                 var byWealth = _magnates.Where(x => x.Corp != null && !x.Corp.Bankrupt).OrderByDescending(MagnateWealth).ToList();
                 var rich = byWealth.FirstOrDefault();
                 var poor = byWealth.LastOrDefault();
-                if (rich != null && poor != null && rich != poor && MagnateWealth(rich) >= Balance.MergerWealthRatio * Math.Max(1, MagnateWealth(poor)))
+                if (rich != null && poor != null && rich != poor && rich.Sector == poor.Sector && MagnateWealth(rich) >= Balance.MergerWealthRatio * Math.Max(1, MagnateWealth(poor)))
                 {
                     foreach (var p in MagnatePlanets(poor).ToList()) p.OwnerCorp = rich.Corp;
                     rich.Corp.Money += poor.Corp.Money;
@@ -2042,9 +2182,8 @@ namespace PlanetTrader.Core
                 _bribes.RemoveAll(x => x.MagnateId == old.Id);
                 var pattern = Balance.Magnates.FirstOrDefault(x => x.Personality == old.Personality) ?? old;
                 var fresh = Magnate.Generate(_magnates.Max(x => x.Id) + 1, pattern, _rng);
-                fresh.Corp = new Corporation(_corps.Max(x => x.Id) + 1, fresh.Name) { Magnate = fresh, Money = Balance.MagnateStartMoney, Reputation = Balance.StartReputation };
-                fresh.Corp.Staff.Add(Manager.Director(_nextManagerId++, fresh.Name, Balance.BaseActionsPerTurn));
-                _corps.Add(fresh.Corp);
+                fresh.Sector = old.Sector;
+                AddMagnateCorp(fresh, old.Sector == 0 ? Balance.MagnateStartMoney : Balance.Sectors[old.Sector].MagnateMoney);
                 _magnates[i] = fresh;
                 report.Events.Add($"{old.Name} разорился(ась) и покидает сектор. На его место приходит {fresh.Name} ({fresh.PersonalityName}).");
             }
@@ -2059,8 +2198,8 @@ namespace PlanetTrader.Core
             {
                 if (!_rng.Chance(Balance.AiBuyChance * buyer.AuctionInterest / 0.45)) continue;
                 double budget = buyer.Money - MagnateReserve(buyer);
-                var best = PlanetsForSale
-                    .Where(p => !p.FoundByProbe && p.ListPrice(Balance) <= budget)
+                var best = _planets
+                    .Where(p => p.Owner == Owner.Registry && !p.IsDepleted && p.Sector == buyer.Sector && !p.FoundByProbe && p.ListPrice(Balance) <= budget)
                     // ИИ знает о планетах то же, что реестр.
                     .OrderByDescending(p => p.EstimatedValue(Balance) / Math.Max(1, p.ListPrice(Balance)))
                     .FirstOrDefault();

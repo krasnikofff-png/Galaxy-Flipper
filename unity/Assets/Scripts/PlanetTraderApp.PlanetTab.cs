@@ -75,7 +75,7 @@ namespace PlanetTrader.Client
             head.Add(tag);
             head.Add(new VisualElement { pickingMode = PickingMode.Ignore }.WithClass("spacer"));
             var coords = new VisualElement().WithClass("coords");
-            coords.Add(new Label(_sectorName.text).WithClass("label-text"));
+            coords.Add(new Label(_game.Sectors[p.Sector].Name).WithClass("label-text"));
             coords.Add(new Label($"X: {p.MapX * 1000:0}   Y: {p.MapY * 1000:0}").WithClass("label-text"));
             head.Add(coords);
         }
@@ -167,6 +167,13 @@ namespace PlanetTrader.Client
             if (p.IsDepleted)
             {
                 ui.InfoRow("warning", "Планета выработана", "покупать её незачем");
+                return;
+            }
+            if (!g.HasLicense(p.Sector))
+            {
+                var spec = g.Sectors[p.Sector];
+                ui.InfoRow("lock", $"Нужна лицензия на сектор «{spec.Name}»",
+                    $"с уровня «{b.CorporationLevels[spec.LicenseLevel].Name}», {Fmt.Money(spec.LicenseCost)}; купить — на вкладке сектора над картой");
                 return;
             }
             // С жителями без разведки не поговорить — тогда разведка и есть главное действие.
@@ -401,13 +408,13 @@ namespace PlanetTrader.Client
 
         /// <summary>Самый дешёвый зонд, который долетит до планеты, или null.</summary>
         ProbeType CheapestProbe(Planet p) =>
-            _game.UnlockedProbes.Where(t => _game.InRange(t, p.MapX, p.MapY)).OrderBy(t => t.Cost).FirstOrDefault();
+            _game.UnlockedProbes.Where(t => _game.InRange(t, p)).OrderBy(t => t.Cost).FirstOrDefault();
 
         /// <summary>Сколько лететь до планеты и откуда: от ближайшей вашей планеты или от биржи.</summary>
         string ProbeDistance(Planet p)
         {
             var g = _game;
-            var origin = g.LaunchOrigin(p.MapX, p.MapY);
+            var origin = g.LaunchOrigin(p);
             bool fromExchange = origin.x == g.Balance.ExchangeX && origin.y == g.Balance.ExchangeY;
             return $"до планеты {Fmt.Amount(origin.distance * 10)} св. лет {(fromExchange ? "от биржи" : "от вашей планеты")}";
         }
@@ -430,7 +437,7 @@ namespace PlanetTrader.Client
             if (probe == null)
             {
                 // Долетит зонд, который ещё не по уровню корпорации, — скажем, когда он откроется.
-                var later = g.Balance.ProbeTypes.Where(t => !g.ProbeUnlocked(t) && g.InRange(t, p.MapX, p.MapY)).OrderBy(t => t.MinLevel).FirstOrDefault();
+                var later = g.Balance.ProbeTypes.Where(t => !g.ProbeUnlocked(t) && g.InRange(t, p)).OrderBy(t => t.MinLevel).FirstOrDefault();
                 if (later != null)
                 {
                     var level = g.Balance.CorporationLevels[later.MinLevel];
@@ -447,7 +454,7 @@ namespace PlanetTrader.Client
             string why = tooShort.Count == 0 ? "" : "; " + string.Join(", ", tooShort.Select(t => $"«{t.Name}» летает только на {Fmt.Amount(t.Range * 10)}"));
             int id = p.Id;
             ui.ActionRow("rocket", $"Разведать зондом «{probe.Name}»",
-                $"{ProbeDistance(p)}{why}; результат через {g.ProbeTurns(probe, p.MapX, p.MapY, ProbeMission.Explore)} х.",
+                $"{ProbeDistance(p)}{why}; результат через {g.ProbeTurns(probe, p)} х.",
                 Cost(probe.Cost), CanAct(probe.Cost),
                 () => Act(() => g.LaunchExplore(probe, id), $"Зонд «{probe.Name}» отправлен на разведку планеты #{id}."), accent: accent);
         }

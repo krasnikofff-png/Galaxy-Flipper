@@ -161,6 +161,8 @@ namespace PlanetTrader.Visuals
                     e.View.RebuildAsync();
                 }
                 e.Seen = true;
+                var holder = e.View.transform.parent.gameObject;
+                if (!holder.activeSelf) holder.SetActive(true);
 
                 e.View.SetMood(p.Saturation, p.Brightness);
 
@@ -181,9 +183,17 @@ namespace PlanetTrader.Visuals
                 if (e.Smoke != null && e.Smoke.activeSelf != p.Smoke) e.Smoke.SetActive(p.Smoke);
             }
 
+            // Планеты других секторов прячутся, а не удаляются: при возврате на их карту запекать заново не нужно.
+            foreach (var e in _planets.Values)
+                if (!e.Seen && e.View.transform.parent.gameObject.activeSelf) e.View.transform.parent.gameObject.SetActive(false);
+        }
+
+        /// <summary>Новая партия: убрать планеты, которых в ней нет (у остальных совпадёт облик — запекать заново не придётся).</summary>
+        public void Keep(ICollection<int> ids)
+        {
             _gone.Clear();
             foreach (var kv in _planets)
-                if (!kv.Value.Seen) _gone.Add(kv.Key);
+                if (!ids.Contains(kv.Key)) _gone.Add(kv.Key);
             foreach (int id in _gone)
             {
                 Destroy(_planets[id].View.transform.parent.gameObject);

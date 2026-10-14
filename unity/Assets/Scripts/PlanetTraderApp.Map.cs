@@ -13,8 +13,15 @@ namespace PlanetTrader.Client
     /// </summary>
     public sealed partial class PlanetTraderApp
     {
-        Label _sectorName, _eventLine, _zoomValue, _probesText, _probeInfo;
-        Button _probesButton;
+        Label _eventLine, _zoomValue, _probesText, _probeInfo, _sectorLockTitle, _sectorLockText;
+        Button _probesButton, _sectorLockBuy;
+        VisualElement _sectorTabs, _sectorLock;
+        /// <summary>Какой сектор показывает карта (номер в Balance.Sectors). У каждого сектора своя карта.</summary>
+        int _sector;
+
+        IEnumerable<Planet> SectorPlanets => _game.AllPlanets.Where(p => p.Sector == _sector);
+        IEnumerable<Probe> SectorProbes => _game.Probes.Where(p => p.Sector == _sector);
+        bool SectorLicensed => _game.HasLicense(_sector);
 
         /// <summary>Подпись на карте: имя (магнат, «ВЫ», «Биржа») и строка с ценой или пометкой.</summary>
         sealed class MapLabelView
@@ -23,8 +30,6 @@ namespace PlanetTrader.Client
             public Label Name, Price;
         }
 
-        static readonly string[] SectorNames =
-            { "Алгол", "Вега", "Ригель", "Денеб", "Капелла", "Альтаир", "Антарес", "Бетельгейзе", "Мира", "Спика", "Поллукс", "Процион" };
         /// <summary>Карту приблизили или сдвинули — переставить подписи (правую панель пересобирать незачем).</summary>
         bool _mapDirty;
         VisualElement _map, _mapCanvas, _mapLabels, _legend, _probeBar, _probeTypes, _probeMissions;
@@ -51,13 +56,18 @@ namespace PlanetTrader.Client
             _mapCanvas = root.Q("mapCanvas");
             _mapLabels = root.Q("mapLabels");
             _legend = root.Q("legend");
-            _sectorName = root.Q<Label>("sectorName");
+            _sectorTabs = root.Q("sectorTabs");
+            _sectorLock = root.Q("sectorLock");
+            _sectorLockTitle = root.Q<Label>("sectorLockTitle");
+            _sectorLockText = root.Q<Label>("sectorLockText");
+            _sectorLockBuy = root.Q<Button>("sectorLockBuy");
+            _sectorLockBuy.clicked += () => Later(BuyLicense);
             _eventLine = root.Q<Label>("eventLine");
             _zoomValue = root.Q<Label>("zoomValue");
             _probesText = root.Q<Label>("probesText");
             _probeInfo = root.Q<Label>("probeInfo");
             _probesButton = root.Q<Button>("probesButton");
-            _probesButton.clicked += () => Later(() => _probeMode = !_probeMode);
+            _probesButton.clicked += () => Later(() => _probeMode = !_probeMode && SectorLicensed);
             root.Q<Button>("zoomInButton").clicked += () => ZoomMap(-2, _map.contentRect.center);
             root.Q<Button>("zoomOutButton").clicked += () => ZoomMap(2, _map.contentRect.center);
             root.Q<Button>("centerButton").clicked += () =>
@@ -101,11 +111,48 @@ namespace PlanetTrader.Client
                 i => Later(() => _probeTypeIndex = i), _probeTypes);
             PanelBuilder.MakeChoice(MissionNames, (int)_probeMission, i => Later(() => _probeMission = (ProbeMission)i), _probeMissions);
 
-            _sectorName.text = "Сектор " + SectorNames[(int)((uint)_lookSeed % SectorNames.Length)];
+            _sector = 0;
+            _map3d.Keep(new HashSet<int>(_game.AllPlanets.Select(p => p.Id)));
+            _sectorTabs.Clear();
+            for (int i = 0; i < _game.Sectors.Count; i++)
+            {
+                int index = i;
+                var tab = new Button(() => Later(() => ShowSector(index))) { focusable = false };
+                tab.AddToClassList("sector-tab");
+                tab.Add(Icons.Make("lock"));
+                tab.Add(new Label(_game.Sectors[i].Name) { pickingMode = PickingMode.Ignore });
+                tab.Query<VisualElement>().ForEach(e => { if (e != tab) e.pickingMode = PickingMode.Ignore; });
+                _sectorTabs.Add(tab);
+            }
+            Icons.AttachAll(_sectorTabs);
+            RefreshLegend();
+        }
 
+        /// <summary>Показать на карте сектор номер sector: своя карта, свои магнаты в легенде.</summary>
+        void ShowSector(int sector)
+        {
+            if (sector == _sector) return;
+            _sector = sector;
+            _zoom = 1;
+            _pan = Vector2.zero;
+            if (!SectorLicensed) _probeMode = false;
+            RefreshLegend();
+            MarkDirty();
+        }
+
+        /// <summary>Лицензия на сектор, который сейчас на карте. Что открылось, пишет ядро.</summary>
+        void BuyLicense()
+        {
+            if (!Do(_game.BuyLicense(_sector))) return;
+            RefreshLegend();
+        }
+
+        /// <summary>Легенда: вы, магнаты этого сектора, свободные и найденные зондом планеты, торговые пути.</summary>
+        void RefreshLegend()
+        {
             _legend.Clear();
             LegendItem(Fmt.OwnerColor(Owner.Player, false), "Ваши");
-            foreach (var m in _game.Magnates)
+            foreach (var m in _game.Magnates.Where(x => x.Sector == _sector && x.Corp != null && !x.Corp.Bankrupt))
                 LegendItem(RingColor(Owner.Ai, m.Id, false), m.Name.Split(' ')[0]);
             LegendItem(Fmt.OwnerColor(Owner.Registry, false), "Свободные (цена)");
             LegendItem(Fmt.OwnerColor(Owner.Registry, true), "Нашёл ваш зонд");
@@ -139,7 +186,7 @@ namespace PlanetTrader.Client
             if (float.IsNaN(r.width) || r.width < 100 || r.height < 100) return false;
             // Карта квадратная, чтобы расстояния и радиусы на экране не искажались.
             // Сверху — заголовок и легенда (и полоска зонда), снизу — кнопки приближения.
-            float top = _probeMode ? 150 : 70;
+            float top = _probeMode ? 160 : 82;
             float side = Mathf.Min(r.width - 60, r.height - top - 58);
             _mapArea = new Rect((r.width - side) / 2, top, side, side);
             return true;
@@ -228,6 +275,8 @@ namespace PlanetTrader.Client
             // Тип зонда выбирают только для скана: разведке он подбирается сам.
             _probeTypes.EnableInClassList("hidden", _probeMission != ProbeMission.ScanArea);
             _probesText.text = _game.Probes.Count > 0 ? $"Зонды ({_game.Probes.Count} в полёте)" : "Зонды";
+            _probesButton.SetEnabled(SectorLicensed);
+            RefreshSectors();
             _zoomValue.text = $"{Mathf.RoundToInt(_zoom * 100)}%";
             RefreshEventLine();
             PanelBuilder.Select(_probeTypes, System.Array.IndexOf(_game.Balance.ProbeTypes, SelectedProbe));
@@ -243,9 +292,9 @@ namespace PlanetTrader.Client
             // Биржа — 3D-станция карты; здесь только подпись.
             var ex = ToMap(b.ExchangeX, b.ExchangeY);
             MapLabel(ref used, ex + new Vector2(0, ExchangeRadius * MapScale * 0.8f), "Биржа", Color.white, null, false);
-            foreach (var pr in _game.Probes)
+            foreach (var pr in SectorProbes)
                 MapLabel(ref used, ToMap(pr.TargetX, pr.TargetY) - new Vector2(0, 26), null, default, $"зонд: {pr.ResolveTurn - _game.Turn + 1} х.", false);
-            foreach (var p in _game.AllPlanets)
+            foreach (var p in SectorPlanets)
             {
                 var at = ToMap(p.MapX, p.MapY) + new Vector2(0, MapRadius(p) + 4);
                 string marks = "";
@@ -267,6 +316,29 @@ namespace PlanetTrader.Client
                 }
             }
             for (int i = used; i < _mapLabelPool.Count; i++) _mapLabelPool[i].Root.AddToClassList("hidden");
+        }
+
+        /// <summary>Вкладки секторов (замок — нет лицензии) и карточка лицензии поверх карты закрытого сектора.</summary>
+        void RefreshSectors()
+        {
+            var g = _game;
+            for (int i = 0; i < _sectorTabs.childCount && i < g.Sectors.Count; i++)
+            {
+                _sectorTabs[i].EnableInClassList("selected", i == _sector);
+                _sectorTabs[i][0].EnableInClassList("hidden", g.HasLicense(i));
+            }
+            _sectorLock.EnableInClassList("hidden", SectorLicensed);
+            if (SectorLicensed) return;
+            var spec = g.Sectors[_sector];
+            var level = g.Balance.CorporationLevels[spec.LicenseLevel];
+            _sectorLockTitle.text = $"Сектор «{spec.Name}»";
+            string resources = string.Join(", ", g.SectorResources(_sector).Where(r => !g.SectorResources(0).Contains(r)).Select(r => r.RuName()));
+            _sectorLockText.text = spec.Description +
+                                   (resources.Length > 0 ? $" Здесь добывают то, чего нет в других секторах: {resources.ToLowerInvariant()} — у неё своя цена на бирже." : "") +
+                                   $"\n\nЛицензия: уровень корпорации «{level.Name}» (сейчас «{g.LevelInfo.Name}») и {Fmt.Money(spec.LicenseCost)}.";
+            string blocker = g.LicenseBlocker(_sector);
+            _sectorLockBuy.text = blocker == null ? $"Купить лицензию · {Fmt.Money(spec.LicenseCost)} · 1 действие" : blocker;
+            _sectorLockBuy.SetEnabled(blocker == null && g.ActionsLeft > 0);
         }
 
         /// <summary>
@@ -332,7 +404,7 @@ namespace PlanetTrader.Client
 
             // Торговые пути: пунктир от добывающих планет к бирже (по ним летают грузовики).
             var ex = ToMap(b.ExchangeX, b.ExchangeY);
-            foreach (var p in g.AllPlanets)
+            foreach (var p in SectorPlanets)
             {
                 if (!p.IsProducing || p.Knowledge == Knowledge.Silhouette) continue;
                 var from = ToMap(p.MapX, p.MapY);
@@ -346,12 +418,12 @@ namespace PlanetTrader.Client
                 // Дальность выбранного зонда от каждой точки запуска (для скана; разведке зонд подбирается сам).
                 var range = new Color(0.4f, 0.7f, 1f, 0.25f);
                 MapRing(paint, b.ExchangeX, b.ExchangeY, SelectedProbe.Range, range);
-                foreach (var own in g.PlayerPlanets)
+                foreach (var own in g.PlayerPlanets.Where(x => x.Sector == _sector))
                     MapRing(paint, own.MapX, own.MapY, SelectedProbe.Range, range);
             }
 
             // Зонды в полёте: пунктир до цели; сам зонд — 3D-модель на карте.
-            foreach (var pr in g.Probes)
+            foreach (var pr in SectorProbes)
             {
                 var from = ToMap(pr.FromX, pr.FromY);
                 var to = ToMap(pr.TargetX, pr.TargetY);
@@ -360,7 +432,7 @@ namespace PlanetTrader.Client
                     MapRing(paint, pr.TargetX, pr.TargetY, pr.Type.ScanRadius, new Color(0.6f, 0.9f, 1f, 0.6f));
             }
 
-            foreach (var p in g.AllPlanets)
+            foreach (var p in SectorPlanets)
             {
                 var center = ToMap(p.MapX, p.MapY);
                 float radius = MapRadius(p);
@@ -373,7 +445,7 @@ namespace PlanetTrader.Client
             if (_probeMode && _probeMission == ProbeMission.ScanArea && _mapPointer is Vector2 at && _mapArea.Contains(at) && HitPlanet(at) == null)
             {
                 var point = FromMap(at);
-                bool reach = g.InRange(SelectedProbe, point.x, point.y);
+                bool reach = g.InRange(SelectedProbe, point.x, point.y, _sector);
                 MapRing(paint, point.x, point.y, SelectedProbe.ScanRadius, reach ? new Color(0.5f, 1f, 0.6f, 0.8f) : new Color(1f, 0.4f, 0.4f, 0.8f));
             }
         }
@@ -428,7 +500,7 @@ namespace PlanetTrader.Client
         {
             Planet best = null;
             float bestDistance = float.MaxValue;
-            foreach (var p in _game.AllPlanets)
+            foreach (var p in SectorPlanets)
             {
                 float d = Vector2.Distance(local, ToMap(p.MapX, p.MapY));
                 if (d <= MapRadius(p) + 6 && d < bestDistance)
@@ -527,7 +599,7 @@ namespace PlanetTrader.Client
             {
                 var probe = CheapestProbe(p);
                 tip += "\n" + Cap(ProbeDistance(p)) + "\n" + (probe == null ? "ни один зонд не долетит"
-                    : $"«{probe.Name}»: {Fmt.Money(probe.Cost)}, результат через {_game.ProbeTurns(probe, p.MapX, p.MapY, ProbeMission.Explore)} х.");
+                    : $"«{probe.Name}»: {Fmt.Money(probe.Cost)}, результат через {_game.ProbeTurns(probe, p)} х.");
             }
             return tip;
         }
@@ -536,15 +608,16 @@ namespace PlanetTrader.Client
         string ProbeHint(double x, double y, ProbeMission mission)
         {
             var probe = SelectedProbe;
-            if (!_game.InRange(probe, x, y)) return $"«{probe.Name}» не долетит";
-            int turns = _game.ProbeTurns(probe, x, y, mission);
+            if (!_game.InRange(probe, x, y, _sector)) return $"«{probe.Name}» не долетит";
+            int turns = _game.ProbeTurns(probe, x, y, mission, _sector);
             return $"«{probe.Name}»: {Fmt.Money(probe.Cost)}, результат через {turns} х.";
         }
 
         void LaunchScan(double x, double y)
         {
             var probe = SelectedProbe;
-            Act(() => _game.LaunchScan(probe, x, y), $"Зонд «{probe.Name}» отправлен сканировать область.");
+            int sector = _sector;
+            Act(() => _game.LaunchScan(probe, x, y, sector), $"Зонд «{probe.Name}» отправлен сканировать область.");
         }
 
         /// <summary>Разведка с карты: зонд подбирается сам — самый дешёвый, который долетит.</summary>

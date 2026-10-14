@@ -17,10 +17,17 @@ namespace PlanetTrader.Sim
         public bool Explores;
         /// <summary>Следит за лояльностью жителей: налоги по настроению, праздники, школы, просьбы.</summary>
         public bool CaresForPeople;
+        /// <summary>Покупает лицензии на новые секторы, когда они по уровню и по карману (этап 8).</summary>
+        public bool ExpandsSectors = true;
 
-        public static readonly Strategy Passive = new Strategy { Name = "Пассивный", Explores = true, CaresForPeople = true };
+        /// <summary>Пассивный не развивается и лицензий не покупает: без технологий и учёбы планеты богатых секторов ему не по силам.</summary>
+        public static readonly Strategy Passive = new Strategy { Name = "Пассивный", Explores = true, CaresForPeople = true, ExpandsSectors = false };
         public static readonly Strategy Active = new Strategy { Name = "Активный", Develops = true, Explores = true, CaresForPeople = true };
         public static readonly Strategy ActiveCredit = new Strategy { Name = "Активный + кредит", Develops = true, UsesCredit = true, Explores = true, CaresForPeople = true };
+        /// <summary>Для опытов (--compare): пассивный, который не покупает лицензий.</summary>
+        public static readonly Strategy PassiveHomeSector = new Strategy { Name = "Пассивный, только стартовый сектор", Explores = true, CaresForPeople = true, ExpandsSectors = false };
+        /// <summary>Для справки, окупаются ли новые секторы: тот же активный, но только в стартовом.</summary>
+        public static readonly Strategy ActiveHomeSector = new Strategy { Name = "Активный, только стартовый сектор", Develops = true, Explores = true, CaresForPeople = true, ExpandsSectors = false };
         /// <summary>Для справки, окупается ли разведка: тот же активный, но у реестра покупает по оценке (обитаемые всё равно разведывает).</summary>
         public static readonly Strategy ActiveNoScouting = new Strategy { Name = "Активный без разведки", Develops = true, CaresForPeople = true };
         /// <summary>Для проверки этапа 4: тот же активный, но жителей не замечает.</summary>
@@ -67,6 +74,7 @@ namespace PlanetTrader.Sim
             if (_s.CaresForPeople) ManagePeople(g);
             SellResources(g);
             BuildMines(g);
+            BuyLicenses(g);
             BuyPlanets(g);
             // Развитие — на то, что осталось после покупок: новая планета обычно окупается быстрее.
             if (_s.Develops && !_saving) Develop(g);
@@ -75,6 +83,19 @@ namespace PlanetTrader.Sim
         }
 
         static double Buffer(Game g) => CashBufferTurns * g.CostsPerTurn;
+
+        /// <summary>Лицензия на следующий сектор — когда она по уровню и после неё останется на планету в этом секторе.</summary>
+        void BuyLicenses(Game g)
+        {
+            if (!_s.ExpandsSectors || g.ActionsLeft == 0) return;
+            for (int s = 1; s < g.Sectors.Count; s++)
+            {
+                if (g.HasLicense(s)) continue;
+                var spec = g.Sectors[s];
+                if (g.Level >= spec.LicenseLevel && g.Money - spec.LicenseCost >= Buffer(g) + 3000 * spec.Richness) g.BuyLicense(s);
+                return;
+            }
+        }
 
         /// <summary>Кандидат, у которого сильная сторона лучше всего окупает зарплату.</summary>
         static int BestCandidate(Game g)
@@ -399,12 +420,12 @@ namespace PlanetTrader.Sim
             if (target == null && !hasExploredGoal) target = candidates.FirstOrDefault();
             if (target == null) return;
 
-            var probe = CheapestProbe(g, target.MapX, target.MapY);
+            var probe = CheapestProbe(g, target);
             if (probe != null && g.Money - probe.Cost >= Buffer(g)) g.LaunchExplore(probe, target.Id);
         }
 
-        static ProbeType CheapestProbe(Game g, double x, double y) =>
-            g.UnlockedProbes.Where(t => g.InRange(t, x, y)).OrderBy(t => t.Cost).FirstOrDefault();
+        static ProbeType CheapestProbe(Game g, Planet p) =>
+            g.UnlockedProbes.Where(t => g.InRange(t, p)).OrderBy(t => t.Cost).FirstOrDefault();
 
         /// <summary>
         /// Один скан за раз: туда, где больше всего силуэтов на единицу цены зонда.
@@ -417,13 +438,14 @@ namespace PlanetTrader.Sim
 
             ProbeType bestType = null;
             double bestX = 0, bestY = 0, bestScore = 0;
+            int bestSector = 0;
             foreach (var t in g.UnlockedProbes)
             {
                 if (g.Money - t.Cost < Buffer(g) + 1500) continue;
                 foreach (var target in silhouettes)
                 {
-                    if (!g.InRange(t, target.MapX, target.MapY)) continue;
-                    int covered = silhouettes.Count(p => Geometry.Distance(p.MapX, p.MapY, target.MapX, target.MapY) <= t.ScanRadius);
+                    if (!g.InRange(t, target)) continue;
+                    int covered = silhouettes.Count(p => p.Sector == target.Sector && Geometry.Distance(p.MapX, p.MapY, target.MapX, target.MapY) <= t.ScanRadius);
                     double score = covered / t.Cost;
                     if (score > bestScore)
                     {
@@ -431,6 +453,7 @@ namespace PlanetTrader.Sim
                         bestType = t;
                         bestX = target.MapX;
                         bestY = target.MapY;
+                        bestSector = target.Sector;
                     }
                 }
             }
@@ -438,20 +461,22 @@ namespace PlanetTrader.Sim
             if (bestType == null)
             {
                 // Силуэтов в досягаемости нет: ищем скрытые планеты «Стандартом», как раньше, если они ещё остались.
-                if (g.SectorFull) return false;
+                var open = Enumerable.Range(0, g.Sectors.Count).Where(s => g.HasLicense(s) && !g.IsSectorFull(s)).ToList();
+                if (open.Count == 0) return false;
+                bestSector = open.Count == 1 ? open[0] : open[_rng.Range(0, open.Count)];
                 var t = g.Balance.ProbeTypes.FirstOrDefault(x => x.Name == "Стандарт") ?? g.Balance.ProbeTypes[0];
                 if (g.Money - t.Cost < Buffer(g) + 1500) return false;
                 for (int attempt = 0; attempt < 20 && bestType == null; attempt++)
                 {
                     double x = _rng.Range(0.05, 0.95), y = _rng.Range(0.05, 0.95);
-                    if (!g.InRange(t, x, y)) continue;
+                    if (!g.InRange(t, x, y, bestSector)) continue;
                     bestType = t;
                     bestX = x;
                     bestY = y;
                 }
                 if (bestType == null) return false;
             }
-            return g.LaunchScan(bestType, bestX, bestY).Ok;
+            return g.LaunchScan(bestType, bestX, bestY, bestSector).Ok;
         }
 
         double FullCost(Game g, Planet p) => PurchasePrice(g, p) + (p.Mine == MineState.None ? g.MineCost(p) : 0);

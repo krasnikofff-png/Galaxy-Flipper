@@ -39,7 +39,9 @@ namespace PlanetTrader.Core
         public double Invested;
         /// <summary>Сколько игрок заработал с планеты продажей ресурсов (оценка по рынку).</summary>
         public double Earned;
-        /// <summary>Положение на карте сектора, от 0 до 1 по каждой оси.</summary>
+        /// <summary>Сектор (номер в Balance.Sectors); у каждого сектора своя карта.</summary>
+        public int Sector;
+        /// <summary>Положение на карте своего сектора, от 0 до 1 по каждой оси.</summary>
         public double MapX, MapY;
 
         /// <summary>Что о планете знает игрок.</summary>

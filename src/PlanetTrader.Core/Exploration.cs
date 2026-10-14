@@ -56,6 +56,8 @@ namespace PlanetTrader.Core
         public double FindBonus;
         public ProbeType Type;
         public ProbeMission Mission;
+        /// <summary>В каком секторе летит: координаты — на его карте.</summary>
+        public int Sector;
         public double FromX, FromY, TargetX, TargetY;
         /// <summary>Цель разведки; −1 у скана области.</summary>
         public int TargetPlanetId = -1;

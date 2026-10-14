@@ -18,6 +18,10 @@ namespace PlanetTrader.Sim
         public int SecondPlanetTurn = -1;
         /// <summary>На каком ходу корпорация впервые дошла до уровня i; −1 — не дошла.</summary>
         public int[] LevelTurns;
+        /// <summary>На каком ходу куплена лицензия на сектор i; −1 — не куплена.</summary>
+        public int[] LicenseTurns;
+        /// <summary>Сколько планет в каждом секторе к концу партии.</summary>
+        public int[] SectorPlanets;
         public int FirstActionsLimitTurn = -1;
         public int TurnsActionsExhausted;
         public int Seizures;
@@ -65,6 +69,7 @@ namespace PlanetTrader.Sim
             string outDir = "docs/sim";
             bool brakes = false;
             string trace = null;
+            string compare = null;
             var overrides = new List<string>();
 
             for (int i = 0; i < args.Length; i++)
@@ -79,6 +84,7 @@ namespace PlanetTrader.Sim
                     case "--brakes": brakes = true; break;
                     case "--trace": trace = args[++i]; break;
                     case "--players": Players = int.Parse(args[++i]); break;
+                    case "--compare": compare = args[++i]; break;
                     default:
                         Console.Error.WriteLine("Использование: sim [--runs 30] [--turns 1000] [--seed 1] [--out docs/sim] [--set Param=value]... [--brakes]");
                         return 1;
@@ -88,6 +94,12 @@ namespace PlanetTrader.Sim
             turns = Math.Max(turns, 120);
             End = turns;
             var balance = MakeBalance(overrides);
+
+            if (compare != null)
+            {
+                Compare(balance, compare.Split(';'), runs, turns, seed);
+                return 0;
+            }
 
             if (trace != null)
             {
@@ -105,6 +117,7 @@ namespace PlanetTrader.Sim
             calm.CartelChance = 0;
             calm.MergerChance = 0;
             var noTricks = RunMany(calm, Strategy.Active, runs, turns, seed);
+            var homeSector = RunMany(balance, Strategy.ActiveHomeSector, runs, turns, seed);
             // Стартовые персонажи: «Активный» за каждого — с теми же сидами, что и средний директор. Начало партии
             // очень чувствительно к случайностям, поэтому к 120-му ходу сравниваем на 100+ коротких партиях.
             int earlyRuns = Math.Max(runs, 100);
@@ -116,7 +129,7 @@ namespace PlanetTrader.Sim
                 Late = RunMany(balance, Strategy.Active, runs, turns, seed, c),
             }).ToList();
             var report = new StringBuilder();
-            WriteReport(report, results, noScouting, ignoresPeople, noTricks, earlyBase, characters, runs, overrides);
+            WriteReport(report, results, noScouting, ignoresPeople, noTricks, homeSector, earlyBase, characters, runs, overrides);
             WriteCurvesCsv(Path.Combine(outDir, "curves.csv"), results, turns);
 
             if (brakes)
@@ -183,6 +196,23 @@ namespace PlanetTrader.Sim
             return list;
         }
 
+        /// <summary>
+        /// --compare "Активный;Активный, только стартовый сектор": быстрый опыт — медианы капитала стилей на контрольных ходах
+        /// и отношение каждого к первому. Без целей и отчёта.
+        /// </summary>
+        static void Compare(Balance b, string[] names, int runs, int turns, ulong seed)
+        {
+            var all = Strategy.All.Concat(new[] { Strategy.ActiveNoScouting, Strategy.ActiveIgnoresPeople, Strategy.ActiveHomeSector, Strategy.PassiveHomeSector }).ToList();
+            var results = names.Select(n => (name: n, runs: RunMany(b, all.First(s => s.Name == n.Trim()), runs, turns, seed))).ToList();
+            Console.WriteLine("Стиль | " + string.Join(" | ", Checkpoints.Select(t => "t" + t)) + " | планет");
+            foreach (var r in results)
+                Console.WriteLine($"{r.name} | " + string.Join(" | ", Checkpoints.Select(t => N(Median(r.runs.Select(x => x.Capital[t]))))) +
+                                  $" | {F(Median(r.runs.Select(x => (double)x.Planets[turns])), "0")}");
+            foreach (var r in results.Skip(1))
+                Console.WriteLine($"{results[0].name} / {r.name} | " +
+                                  string.Join(" | ", Checkpoints.Select(t => "×" + F(Median(results[0].runs.Select(x => x.Capital[t])) / Median(r.runs.Select(x => x.Capital[t])), "0.00"))));
+        }
+
         /// <summary>--trace "Активный": одна партия, состояние каждые 5 ходов.</summary>
         static void Trace(Balance b, Strategy s, int turns, ulong seed)
         {
@@ -217,6 +247,8 @@ namespace PlanetTrader.Sim
             double startDebt = g.Debt;
             r.LevelTurns = Enumerable.Repeat(-1, b.CorporationLevels.Length).ToArray();
             r.LevelTurns[g.Level] = 0;
+            r.LicenseTurns = Enumerable.Repeat(-1, b.Sectors.Length).ToArray();
+            r.LicenseTurns[0] = 0;
 
             for (int t = 1; t <= turns; t++)
             {
@@ -249,6 +281,8 @@ namespace PlanetTrader.Sim
                 if (r.SecondPlanetTurn < 0 && g.PlayerPlanetCount >= 2) r.SecondPlanetTurn = t;
                 for (int l = 0; l <= g.Level; l++)
                     if (r.LevelTurns[l] < 0) r.LevelTurns[l] = t;
+                for (int sector = 0; sector < b.Sectors.Length; sector++)
+                    if (r.LicenseTurns[sector] < 0 && g.HasLicense(sector)) r.LicenseTurns[sector] = t;
                 foreach (var p in g.PlayerPlanets.Where(p => p.Inhabited))
                 {
                     r.InhabitedTurns++;
@@ -262,6 +296,7 @@ namespace PlanetTrader.Sim
             }
 
             r.TurnsActionsExhausted = g.TurnsActionsExhausted;
+            r.SectorPlanets = Enumerable.Range(0, b.Sectors.Length).Select(s => g.PlayerPlanets.Count(p => p.Sector == s)).ToArray();
             r.AuctionsWon = g.AuctionsWon;
             r.AuctionsLost = g.AuctionsLost;
             r.PlanetsLostToBribes = g.PlanetsLostToBribes;
@@ -314,7 +349,7 @@ namespace PlanetTrader.Sim
         static string Check(bool ok) => ok ? "✅" : "❌";
 
         static void WriteReport(StringBuilder sb, Dictionary<Strategy, List<RunResult>> results, List<RunResult> noScouting,
-            List<RunResult> ignoresPeople, List<RunResult> noTricks, List<RunResult> earlyBase, List<CharacterRuns> characters, int runs, List<string> overrides)
+            List<RunResult> ignoresPeople, List<RunResult> noTricks, List<RunResult> homeSector, List<RunResult> earlyBase, List<CharacterRuns> characters, int runs, List<string> overrides)
         {
             sb.AppendLine("# Отчёт симулятора экономики");
             sb.AppendLine();
@@ -401,6 +436,17 @@ namespace PlanetTrader.Sim
                 sb.AppendLine($"| Стартовые персонажи равноценны (этап 8) | капитал каждого к 120-му (на {earlyBase.Count} партиях) и к {End}-му — ×0,85–1,15 от среднего директора в той же партии (медиана) | " +
                               string.Join(", ", characterLeads.Select(c => $"{c.name} ×{F(c.early, "0.00")} / ×{F(c.late, "0.00")}")) +
                               $" | {Check(characterLeads.All(c => c.early >= 0.85 && c.early <= 1.15 && c.late >= 0.85 && c.late <= 1.15))} |");
+            // Новые секторы: тот же «Активный» против того, кто остаётся в стартовом.
+            double sectorsMid = Median(active.Select(r => r.Capital[Mid])) / Median(homeSector.Select(r => r.Capital[Mid]));
+            double sectorsEnd = Median(active.Select(r => r.Capital[End])) / Median(homeSector.Select(r => r.Capital[End]));
+            sb.AppendLine($"| Новые секторы окупаются (этап 8) | «Активный» с лицензиями против того же только в стартовом секторе: к {Mid} не хуже, к {End} на 10%+ | ×{F(sectorsMid, "0.00")} / ×{F(sectorsEnd, "0.00")} | {Check(sectorsMid >= 1 && sectorsEnd >= 1.1)} |");
+            var licenses = Enumerable.Range(1, b.Sectors.Length - 1).Select(s =>
+            {
+                var bought = active.Where(r => r.LicenseTurns[s] >= 0).Select(r => (double)r.LicenseTurns[s]).ToList();
+                return $"«{b.Sectors[s].Name}» на ходу {F(bought.Count > 0 ? Median(bought) : double.NaN, "0")} ({F(bought.Count * 100.0 / active.Count, "0")}% партий), " +
+                       $"планет там к концу {F(Median(active.Select(r => (double)r.SectorPlanets[s])), "0")}";
+            });
+            sb.AppendLine($"| Лицензии (этап 8) | для справки: когда «Активный» покупает лицензию и сколько у него планет в секторе к концу | {string.Join("; ", licenses)} | |");
             sb.AppendLine($"| Уровни корпорации растянуты на партию (этап 8) | второй уровень — к 20–45-му ходу, последний — к 150–500-му | " +
                           string.Join(", ", levelTurns.Select(x => $"{x.name} {F(x.turn, "0")}" + (x.share < 1 ? $" ({F(x.share * 100, "0")}% партий)" : ""))) +
                           $" | {Check(levelTurns.Count > 0 && firstLevel.turn >= 20 && firstLevel.turn <= 45 && lastLevel.turn >= 150 && lastLevel.turn <= 500)} |");

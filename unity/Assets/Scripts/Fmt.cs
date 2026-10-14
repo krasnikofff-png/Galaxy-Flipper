@@ -49,6 +49,8 @@ namespace PlanetTrader.Client
                 case Resource.Biomass: return new Color(0.42f, 0.85f, 0.42f);
                 case Resource.Crystals: return new Color(0.82f, 0.52f, 1f);
                 case Resource.Quantium: return new Color(1f, 0.35f, 0.62f);
+                case Resource.Plasma: return new Color(1f, 0.48f, 0.22f);
+                case Resource.Deuterium: return new Color(0.32f, 0.86f, 0.84f);
                 default: return Color.white;
             }
         }

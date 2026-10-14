@@ -5,7 +5,7 @@ namespace PlanetTrader.Visuals
 {
     /// <summary>
     /// Витрина планет: крупный план одной планеты на звёздном небе. Открывается из игры клавишей F2.
-    /// 1–6 — тип планеты, R — другая планета того же типа, мышь — вращать, колесо — ближе/дальше, F2 или Esc — назад к игре.
+    /// 1–8 — тип планеты, R — другая планета того же типа, мышь — вращать, колесо — ближе/дальше, F2 или Esc — назад к игре.
     /// </summary>
     public sealed class PlanetShowcase : MonoBehaviour
     {
@@ -26,7 +26,7 @@ namespace PlanetTrader.Visuals
             if (hide != null) hide.enabled = false;
         }
 
-        static readonly string[] Names = { "Джунгли", "Ледяной карлик", "Скалистая", "Газовый гигант", "Кристальная", "Аномалия" };
+        static readonly string[] Names = { "Джунгли", "Ледяной карлик", "Скалистая", "Газовый гигант", "Кристальная", "Аномалия", "Вулканическая", "Океан" };
 
         Behaviour _hidden;
         Camera _camera;

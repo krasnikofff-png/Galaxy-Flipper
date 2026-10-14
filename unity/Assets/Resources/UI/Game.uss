@@ -525,7 +525,7 @@
 }
 
 .market-panel {
-    flex-grow: 1.35;
+    flex-grow: 1.6;
     flex-basis: 0;
 }
 
@@ -590,7 +590,7 @@
 }
 
 .mc-name {
-    font-size: 11px;
+    font-size: 10.5px;
     color: var(--text-dim);
     white-space: nowrap;
     overflow: hidden;
@@ -784,10 +784,13 @@
     font-size: 25px;
     -unity-font-definition: url("project://database/Assets/Resources/UI/Fonts/Inter-SemiBold.ttf");
     margin-right: 12px;
+    flex-shrink: 1;
 }
 
 .pill {
     font-size: 13px;
+    white-space: nowrap;
+    flex-shrink: 0;
     padding: 3px 10px;
     border-width: 1px;
     border-radius: 10px;
@@ -816,11 +819,14 @@
 
 .coords {
     align-items: flex-end;
+    flex-shrink: 0;
+    margin-left: 8px;
 }
 
 .coords > .label-text {
     font-size: 11px;
     color: var(--muted);
+    white-space: nowrap;
 }
 
 .portrait {
@@ -1344,6 +1350,68 @@
 
 .rivals-fill {
     background-color: var(--orange);
+}
+
+/* Секторы над картой: вкладки и карточка лицензии */
+
+.sector-tabs {
+    flex-direction: row;
+    margin: 4px 0 4px 0;
+}
+
+.sector-tab {
+    flex-direction: row;
+    align-items: center;
+    height: 24px;
+    margin: 0 6px 0 0;
+    padding: 0 10px;
+    font-size: 12px;
+    color: var(--text-dim);
+    background-color: var(--button-bg);
+    border-width: 1px;
+    border-color: var(--button-line);
+    border-radius: 3px;
+}
+
+.sector-tab:hover {
+    background-color: var(--button-hover);
+}
+
+.sector-tab.selected {
+    border-color: var(--orange);
+    color: #ffd08a;
+    background-color: rgba(120, 74, 20, 0.55);
+}
+
+.sector-tab .icon {
+    width: 12px;
+    height: 12px;
+    margin-right: 5px;
+}
+
+.sector-lock {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    translate: -50% -50%;
+    width: 440px;
+    padding: 18px 22px;
+    --frame-fill: rgba(9, 12, 19, 0.96);
+}
+
+.sector-lock-text {
+    font-size: 14px;
+    color: var(--text-dim);
+    white-space: normal;
+    margin-bottom: 6px;
+}
+
+.sector-buy {
+    white-space: normal;
+}
+
+.sector-buy:disabled {
+    opacity: 0.55;
 }
 
 /* Экран выбора стартового персонажа */

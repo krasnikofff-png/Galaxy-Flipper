@@ -232,7 +232,7 @@ namespace PlanetTrader.Client
             // сначала свои, потом разведанные чужие, силуэты (у них общий облик) — в конце.
             _mapPlanets.Clear();
             for (int pass = 0; pass < 3; pass++)
-                foreach (var p in _game.AllPlanets)
+                foreach (var p in SectorPlanets)
                 {
                     int order = _game.IsMine(p) ? 0 : p.Knowledge != Knowledge.Silhouette ? 1 : 2;
                     if (order != pass) continue;
@@ -249,7 +249,7 @@ namespace PlanetTrader.Client
 
             // Зонды игрока в полёте и грузовики добывающих планет (кроме силуэтов).
             _mapShips.Clear();
-            foreach (var pr in _game.Probes)
+            foreach (var pr in SectorProbes)
                 _mapShips.Add(new MapShip
                 {
                     Key = pr.Id,
@@ -260,7 +260,7 @@ namespace PlanetTrader.Client
                     Size = 15 * MapScale * _pixelScale,
                     Accent = Fmt.OwnerColor(Owner.Player, false),
                 });
-            foreach (var p in _game.AllPlanets)
+            foreach (var p in SectorPlanets)
                 if (p.IsProducing && p.Knowledge != Knowledge.Silhouette)
                     _mapShips.Add(new MapShip
                     {
@@ -313,11 +313,14 @@ namespace PlanetTrader.Client
         internal void Select(int planetId)
         {
             _selectedId = planetId;
+            var p = _game.GetPlanet(planetId);
+            if (p != null) ShowSector(p.Sector);
             MarkDirty();
         }
 
         internal void ShowTab(int tab) => Later(() => _tab = (Tab)Mathf.Clamp(tab, 0, TabNames.Length - 1));
         internal void SetProbeMode(bool on) => Later(() => _probeMode = on);
+        internal void ViewSector(int sector) => Later(() => ShowSector(sector));
         internal void StartRivalsTurn() => Later(RequestEndTurn);
 
         // ------------------------------------------------------------------

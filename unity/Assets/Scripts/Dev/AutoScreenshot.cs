@@ -22,6 +22,8 @@ namespace PlanetTrader.Client
     /// -autoShotProbe — включить режим зонда. -autoShotRivals — нажать «Конец хода» перед снимком (пауза «ходят соперники»).
     /// -autoShotCharacter n — начать за стартового персонажа номер n (по умолчанию 0 — Геолог);
     /// -autoShotStart — не закрывать экран выбора персонажа (снять его самого).
+    /// -autoShotSector n — купить лицензии до сектора n (с деньгами и уровнем «для снимка») и показать его карту;
+    /// -autoShotSectorLocked n — показать сектор n без лицензии (карточка лицензии).
     /// Без ключа ничего не делает.
     /// </summary>
     public sealed class AutoScreenshot : MonoBehaviour
@@ -32,7 +34,7 @@ namespace PlanetTrader.Client
         float _drag;
         int _tab = -1;
         bool _probe, _rivals, _buy, _selectFree, _people, _keepStart;
-        int _character;
+        int _character, _sector = -1, _lockedSector = -1;
         Vector2[] _clicks = new Vector2[0];
         float[] _wheel, _pan;
 
@@ -44,7 +46,7 @@ namespace PlanetTrader.Client
             float delay = 6;
             bool reveal = System.Array.IndexOf(args, "-autoShotReveal") >= 0;
             float drag = 0;
-            int tab = -1, character = 0;
+            int tab = -1, character = 0, sector = -1, lockedSector = -1;
             string clicks = null;
             float[] wheel = null, pan = null;
             for (int i = 0; i < args.Length - 1; i++)
@@ -56,6 +58,8 @@ namespace PlanetTrader.Client
                 if (args[i] == "-autoShotPan") pan = Numbers(args[i + 1]);
                 if (args[i] == "-autoShotTab") int.TryParse(args[i + 1], out tab);
                 if (args[i] == "-autoShotCharacter") int.TryParse(args[i + 1], out character);
+                if (args[i] == "-autoShotSector") int.TryParse(args[i + 1], out sector);
+                if (args[i] == "-autoShotSectorLocked") int.TryParse(args[i + 1], out lockedSector);
                 if (args[i] == "-autoShotDelay") float.TryParse(args[i + 1], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out delay);
             }
             if (path == null) return;
@@ -70,6 +74,8 @@ namespace PlanetTrader.Client
             shot._drag = drag;
             shot._tab = tab;
             shot._character = character;
+            shot._sector = sector;
+            shot._lockedSector = lockedSector;
             shot._keepStart = System.Array.IndexOf(args, "-autoShotStart") >= 0;
             shot._wheel = wheel;
             shot._pan = pan;
@@ -142,6 +148,29 @@ namespace PlanetTrader.Client
                 var free = app.CurrentGame.PlanetsForSale.FirstOrDefault(p => p.Knowledge == Core.Knowledge.Scanned && !p.Inhabited);
                 if (free != null) app.Select(free.Id);
             }
+            if (app != null && _sector > 0)
+            {
+                // Для снимка: деньги и уровень, лицензии по порядку, лучшая свободная планета сектора — ваша.
+                var g = app.CurrentGame;
+                g.Current.Money += 500_000;
+                g.Current.Level = g.Balance.CorporationLevels.Length - 1;
+                for (int s = 1; s <= _sector; s++)
+                {
+                    var r = g.BuyLicense(s);
+                    if (!r.Ok) Debug.Log($"Лицензия {s}: {r.Error}");
+                }
+                foreach (var p in g.AllPlanets.Where(p => p.Sector == _sector))
+                    p.Knowledge = Core.Knowledge.Explored;
+                var own = g.AllPlanets.FirstOrDefault(p => p.Sector == _sector && p.Owner == Core.Owner.Registry && p.Type.Resource >= Core.Resource.Plasma);
+                if (own != null)
+                {
+                    own.OwnerCorp = g.Current;
+                    own.Mine = Core.MineState.Working;
+                    app.Select(own.Id);
+                }
+                app.ViewSector(_sector);
+            }
+            if (app != null && _lockedSector > 0) app.ViewSector(_lockedSector);
             if (app != null && _tab >= 0) app.ShowTab(_tab);
             if (app != null && _probe) app.SetProbeMode(true);
             if (_drag != 0 && app != null)

@@ -248,6 +248,8 @@ namespace PlanetTrader.Visuals
             {
                 case PlanetLook.Jungle: return PlanetSurface.Evaluate(look, noise, q).Height > 0.004f;
                 case PlanetLook.Ice: return PlanetSurface.Evaluate(look, noise, q).Height > 0.008f;
+                // На вулканической — не в лаве; на океане суши мало, поэтому постройки стоят и на воде, как платформы.
+                case PlanetLook.Volcanic: return PlanetSurface.Evaluate(look, noise, q).Glow.sqrMagnitude < 0.05f;
                 default: return true;
             }
         }

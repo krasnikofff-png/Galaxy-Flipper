@@ -363,7 +363,7 @@ public class DiscoveryTests
         var b = new Balance { AiBuyChance = 0, AiResaleChance = 0, AiStartShare = 0, AccidentChance = 0 };
         var g = Game.New(b, 9);
         for (int i = 0; i < 1000; i++) g.EndTurn();
-        Assert.True(g.SectorFull);
+        Assert.True(g.IsSectorFull());
         Assert.Equal(b.MaxSectorPlanets, g.AllPlanets.Count);
     }
 
@@ -1506,6 +1506,100 @@ public class ProgressionTests
     {
         var g = Game.New(Quiet(), 3);
         Assert.Equal(new[] { "1 менеджер", "зонд «Москит»", "зонд «Стандарт»" }, g.LevelUnlocks(0));
-        Assert.Equal(new[] { "до 5 менеджеров" }, g.LevelUnlocks(4));
+        Assert.Equal(new[] { "до 5 менеджеров", "лицензия на сектор «Лазурная бездна»" }, g.LevelUnlocks(4));
+    }
+
+    [Fact]
+    public void LicenseNeedsLevelAndMoney()
+    {
+        var b = Quiet();
+        var g = Game.New(b, 3);
+        Assert.Contains("Компания", g.LicenseBlocker(1));
+        Assert.False(g.BuyLicense(1).Ok);
+        Assert.False(g.SectorOpen(1));
+        Assert.DoesNotContain(g.AllPlanets, p => p.Sector != 0);
+
+        var rich = Quiet();
+        rich.StartMoney = 100_000;
+        var r = Game.New(rich, 3);
+        Assert.Null(r.LicenseBlocker(1));
+        Assert.Equal("Лицензия уже есть", r.LicenseBlocker(0));
+    }
+
+    [Fact]
+    public void LicenseOpensSectorWithItsOwnPlanetsAndMagnates()
+    {
+        var b = Quiet();
+        b.StartMoney = 100_000;
+        var g = Game.New(b, 3);
+        int magnatesBefore = g.Magnates.Count;
+        double money = g.Money;
+        Assert.True(g.BuyLicense(1).Ok);
+        Assert.True(g.HasLicense(1));
+        Assert.True(g.SectorOpen(1));
+        Assert.Equal(money - b.Sectors[1].LicenseCost, g.Money);
+
+        var fire = g.AllPlanets.Where(p => p.Sector == 1).ToList();
+        Assert.Equal(b.Sectors[1].Planets, fire.Count);
+        // Вулканические планеты — только в «Огненном поясе», океаны — только в «Лазурной бездне».
+        Assert.DoesNotContain(g.AllPlanets, p => p.Sector == 0 && (p.Resource == Resource.Plasma || p.Resource == Resource.Deuterium));
+        Assert.DoesNotContain(fire, p => p.Resource == Resource.Deuterium);
+        // Богаче: добыча и цена ×1,6.
+        var ice = fire.FirstOrDefault(p => p.Resource == Resource.Ice);
+        if (ice != null) Assert.Equal(b.TypeOf(Resource.Ice).OutputPerTurn * b.Sectors[1].Richness, ice.Type.OutputPerTurn, 6);
+
+        var local = g.Magnates.Skip(magnatesBefore).ToList();
+        Assert.NotEmpty(local);
+        Assert.All(local, m => Assert.Equal(1, m.Sector));
+        Assert.All(g.AllPlanets.Where(p => p.Owner == Owner.Ai && p.Sector == 1), p => Assert.Contains(p.OwnerCorp.Magnate, local));
+        Assert.Contains(g.PlanetsForSale, p => p.Sector == 1);
+    }
+
+    [Fact]
+    public void WithoutLicenseSectorPlanetsAreClosed()
+    {
+        var b = Quiet();
+        b.StartMoney = 100_000;
+        var g = Game.New(b, 3, 2);
+        g.SetCurrent(1);
+        Assert.True(g.BuyLicense(1).Ok);
+        var target = g.AllPlanets.First(p => p.Sector == 1 && p.Owner == Owner.Registry && !p.Inhabited);
+        g.SetCurrent(0);
+        Assert.False(g.HasLicense(1));
+        Assert.DoesNotContain(g.PlanetsForSale, p => p.Sector == 1);
+        Assert.Contains("Огненный пояс", g.BuyPlanet(target.Id).Error);
+        Assert.Contains("Огненный пояс", g.LaunchExplore(b.ProbeTypes[0], target.Id).Error);
+        Assert.False(g.LaunchScan(b.ProbeTypes[0], 0.5, 0.5, 1).Ok);
+    }
+
+    [Fact]
+    public void ProbesFlyFromTheSectorExchange()
+    {
+        var b = Quiet();
+        b.StartMoney = 100_000;
+        var g = Game.New(b, 3);
+        Assert.True(g.BuyLicense(1).Ok);
+        var home = g.PlayerPlanets.Single();
+        // Своих планет в «Огненном поясе» нет: зонд летит от биржи сектора, а не от стартовой планеты.
+        var origin = g.LaunchOrigin(home.MapX, home.MapY, 1);
+        Assert.Equal((b.ExchangeX, b.ExchangeY), (origin.x, origin.y));
+        Assert.Equal(0, g.LaunchOrigin(home.MapX, home.MapY, 0).distance, 6);
+        Assert.True(g.LaunchScan(b.ProbeTypes.Last(), 0.5, 0.6, 1).Ok);
+        g.EndTurn();
+        Assert.Contains(g.AllPlanets, p => p.Sector == 1 && p.Knowledge == Knowledge.Scanned);
+    }
+
+    [Fact]
+    public void SectorTechnologyNeedsLicense()
+    {
+        var b = Quiet();
+        b.StartMoney = 100_000;
+        var g = Game.New(b, 3);
+        g.Current.Researched.Add("gas");
+        var plasma = b.Technologies.Single(t => t.Id == "plasma");
+        Assert.False(g.CanResearch(plasma));
+        Assert.Contains("Огненный пояс", g.StartResearch("plasma").Error);
+        Assert.True(g.BuyLicense(1).Ok);
+        Assert.True(g.CanResearch(plasma));
     }
 }
