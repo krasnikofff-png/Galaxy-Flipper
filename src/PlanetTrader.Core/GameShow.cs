@@ -221,15 +221,25 @@ namespace PlanetTrader.Core
                 if (place == 0) c.Cups++;
                 if (!reports.TryGetValue(c.Id, out var r)) continue;
                 string prizeText = money > 0 ? $" Приз — {Math.Round(money)}" + (rep > 0 ? $" и +{rep} к репутации." : ".") : "";
+                string host = HostLine(place == 0 ? b.ShowHostWin : b.ShowHostLose);
+                string title = place == 0 ? $"Кубок сезона {s.Number}!" : $"Сезон {s.Number}: {place + 1}-е место";
                 if (place == 0)
-                    Important(r, AlertKind.Show, $"Кубок сезона {s.Number}!",
-                        $"Брэд Квазар: {HostLine(b.ShowHostWin)} Вы — риелтор сезона с {Math.Round(e.Points)} очками.{prizeText} Кубков: {c.Cups}. Итоги: {table}.");
+                    Important(r, AlertKind.Show, title,
+                        $"Брэд Квазар: {host} Вы — риелтор сезона с {Math.Round(e.Points)} очками.{prizeText} Кубков: {c.Cups}. Итоги: {table}.");
                 else
-                    Important(r, AlertKind.Show, $"Сезон {s.Number}: {place + 1}-е место",
-                        $"Брэд Квазар: {HostLine(b.ShowHostLose)} Кубок у {ranking[0].Name}.{prizeText} Итоги: {table}.");
+                    Important(r, AlertKind.Show, title,
+                        $"Брэд Квазар: {host} Кубок {Holder(ranking[0])}.{prizeText} Итоги: {table}.");
+                r.Season = new SeasonSummary
+                {
+                    Number = s.Number, Place = place + 1, Points = e.Points, Prize = money, Reputation = rep, Cups = c.Cups,
+                    HostLine = host, AlertTitle = title, Ranking = ranking,
+                };
             }
-            shared.Events.Add($"Сезон {s.Number} шоу «Риелтор года» окончен, кубок у {ranking[0].Name}.");
+            shared.Events.Add($"Сезон {s.Number} шоу «Риелтор года» окончен, кубок {Holder(ranking[0])}.");
         }
+
+        /// <summary>«у вас» или «у Гуго Жаднер».</summary>
+        static string Holder(ShowEntry e) => e.Name == "Вы" ? "у вас" : $"у {e.Name}";
 
         string HostLine(string[] lines) => lines == null || lines.Length == 0 ? "" : lines[ShowRng.Range(0, lines.Length)];
 
@@ -311,7 +321,8 @@ namespace PlanetTrader.Core
                     if (p == null) return null;
                     break;
                 case IncidentTarget.Magnate:
-                    m = Any(ActiveMagnates.Where(x => (x.Corp == null || !x.Corp.Bankrupt) && HasLicense(x.Sector)).ToList());
+                    m = Any(ActiveMagnates.Where(x => (x.Corp == null || !x.Corp.Bankrupt) && HasLicense(x.Sector)
+                                                      && (def.Magnate == null || x.Name.Split(' ')[0] == def.Magnate)).ToList());
                     if (m == null) return null;
                     break;
                 case IncidentTarget.MyPlanetAndMagnate:

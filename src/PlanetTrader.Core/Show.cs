@@ -88,6 +88,22 @@ namespace PlanetTrader.Core
         public bool IsPlayer => CorpId >= 0;
     }
 
+    /// <summary>Итоги сезона для игрока: место, очки, приз, рейтинг — для сцены с кубком.</summary>
+    public sealed class SeasonSummary
+    {
+        public int Number;
+        /// <summary>Место с единицы.</summary>
+        public int Place;
+        public double Points;
+        public double Prize;
+        public double Reputation;
+        public int Cups;
+        public string HostLine;
+        /// <summary>Заголовок окна-события об итогах: в сцене оно уже показано.</summary>
+        public string AlertTitle;
+        public List<ShowEntry> Ranking = new List<ShowEntry>();
+    }
+
     public sealed class ShowSeason
     {
         public int Number;
@@ -159,6 +175,8 @@ namespace PlanetTrader.Core
         public IncidentChoice[] Choices;
         public double Weight = 1;
         public int MinTurn;
+        /// <summary>Случай конкретного магната (первое слово имени, например «Нова»); null — любого.</summary>
+        public string Magnate;
     }
 
     /// <summary>Случай, который ждёт ответа игрока.</summary>

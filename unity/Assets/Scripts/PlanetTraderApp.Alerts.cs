@@ -70,6 +70,7 @@ namespace PlanetTrader.Client
 
             var m = a.MagnateId >= 0 ? _game.GetMagnate(a.MagnateId) : null;
             if (m != null) card.Add(MagnatePortrait(m, 70));
+            else if (a.Kind == AlertKind.Show) card.Add(HostPortrait(70));
             else
             {
                 var badge = new VisualElement();

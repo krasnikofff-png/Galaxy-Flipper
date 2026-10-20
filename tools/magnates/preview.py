@@ -15,7 +15,7 @@ from mathutils import Vector
 ACCENTS = {
     "magnate_hugo": (1.0, 0.3, 0.27), "magnate_zizi": (1.0, 0.6, 0.15), "magnate_matilda": (0.8, 0.6, 1.0),
     "magnate_nova": (1.0, 0.35, 0.75), "magnate_orpheus": (0.35, 0.65, 1.0), "magnate_xenon": (0.2, 0.85, 0.85),
-    "magnate_shadow": (0.6, 0.6, 0.7),
+    "magnate_shadow": (0.6, 0.6, 0.7), "magnate_host": (0.95, 0.77, 0.35),
 }
 
 

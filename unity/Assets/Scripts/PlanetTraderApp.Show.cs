@@ -22,7 +22,9 @@ namespace PlanetTrader.Client
 
         bool ShowOpen => _show != null && !_show.ClassListContains("hidden");
         bool IncidentOpen => _incident != null && !_incident.ClassListContains("hidden");
-        bool PopupOpen => AlertsOpen || ShowOpen || IncidentOpen;
+        bool SeasonOpen => _season != null && !_season.ClassListContains("hidden");
+        bool PopupOpen => AlertsOpen || ShowOpen || IncidentOpen || SeasonOpen;
+        VisualElement _season, _seasonBody;
 
         readonly Queue<Action> _popups = new Queue<Action>();
 
@@ -43,6 +45,8 @@ namespace PlanetTrader.Client
             {
                 if (e.target == _show) CloseShow();
             });
+            _season = root.Q("season");
+            _seasonBody = root.Q("seasonBody");
             _incident = root.Q("incident");
             _incidentBody = root.Q("incidentBody");
             _incidentChip = root.Q<Button>("incidentChip");
@@ -99,7 +103,7 @@ namespace PlanetTrader.Client
             _showBody.Clear();
 
             var host = new VisualElement().WithClass("show-host");
-            host.Add(Icons.Make("crown", "show-host-icon"));
+            host.Add(HostPortrait(84));
             string about = intro ?? $"Сезон {s.Number}: ходы {s.StartTurn}–{s.EndTurn}, " + (left <= 1 ? "итоги в конце этого хода." : $"до итогов {Words.Count(left, "ход", "хода", "ходов")}.");
             host.Add(new Label(about).WithClass("show-host-text"));
             _showBody.Add(host);
@@ -164,6 +168,97 @@ namespace PlanetTrader.Client
             _showBody.Clear();
             Later(NextPopup);
         }
+
+        // ------------------------------------------------------------------
+        // Итоги сезона: ведущий, кубок, пьедестал, приз
+        // ------------------------------------------------------------------
+
+        static readonly Color[] CupColors =
+        {
+            new Color(0.96f, 0.78f, 0.33f), new Color(0.8f, 0.84f, 0.92f), new Color(0.82f, 0.53f, 0.3f), new Color(0.5f, 0.53f, 0.6f),
+        };
+
+        static Color CupColor(int place) => CupColors[Mathf.Clamp(place, 1, CupColors.Length) - 1];
+
+        void OpenSeasonEnd(SeasonSummary s)
+        {
+            var g = _game;
+            HideTooltip();
+            _seasonBody.Clear();
+            _seasonBody.Add(new Label($"Итоги сезона {s.Number}").WithClass("season-title"));
+
+            var stage = new VisualElement().WithClass("season-stage");
+            // Слева — ведущий с репликой.
+            var host = new VisualElement().WithClass("season-host");
+            host.Add(HostPortrait(150));
+            var bubble = new VisualElement().WithClass("season-bubble");
+            bubble.Add(new Label("Брэд Квазар").WithClass("season-bubble-name"));
+            bubble.Add(new Label(s.HostLine).WithClass("season-bubble-text"));
+            host.Add(bubble);
+            stage.Add(host);
+
+            // Справа — кубок и место.
+            var cupBox = new VisualElement().WithClass("season-cup-box");
+            var cup = Icons.Make("cup", "season-cup");
+            cup.style.color = CupColor(s.Place);
+            cupBox.Add(cup);
+            var place = new Label(s.Place == 1 ? "Кубок ваш!" : $"{s.Place}-е место").WithClass("season-place");
+            place.style.color = CupColor(s.Place);
+            cupBox.Add(place);
+            cupBox.Add(new Label($"{s.Points:0} очков").WithClass("season-points"));
+            stage.Add(cupBox);
+            _seasonBody.Add(stage);
+
+            // Пьедестал: второй, первый, третий.
+            var podium = new VisualElement().WithClass("season-podium");
+            int[] order = { 1, 0, 2 };
+            // Высота по месту: первый выше всех.
+            float[] heights = { 96, 64, 44 };
+            foreach (int i in order)
+            {
+                if (i >= s.Ranking.Count) continue;
+                var e = s.Ranking[i];
+                var column = new VisualElement().WithClass("podium-column");
+                bool mine = e.CorpId == g.Current.Id;
+                var name = new Label(mine ? "Вы" : e.Name).WithClass("podium-name");
+                name.style.color = e.IsPlayer ? new Color(0.4f, 0.88f, 0.52f) : MagnateColor(e.MagnateId);
+                column.Add(name);
+                column.Add(new Label($"{e.Points:0}").WithClass("podium-points"));
+                var block = new VisualElement().WithClass("podium-block");
+                block.style.height = heights[i];
+                block.style.borderTopColor = CupColor(i + 1);
+                block.Add(new Label($"{i + 1}").WithClass("podium-number"));
+                column.Add(block);
+                podium.Add(column);
+            }
+            _seasonBody.Add(podium);
+
+            string prize = s.Prize > 0
+                ? $"Приз: {Fmt.Money(s.Prize)}" + (s.Reputation > 0 ? $" · репутация +{s.Reputation:0}" : "") + $" · кубков: {s.Cups}"
+                : $"Без приза. Кубков: {s.Cups}. В следующем сезоне всё будет иначе — наверное.";
+            _seasonBody.Add(new Label(prize).WithClass("season-prize"));
+            var footer = new VisualElement().WithClass("alerts-footer");
+            footer.Add(new VisualElement().WithClass("spacer"));
+            footer.Add(new Button(() => Later(CloseSeasonEnd)) { text = "В новый сезон", focusable = false }.WithClass("alerts-ok"));
+            _seasonBody.Add(footer);
+            _season.RemoveFromClassList("hidden");
+        }
+
+        void CloseSeasonEnd()
+        {
+            _season.AddToClassList("hidden");
+            _seasonBody.Clear();
+            Later(NextPopup);
+        }
+
+        /// <summary>Для автоснимка: сезон кончается в этот ход — сцена итогов.</summary>
+        internal void SeasonEndForShot() => Later(() =>
+        {
+            _popups.Clear();
+            _show.AddToClassList("hidden");
+            _game.Season.EndTurn = _game.Turn;
+            EndTurn();
+        });
 
         // ------------------------------------------------------------------
         // Случай
@@ -309,10 +404,18 @@ namespace PlanetTrader.Client
             _popups.Clear();
             _show.AddToClassList("hidden");
             var def = g.Balance.Incidents.FirstOrDefault(x => x.Id == id) ?? g.Balance.Incidents[0];
+            // Случай магната «Огненного пояса»: для снимка открыть его сектор (с деньгами и уровнем «для снимка»).
+            if (def.Magnate != null && !g.Magnates.Any(x => x.Name.StartsWith(def.Magnate)))
+            {
+                g.Current.Money += 1_000_000;
+                g.Current.Level = Math.Max(g.Current.Level, g.Balance.Sectors[1].LicenseLevel);
+                g.BuyLicense(1);
+            }
+            var m = g.Magnates.FirstOrDefault(x => def.Magnate != null && x.Name.StartsWith(def.Magnate)) ?? g.Magnates.First();
             g.Current.Incident = new ActiveIncident
             {
                 Def = def, Turn = g.Turn, Scale = g.LevelScale(g.Level),
-                PlanetId = g.PlayerPlanets.First().Id, MagnateId = g.Magnates.First().Id,
+                PlanetId = g.PlayerPlanets.First().Id, MagnateId = def.Target == IncidentTarget.None ? -1 : m.Id,
             };
             OpenIncident();
         });

@@ -359,6 +359,12 @@ namespace PlanetTrader.Client
             }
             // Пока выбирают персонажа, ход не кончается; Esc возвращает к партии, если это можно.
             // Окно шоу закрывают так же; окно случая — только Esc («подумать»): ответ — кнопкой.
+            if (SeasonOpen)
+            {
+                if (Input.GetKeyDown(KeyCode.Space) || Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.KeypadEnter) || Input.GetKeyDown(KeyCode.Escape))
+                    Later(CloseSeasonEnd);
+                return;
+            }
             if (ShowOpen)
             {
                 if (Input.GetKeyDown(KeyCode.Space) || Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.KeypadEnter) || Input.GetKeyDown(KeyCode.Escape))
@@ -409,7 +415,10 @@ namespace PlanetTrader.Client
             if (report.Seizures > 0) Log("Денег не хватило: недостача ушла в долг, а долг превысил кредитный лимит.");
             if (_game.Bankrupt) Log("<color=#ff8a7a>Банкротство: планет не осталось, а долг есть. Партия окончена — нажмите «Новая игра».</color>");
             // Важное — окном, чтобы не потерялось в журнале; потом — случай, если пришёл.
-            if (report.Alerts.Count > 0) QueuePopup(() => ShowAlerts(report.Alerts, report.Turn));
+            // Конец сезона — сцена с кубком; её событие в окне «Важное» не повторяем.
+            if (report.Season != null) QueuePopup(() => OpenSeasonEnd(report.Season));
+            var alerts = report.Season == null ? report.Alerts : report.Alerts.Where(a => a.Title != report.Season.AlertTitle).ToList();
+            if (alerts.Count > 0) QueuePopup(() => ShowAlerts(alerts, report.Turn));
             if (_game.Incident != null) QueuePopup(OpenIncident);
         }
 

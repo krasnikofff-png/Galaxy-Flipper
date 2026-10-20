@@ -158,6 +158,9 @@
                 </ui:VisualElement>
             </ui:VisualElement>
         </ui:VisualElement>
+        <ui:VisualElement name="season" class="overlay season-overlay hidden">
+            <ui:VisualElement name="seasonBody" class="season-card frame" />
+        </ui:VisualElement>
         <ui:VisualElement name="incident" class="overlay hidden">
             <ui:VisualElement name="incidentBody" class="alerts-card incident-card frame" />
         </ui:VisualElement>

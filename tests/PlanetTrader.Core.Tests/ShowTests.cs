@@ -178,4 +178,38 @@ public class ShowTests
         Assert.True(g.Reputation < rep);
         Assert.Contains(report.Alerts, a => a.Title == "Ставка сгорела");
     }
+    [Fact]
+    public void FireBeltIncidentsComeOnlyWithItsLicenseAndFromTheirMagnate()
+    {
+        var b = Quiet();
+        b.IncidentFirstTurn = 1;
+        b.IncidentGapMin = b.IncidentGapMax = 1;
+        b.Incidents = new Balance().Incidents.Where(x => x.Magnate == "Нова").ToArray();
+        var g = Game.New(b, 13);
+        g.EndTurn();
+        // Нова Рики живёт в «Огненном поясе»: без лицензии её случаев нет.
+        Assert.Null(g.Incident);
+        g.Current.Money += 1_000_000;
+        for (int i = 0; i < 60 && g.Level < b.Sectors[1].LicenseLevel; i++) g.EndTurn();
+        g.Current.Level = System.Math.Max(g.Current.Level, b.Sectors[1].LicenseLevel);
+        Assert.True(g.BuyLicense(1).Ok);
+        g.EndTurn();
+        g.EndTurn();
+        Assert.NotNull(g.Incident);
+        Assert.StartsWith("Нова", g.GetMagnate(g.Incident.MagnateId).Name);
+    }
+
+    [Fact]
+    public void SeasonEndReportsTheSummaryForTheCupScene()
+    {
+        var b = Quiet();
+        b.SeasonTurns = 2;
+        var g = Game.New(b, 15);
+        g.EndTurn();
+        var report = g.EndTurn();
+        Assert.NotNull(report.Season);
+        Assert.Equal(1, report.Season.Number);
+        Assert.InRange(report.Season.Place, 1, report.Season.Ranking.Count);
+        Assert.Contains(report.Alerts, a => a.Title == report.Season.AlertTitle);
+    }
 }

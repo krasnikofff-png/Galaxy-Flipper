@@ -2211,3 +2211,126 @@
     flex-shrink: 1;
     margin-right: 10px;
 }
+
+/* Итоги сезона: ведущий с репликой, кубок, пьедестал, приз. */
+.season-overlay {
+    background-color: rgba(0, 0, 0, 0.72);
+}
+
+.season-card {
+    width: 820px;
+    padding: 20px 28px;
+    --frame-fill: rgba(10, 11, 20, 0.98);
+    --frame-line: rgba(240, 196, 90, 0.8);
+}
+
+.season-title {
+    font-size: 30px;
+    color: #f0c45a;
+    -unity-text-align: middle-center;
+    -unity-font-definition: url("project://database/Assets/Resources/UI/Fonts/Inter-SemiBold.ttf");
+    margin-bottom: 14px;
+}
+
+.season-stage {
+    flex-direction: row;
+    align-items: center;
+}
+
+.season-host {
+    flex-direction: row;
+    align-items: flex-start;
+    flex-grow: 1;
+    flex-shrink: 1;
+}
+
+.season-bubble {
+    flex-shrink: 1;
+    margin-top: 18px;
+    padding: 10px 14px;
+    max-width: 300px;
+    background-color: rgba(240, 196, 90, 0.1);
+    border-width: 1px;
+    border-color: rgba(240, 196, 90, 0.45);
+    border-radius: 10px;
+}
+
+.season-bubble-name {
+    font-size: 12px;
+    color: #f0c45a;
+    -unity-font-definition: url("project://database/Assets/Resources/UI/Fonts/Inter-SemiBold.ttf");
+}
+
+.season-bubble-text {
+    font-size: 15px;
+    color: var(--text);
+    white-space: normal;
+}
+
+.season-cup-box {
+    width: 230px;
+    align-items: center;
+}
+
+.season-cup {
+    width: 150px;
+    height: 150px;
+}
+
+.season-place {
+    font-size: 26px;
+    -unity-font-definition: url("project://database/Assets/Resources/UI/Fonts/Inter-SemiBold.ttf");
+}
+
+.season-points {
+    font-size: 14px;
+    color: var(--muted);
+}
+
+.season-podium {
+    flex-direction: row;
+    justify-content: center;
+    align-items: flex-end;
+    margin-top: 16px;
+}
+
+.podium-column {
+    width: 170px;
+    align-items: stretch;
+    margin: 0 4px;
+}
+
+.podium-name {
+    font-size: 15px;
+    -unity-text-align: middle-center;
+    -unity-font-definition: url("project://database/Assets/Resources/UI/Fonts/Inter-SemiBold.ttf");
+}
+
+.podium-points {
+    font-size: 13px;
+    color: var(--text-dim);
+    -unity-text-align: middle-center;
+    margin-bottom: 4px;
+}
+
+.podium-block {
+    background-color: rgba(255, 255, 255, 0.06);
+    border-top-width: 3px;
+    border-radius: 2px;
+    justify-content: center;
+    align-items: center;
+}
+
+.podium-number {
+    font-size: 26px;
+    color: rgba(255, 255, 255, 0.55);
+    -unity-font-definition: url("project://database/Assets/Resources/UI/Fonts/Inter-SemiBold.ttf");
+}
+
+.season-prize {
+    margin-top: 14px;
+    font-size: 15px;
+    color: var(--text);
+    -unity-text-align: middle-center;
+    white-space: normal;
+}

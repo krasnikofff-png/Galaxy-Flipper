@@ -29,6 +29,7 @@ namespace PlanetTrader.Client
     /// -autoShotAlerts — окно «Важное за ход» с примерами всех видов событий.
     /// -autoShotShow — окно шоу «Риелтор года» со вступлением; -autoShotIncident id — случай из баланса (например, tax);
     /// -autoShotLot — сыграть ходы до «Лота недели» и выбрать легендарную планету.
+    /// -autoShotSeasonEnd — сезон кончается сейчас: сцена итогов с кубком.
     /// Без ключа ничего не делает.
     /// </summary>
     public sealed class AutoScreenshot : MonoBehaviour
@@ -40,7 +41,7 @@ namespace PlanetTrader.Client
         int _tab = -1;
         bool _probe, _rivals, _buy, _selectFree, _people, _keepStart;
         int _character, _sector = -1, _lockedSector = -1, _saveTurns = -1;
-        bool _continue, _alerts, _showWindow, _lotShot;
+        bool _continue, _alerts, _showWindow, _lotShot, _seasonEnd;
         string _incidentId;
         Vector2[] _clicks = new Vector2[0];
         float[] _wheel, _pan;
@@ -101,6 +102,7 @@ namespace PlanetTrader.Client
             shot._alerts = System.Array.IndexOf(args, "-autoShotAlerts") >= 0;
             shot._showWindow = System.Array.IndexOf(args, "-autoShotShow") >= 0;
             shot._lotShot = System.Array.IndexOf(args, "-autoShotLot") >= 0;
+            shot._seasonEnd = System.Array.IndexOf(args, "-autoShotSeasonEnd") >= 0;
             int incident = System.Array.IndexOf(args, "-autoShotIncident");
             if (incident >= 0 && incident + 1 < args.Length) shot._incidentId = args[incident + 1];
         }
@@ -126,6 +128,11 @@ namespace PlanetTrader.Client
             {
                 app.LotForShot();
                 yield return null;
+                yield return null;
+            }
+            if (app != null && _seasonEnd)
+            {
+                app.SeasonEndForShot();
                 yield return null;
             }
             if (app != null && _showWindow)

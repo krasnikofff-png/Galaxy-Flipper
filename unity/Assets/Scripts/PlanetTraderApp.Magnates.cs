@@ -48,13 +48,21 @@ namespace PlanetTrader.Client
         VisualElement MagnatePortrait(Magnate m, float width, bool highlight = false)
         {
             var (model, color) = LookOf(m);
+            return PortraitFrame(m?.Name ?? "?", model, color, width, highlight);
+        }
+
+        /// <summary>Ведущий шоу «Риелтор года» Брэд Квазар — в золотой рамке. Нарисует автор — картинка заменит бюст сама.</summary>
+        VisualElement HostPortrait(float width) => PortraitFrame("Брэд Квазар", "magnate_host", ShowGold, width, true);
+
+        VisualElement PortraitFrame(string key, string model, Color color, float width, bool highlight)
+        {
             float cut = MagnatePortraits.CornerCut * width;
             var frame = new VisualElement { pickingMode = PickingMode.Ignore };
             frame.AddToClassList("magnate-frame");
             frame.style.width = width;
             frame.style.height = width * MagnatePortraits.Height / MagnatePortraits.Width;
             Frames.Attach(frame, Color.clear, Color.clear, Color.Lerp(new Color(0.03f, 0.035f, 0.06f), color, 0.13f), 1, cut);
-            var image = new Image { image = _portraits.Portrait(m?.Name ?? "?", model, color), scaleMode = ScaleMode.ScaleAndCrop, pickingMode = PickingMode.Ignore };
+            var image = new Image { image = _portraits.Portrait(key, model, color), scaleMode = ScaleMode.ScaleAndCrop, pickingMode = PickingMode.Ignore };
             image.AddToClassList("magnate-image");
             frame.Add(image);
             var border = new VisualElement { pickingMode = PickingMode.Ignore };
@@ -64,7 +72,7 @@ namespace PlanetTrader.Client
             // Портрет живой: перерисовывать, пока карточка на экране.
             image.schedule.Execute(() =>
             {
-                _portraits.Portrait(m?.Name ?? "?", model, color);
+                _portraits.Portrait(key, model, color);
                 image.MarkDirtyRepaint();
             }).Every(33);
             return frame;

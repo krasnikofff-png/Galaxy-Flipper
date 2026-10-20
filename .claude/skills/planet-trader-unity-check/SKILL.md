@@ -37,6 +37,7 @@ description: Посмотреть изменение в собранной иг�
 | Задержку перед снимком (планеты запекаются) | `-autoShotDelay 8` |
 | Окна: шоу со вступлением, случай, «Важное за ход» | `-autoShotShow`, `-autoShotIncident tax` (id из `Balance.Incidents`), `-autoShotAlerts` |
 | «Лот недели» (ходы до лота, выбрана легенда) | `-autoShotLot` |
+| Сцена итогов сезона с кубком | `-autoShotSeasonEnd` |
 | Сохранения: n ходов, сохранить, список; продолжить автосохранение | `-autoShotSaves 7`, `-autoShotContinue` (сохранения потом удалить: `~/Library/Application Support/DefaultCompany/unity/saves`) |
 
 ## Смотреть

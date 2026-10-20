@@ -45,6 +45,8 @@ namespace PlanetTrader.Core
         public readonly List<string> Events;
         /// <summary>Важное для этой корпорации (у каждого игрока своё): интерфейс показывает окном. Строки — и в Events.</summary>
         public readonly List<Alert> Alerts = new List<Alert>();
+        /// <summary>Сезон шоу кончился в этот ход — итоги для сцены с кубком; null — сезон идёт.</summary>
+        public SeasonSummary Season;
 
         public TurnReport(List<string> events = null)
         {

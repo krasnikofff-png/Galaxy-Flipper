@@ -791,6 +791,95 @@ namespace PlanetTrader.Core
                         Success = new IncidentOutcome { Text = "Туристы уехали фотографировать чужие планеты." } },
                 },
             },
+            // Случаи магнатов «Огненного пояса» — по их характерам (персонажи автора); приходят, когда есть лицензия на их сектор.
+            new Incident
+            {
+                Id = "nova_party", Title = "Новоселье Новы Рики", Icon = "star", Target = IncidentTarget.Magnate, Magnate = "Нова", Weight = 1.5,
+                Text = "{magnate} закатывает новоселье на новой планете и зовёт «всех, кто хоть что-то из себя представляет». Дресс-код: золото. Много золота.",
+                Choices = new[]
+                {
+                    new IncidentChoice { Label = "Прийти с дорогим подарком", Cost = 300,
+                        Success = new IncidentOutcome { QuietTurns = 6, Reputation = 1, Text = "Нова Рики растрогалась, назвала вас «своим в доску» и 6 ходов не пакостит." } },
+                    new IncidentChoice { Label = "Прийти с домашним пирогом", Chance = 0.5,
+                        Success = new IncidentOutcome { Reputation = 2, Text = "Пирог имел успех: Нова Рики съела его целиком и всем рассказала, какой вы душка." },
+                        Failure = new IncidentOutcome { Reputation = -2, Text = "«Это чё, без позолоты?» — громко спросила Нова Рики. Гости смеялись." } },
+                    new IncidentChoice { Label = "Не пойти",
+                        Success = new IncidentOutcome { ShowPoints = -3, Text = "Нова Рики сказала в эфире, что вы «зазнайка». Ей это подняло рейтинг, вам — нет: −3 очка в шоу." } },
+                },
+            },
+            new Incident
+            {
+                Id = "nova_books", Title = "Нова Рики и учебники", Icon = "journal", Target = IncidentTarget.Magnate, Magnate = "Нова", Weight = 1.5,
+                Text = "{magnate} хочет купить у вас «эти ваши учебники»: слышала, что от них жители «умнеют и наглеют». Платит наличными, не торгуясь.",
+                Choices = new[]
+                {
+                    new IncidentChoice { Label = "Продать старые учебники",
+                        Success = new IncidentOutcome { Money = 250, Reputation = -1, Text = "Нова Рики унесла учебники «на растопку». Учителя на ваших планетах обиделись." } },
+                    new IncidentChoice { Label = "Подарить ей букварь", Chance = 0.3,
+                        Success = new IncidentOutcome { ShowPoints = 6, Reputation = 3, Text = "Сенсация в эфире: Нова Рики читает по слогам! Брэд Квазар плачет от умиления. +6 очков в шоу." },
+                        Failure = new IncidentOutcome { Text = "Букварь вернулся по почте с пометкой «неинтересно»." } },
+                    new IncidentChoice { Label = "Отказать",
+                        Success = new IncidentOutcome { Text = "«Ну и сидите со своими книжками», — фыркнула Нова Рики." } },
+                },
+            },
+            new Incident
+            {
+                Id = "orpheus_yacht", Title = "Яхта Орфея", Icon = "rocket", Target = IncidentTarget.Magnate, Magnate = "Орфей", Weight = 1.5,
+                Text = "{magnate} зовёт вас на свою космояхту — показать, «как живут настоящие наследники». Вход по приглашению и с подарком.",
+                Choices = new[]
+                {
+                    new IncidentChoice { Label = "Подарить коллекционное вино", Cost = 350,
+                        Success = new IncidentOutcome { Reputation = 3, ShowPoints = 3, QuietTurns = 4, Text = "Орфей снисходительно похвалил вино и весь вечер рассказывал о папиных связях. 4 хода он к вам благосклонен." } },
+                    new IncidentChoice { Label = "Прийти и перехвастать его", Chance = 0.4,
+                        Success = new IncidentOutcome { ShowPoints = 8, Text = "Ваш рассказ о шахтах затмил его рассказ о яхтах. Орфей ушёл дуться в каюту, зрители в восторге: +8 очков в шоу." },
+                        Failure = new IncidentOutcome { Reputation = -3, Text = "Орфей позвал юристов: хвастаться на его яхте можно только ему." } },
+                    new IncidentChoice { Label = "Вежливо отказаться",
+                        Success = new IncidentOutcome { Text = "Орфей сообщил в эфире, что вы «просто завидуете». Отчасти правда." } },
+                },
+            },
+            new Incident
+            {
+                Id = "orpheus_bet", Title = "Пари Орфея", Icon = "crown", Target = IncidentTarget.Magnate, Magnate = "Орфей", Weight = 1.5,
+                Text = "{magnate} предлагает пари: спорим, что на следующих торгах он перебьёт любую вашу ставку? Ставка — его часы против ваших.",
+                Choices = new[]
+                {
+                    new IncidentChoice { Label = "Принять пари", Cost = 200, Chance = 0.5,
+                        Success = new IncidentOutcome { Money = 650, ShowPoints = 3, Text = "Орфей проиграл и отдал часы. Говорит, у него «ещё сорок таких». Часы ушли с аукциона за хорошие деньги." },
+                        Failure = new IncidentOutcome { Reputation = -1, Text = "Орфей выиграл и носит ваши часы поверх своих. На обеих руках." } },
+                    new IncidentChoice { Label = "Отказаться",
+                        Success = new IncidentOutcome { Text = "«Трус!» — сказал Орфей. Зрители согласились наполовину." } },
+                },
+            },
+            new Incident
+            {
+                Id = "xenon_box", Title = "Шкатулка Ксенона", Icon = "cube", Target = IncidentTarget.Magnate, Magnate = "Ксенон", Weight = 1.5,
+                Text = "Курьер в белом молча вручает шкатулку с гербом, который носит {magnate}. Записки нет. Внутри что-то тикает. Или мурлычет.",
+                Choices = new[]
+                {
+                    new IncidentChoice { Label = "Открыть", Chance = 0.6,
+                        Success = new IncidentOutcome { Money = 500, Text = "Внутри — слиток чистой плазмы и визитка без единого слова. Ксенон любит загадки." },
+                        Failure = new IncidentOutcome { Reputation = -2, Text = "Из шкатулки вылетели светлячки и разнесли по бирже слух, что вы берёте подарки от магнатов." } },
+                    new IncidentChoice { Label = "Отдать в музей",
+                        Success = new IncidentOutcome { ShowPoints = 3, Reputation = 1, Text = "Музей выставил шкатулку под стеклом. Иногда она подмигивает посетителям." } },
+                    new IncidentChoice { Label = "Вернуть нераспечатанной",
+                        Success = new IncidentOutcome { Reputation = 1, Text = "Через ход шкатулка вернулась снова. С бантиком." } },
+                },
+            },
+            new Incident
+            {
+                Id = "xenon_silence", Title = "Молчаливое предложение", Icon = "eye", Target = IncidentTarget.Magnate, Magnate = "Ксенон", Weight = 1.5,
+                Text = "{magnate} садится напротив и молча кладёт на стол карточку с цифрой. Похоже, это инвестиция в ваше дело. Похоже.",
+                Choices = new[]
+                {
+                    new IncidentChoice { Label = "Кивнуть",
+                        Success = new IncidentOutcome { Money = 800, Reputation = -2, Text = "Ксенон кивнул в ответ и исчез. Деньги ваши, но по галактике шепчутся, на кого вы работаете." } },
+                    new IncidentChoice { Label = "Молчать в ответ", Chance = 0.5,
+                        Success = new IncidentOutcome { QuietTurns = 10, Text = "Вы молчали дольше. Ксенон впервые улыбнулся и 10 ходов вас не трогает." },
+                        Failure = new IncidentOutcome { Text = "Молчание затянулось на четыре часа. Ксенон ушёл. Кажется, доволен." } },
+                    new IncidentChoice { Label = "Отказаться словами",
+                        Success = new IncidentOutcome { Text = "Ксенон поморщился: слова его утомляют." } },
+                },
+            },
         };
 
         // ------------------------------------------------------------------

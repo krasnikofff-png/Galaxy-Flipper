@@ -44,7 +44,7 @@ GLASS = (0.7, 0.85, 0.95)
 HEAD_C = Vector((0, 0, 1.42))
 NECK = Vector((0, 0, 0.98))
 
-MODELS = ["magnate_hugo", "magnate_zizi", "magnate_matilda", "magnate_nova", "magnate_orpheus", "magnate_xenon", "magnate_shadow"]
+MODELS = ["magnate_hugo", "magnate_zizi", "magnate_matilda", "magnate_nova", "magnate_orpheus", "magnate_xenon", "magnate_shadow", "magnate_host"]
 
 
 # ----------------------------------------------------------------------
@@ -671,6 +671,76 @@ def magnate_xenon():
         torus(HEAD_C + Vector((0, 0.06, 0.275)), 0.47, 0.007, GOLD, shine=0.9, rot=(-0.2, 0, 0), scale=(0.98, 1.0, 1))
 
 
+def magnate_host():
+    """Брэд Квазар, ведущий шоу «Риелтор года»: загар, платиновый кок, улыбка во все зубы, хитрый прищур;
+    белый смокинг с золотыми лацканами, бабочка в цвет шоу, звезда на лацкане, микрофон у подбородка."""
+    skin = (0.8, 0.52, 0.36)
+    suit = (0.97, 0.96, 0.93)
+    bust(suit, width=0.76, fat=1.0)
+    # Рубашка и золотые атласные лацканы (как у Гуго, только смокинг белый).
+    ellipsoid((0, -0.33, 0.62), (0.17, 0.08, 0.28), (1.0, 1.0, 1.0), shine=0.1)
+    # Лацканы буквой V: сверху у плеч, сходятся книзу к пуговице.
+    for sx in (-1, 1):
+        mb.box((0.1, 0.04, 0.5), (sx * 0.15, -0.4, 0.5), GOLD, shine=0.85, rot=(0.18, sx * 0.32, sx * 0.12), bevel=0.02)
+    mb.sphere(0.026, (0, -0.47, 0.2), GOLD, shine=0.9, u=12, v=8)
+    # Звезда на лацкане — светится.
+    star = []
+    for k in range(10):
+        ang = math.pi / 2 + k * math.pi / 5
+        r = 0.065 if k % 2 == 0 else 0.028
+        star.append((0.3 + r * math.cos(ang), -0.44, 0.62 + r * math.sin(ang)))
+    bm = bmesh.new()
+    vs = [bm.verts.new(p_) for p_ in star]
+    c = bm.verts.new((0.3, -0.46, 0.62))
+    for k in range(10):
+        bm.faces.new((c, vs[k], vs[(k + 1) % 10]))
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    painted(bm, lambda co, n: ((1.0, 0.85, 0.4), LIGHT, 0.9), False)
+    neck(skin, r=0.17)
+    # Чёрная бархатная бабочка с узелком в цвет шоу.
+    for sx in (-1, 1):
+        mb.cyl(0.085, 0.16, (0, -0.4, 0.86), BLACK, shine=0.4, r2=0.02, rot=(0, sx * math.pi / 2, 0), segs=16)
+    mb.sphere(0.04, (0, -0.43, 0.86), (1, 1, 1), ACCENT, shine=0.7)
+    # Платок в нагрудном кармане — тоже цвет шоу.
+    ellipsoid((-0.33, -0.36, 0.52), (0.07, 0.03, 0.04), (1, 1, 1), ACCENT, shine=0.5, rot=(0, 0.3, 0))
+    # Микрофон: ручка из-под кадра к подбородку, сетчатая головка, золотое кольцо.
+    m0, m1 = Vector((0.4, -0.62, 0.5)), Vector((0.22, -0.74, 1.04))
+    mb.rod(tuple(m0), tuple(m1), 0.035, BLACK, shine=0.5, segs=16, r2=0.04)
+    d = (m1 - m0).normalized()
+    mb.sphere(0.05, tuple(m1 + d * 0.015), GOLD, shine=0.9, u=16, v=8, scale=(1, 1, 0.5))
+    mb.sphere(0.078, tuple(m1 + d * 0.09), (0.25, 0.25, 0.28), shine=0.6, u=20, v=12)
+
+    with mb.moving("head", NECK):
+        size = (0.92, 0.95, 1.06)
+        # Квадратный подбородок с ямочкой, высокие скулы.
+        sculpt(HEAD_C, 0.42, size=size, jaw=1.1, jaw_depth=1.05,
+               bumps=[((0, -0.75, -0.75), 0.08, 0.25), ((0.55, -0.75, -0.05), 0.05, 0.22), ((-0.55, -0.75, -0.05), 0.05, 0.22),
+                      ((0, -0.95, -0.62), -0.025, 0.08)],
+               paint=skin_paint(skin, blush=(1, 0.6, 0.5)))
+        ear(1, skin, 0.9)
+        ear(-1, skin, 0.9)
+        n0 = on_head((0, -1, 0.0), 0.98, size)
+        mb.rod(tuple(n0), tuple(n0 + Vector((0, -0.07, -0.11))), 0.03, skin, shine=0.25, segs=16, r2=0.045)
+        mb.sphere(0.046, tuple(n0 + Vector((0, -0.07, -0.11))), skin, shine=0.25, u=16, v=10)
+        for sx in (-1, 1):
+            e = on_head((sx * 0.33, -0.88, 0.14), 0.97, size)
+            # Левый (для зрителя — правый) глаз подмигивает.
+            wink = sx > 0
+            eye(e, 0.07, (0.25, 0.6, 0.95), look=(0, -1, 0.05), lid=0.65 if wink else 0.3, lid_color=skin, lower=0.4 if wink else 0.1)
+            brow(e + Vector((0, -0.02, 0.1)), sx, 0.12, lift=0.0 if wink else 0.04, angle=-0.25 if wink else 0.15,
+                 color=(0.55, 0.5, 0.48), thick=0.02)
+        # Улыбка во все зубы.
+        lips(on_head((0, -1, -0.42), 0.98, size), 0.21, (0.78, 0.42, 0.4), smile=0.65, open_=0.06, teeth=True)
+        # Серебристый зачёс с высоким коком — блестит лаком.
+        hair = (0.93, 0.88, 0.74)
+        sculpt(HEAD_C + Vector((0, 0.04, 0.06)), 0.44, size=(0.94, 0.99, 1.0),
+               paint=lambda n: (hair, NORMAL, 0.9), u=64, v=40,
+               keep=lambda n: n.z > 0.42 or (n.y > 0.15 and n.z > -0.3) or (abs(n.x) > 0.75 and n.z > 0.1))
+        for k, (w, h) in enumerate(((0.13, 1.22), (0.1, 1.18), (0.08, 1.12))):
+            tube_path(curve(tuple(on_head((-0.5, -0.55 + k * 0.1, 0.55), 1.02, size)), tuple(on_head((0.0, -0.95 + k * 0.15, 0.9), h, size)),
+                            tuple(on_head((0.5, -0.5 + k * 0.1, 0.62), 1.04, size)), 12), w, hair, shine=0.9, r2=0.05, segs=20)
+
+
 def magnate_shadow():
     """Безымянный магнат: тёмный силуэт в шляпе с горящими глазами — пока не знаем, кто это."""
     shade = (0.13, 0.13, 0.17)
@@ -701,9 +771,10 @@ def build_all():
     print("Сохранено:", BLEND)
 
 
-def export_all():
+def export_all(only=None):
+    """only — выгрузить только эти модели (остальные FBX не трогать)."""
     mb.OUT_DIR = OUT_DIR
-    mb.MODELS = MODELS
+    mb.MODELS = [m for m in MODELS if not only or m in only]
     mb.export_all()
 
 
@@ -711,4 +782,5 @@ if __name__ == "__main__":
     args = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
     if "--export-only" not in args:
         build_all()
-    export_all()
+    # --only magnate_host — выгрузить одну модель.
+    export_all(args[args.index("--only") + 1].split(",") if "--only" in args else None)
