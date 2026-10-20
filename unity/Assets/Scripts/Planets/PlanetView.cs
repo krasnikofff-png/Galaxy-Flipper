@@ -97,7 +97,8 @@ namespace PlanetTrader.Visuals
         {
             _baking = null;
             _nextRes = 0;
-            Build(Look, Seed, Resolution, PlanetBaker.BakePixels(Look, Seed, Resolution));
+            if (PlanetBakerGpu.Supported) Build(Look, Seed, Resolution, PlanetBakerGpu.Bake(Look, Seed, Resolution));
+            else Build(Look, Seed, Resolution, PlanetBaker.BakePixels(Look, Seed, Resolution).ToTextures());
         }
 
         /// <summary>
@@ -106,6 +107,12 @@ namespace PlanetTrader.Visuals
         /// </summary>
         public void RebuildAsync()
         {
+            // На видеокарте запекание занимает миллисекунды: ни очередь, ни черновик, ни кэш не нужны.
+            if (PlanetBakerGpu.Supported)
+            {
+                Rebuild();
+                return;
+            }
             var look = Look;
             int seed = Seed, res = Resolution;
             int cached = _cache.FindIndex(c => c.look == look && c.seed == seed && c.res == res);
@@ -117,7 +124,7 @@ namespace PlanetTrader.Visuals
                 _cache.Insert(0, entry);
                 _baking = null;
                 _nextRes = 0;
-                Build(look, seed, res, entry.pixels);
+                Build(look, seed, res, entry.pixels.ToTextures());
                 return;
             }
             bool preview = PreviewResolution > 0 && PreviewResolution < res;
@@ -160,13 +167,13 @@ namespace PlanetTrader.Visuals
             Cleanup();
         }
 
-        void Build(PlanetLook look, int seed, int res, PlanetPixels pixels)
+        void Build(PlanetLook look, int seed, int res, PlanetTextures textures)
         {
             Cleanup();
             _builtLook = look;
             _builtSeed = seed;
             _style = PlanetSurface.Style(look);
-            _tex = pixels.ToTextures();
+            _tex = textures;
             if (_sphere == null) _sphere = SphereMesh.Build(96, 48);
 
             _surfaceMat = new Material(Shader.Find("PlanetTrader/Planet"));
@@ -275,7 +282,7 @@ namespace PlanetTrader.Visuals
             if (_surface != null && _builtLook == look && _builtSeed == seed)
                 Sharpen(res, pixels);
             else
-                Build(look, seed, res, pixels);
+                Build(look, seed, res, pixels.ToTextures());
             if (res == Resolution && CacheSize > 0)
             {
                 _cache.Insert(0, (look, seed, res, pixels));

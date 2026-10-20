@@ -3,15 +3,19 @@ using UnityEngine;
 
 namespace PlanetTrader.Visuals
 {
-    /// <summary>Готовые текстуры планеты: цвет (A — блеск), нормали в пространстве планеты, свечение, облака.</summary>
+    /// <summary>
+    /// Готовые текстуры планеты: цвет (A — блеск), нормали в пространстве планеты, свечение, облака.
+    /// С процессора — Texture2D, с видеокарты (<see cref="PlanetBakerGpu"/>) — RenderTexture.
+    /// </summary>
     public sealed class PlanetTextures
     {
-        public Texture2D Albedo, Normal, Emission, Clouds;
+        public Texture Albedo, Normal, Emission, Clouds;
     }
 
     /// <summary>
-    /// Запекает текстуры планеты в развёртку «широта–долгота» (ширина вдвое больше высоты).
-    /// Считает на всех ядрах; 2048×1024 — около двух секунд.
+    /// Запекает текстуры планеты в развёртку «широта–долгота» (ширина вдвое больше высоты) на процессоре.
+    /// Считает на всех ядрах; 2048×1024 — около двух секунд. Основной путь — <see cref="PlanetBakerGpu"/>
+    /// (те же правила на видеокарте, за миллисекунды); этот остаётся, где compute shader не работает.
     /// </summary>
     public static class PlanetBaker
     {

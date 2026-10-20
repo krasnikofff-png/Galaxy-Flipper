@@ -17,6 +17,9 @@ namespace PlanetTrader.Visuals
 
         readonly int[] _p = new int[512];
 
+        /// <summary>Таблица перестановок (512 чисел) — для запекания на видеокарте.</summary>
+        public int[] Table => (int[])_p.Clone();
+
         public PlanetNoise(int seed)
         {
             var r = new System.Random(seed);

@@ -27,6 +27,8 @@ namespace PlanetTrader.EditorTools
             var args = System.Environment.GetCommandLineArgs();
             string path = "planets-unity.png";
             int res = 1024;
+            // -snapCpu — запечь на процессоре: сверить облик с видеокартой.
+            PlanetBakerGpu.Enabled = System.Array.IndexOf(args, "-snapCpu") < 0;
             for (int i = 0; i < args.Length - 1; i++)
             {
                 if (args[i] == "-snapOut") path = args[i + 1];
