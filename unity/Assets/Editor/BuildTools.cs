@@ -14,21 +14,28 @@ namespace PlanetTrader.EditorTools
         /// <summary>
         /// Сборка для плейтеста: игра называется «Planet Trader», версия с датой, своя папка сохранений и журналов.
         /// Настройки проекта после сборки возвращаются как были (у автора в редакторе всё по-старому).
-        /// unity run unity -- -executeMethod PlanetTrader.EditorTools.BuildTools.BuildPlaytest -buildOut "Build/Playtest/Planet Trader.app" -buildVersion "0.9 плейтест"
+        /// unity run unity -- -executeMethod PlanetTrader.EditorTools.BuildTools.BuildPlaytest -buildVersion "0.9 плейтест" [-playtestOs windows -buildTarget Win64]
+        /// Mac — Build/Playtest/Planet Trader.app; Windows — Build/Playtest/Windows/Planet Trader.exe (нужен модуль Windows Build Support).
         /// </summary>
         public static void BuildPlaytest()
         {
             var args = System.Environment.GetCommandLineArgs();
             string version = "0.9";
+            bool windows = false;
             for (int i = 0; i < args.Length - 1; i++)
+            {
                 if (args[i] == "-buildVersion") version = args[i + 1];
+                // Свой ключ: -buildTarget занят самим Unity (платформа, с которой открывается редактор).
+                if (args[i] == "-playtestOs") windows = args[i + 1] == "windows";
+            }
             string product = PlayerSettings.productName, company = PlayerSettings.companyName, bundle = PlayerSettings.bundleVersion;
             PlayerSettings.productName = "Planet Trader";
             PlayerSettings.companyName = "Galaxy Flipper";
             PlayerSettings.bundleVersion = version;
             try
             {
-                Build("Build/Playtest/Planet Trader.app", false);
+                if (windows) Build("Build/Playtest/Windows/Planet Trader.exe", false, BuildTarget.StandaloneWindows64);
+                else Build("Build/Playtest/Planet Trader.app", false);
             }
             finally
             {
@@ -46,7 +53,7 @@ namespace PlanetTrader.EditorTools
             Build("Build/PlanetTrader.app", true);
         }
 
-        static void Build(string output, bool exit)
+        static void Build(string output, bool exit, BuildTarget target = BuildTarget.StandaloneOSX)
         {
             var args = System.Environment.GetCommandLineArgs();
             for (int i = 0; i < args.Length - 1; i++)
@@ -64,7 +71,7 @@ namespace PlanetTrader.EditorTools
             {
                 scenes = new[] { scene },
                 locationPathName = output,
-                target = BuildTarget.StandaloneOSX,
+                target = target,
                 options = BuildOptions.None,
             });
             Debug.Log($"Сборка: {report.summary.result}, {report.summary.totalErrors} ошибок, {output}");

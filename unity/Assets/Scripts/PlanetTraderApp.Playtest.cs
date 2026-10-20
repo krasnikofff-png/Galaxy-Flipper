@@ -93,7 +93,8 @@ namespace PlanetTrader.Client
         void OpenPlaytestFolder()
         {
             Directory.CreateDirectory(PlaytestDir);
-            Application.OpenURL("file://" + PlaytestDir.Replace(" ", "%20"));
+            // Uri даёт правильную ссылку и на Mac (file:///Users/…), и на Windows (file:///C:/Users/…).
+            Application.OpenURL(new Uri(PlaytestDir).AbsoluteUri);
             Log($"Журналы для отзыва — в папке {PlaytestDir}. Пришлите файлы session-….txt вместе с ответами.");
         }
     }
