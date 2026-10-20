@@ -405,7 +405,9 @@ namespace PlanetTrader.Client
 
         void EndTurn()
         {
+            int turn = _game.Turn, perTurn = _game.ActionsPerTurn, used = perTurn - _game.ActionsLeft;
             var report = _game.EndTurn();
+            PlaytestTurn(turn, used, perTurn);
             string line = $"— Ход {report.Turn} завершён. Расходы {Fmt.Money(report.TotalCosts)}";
             if (report.InsurancePayout > 0) line += $", страховка выплатила {Fmt.Money(report.InsurancePayout)}";
             if (report.Taxes > 0) line += $", налоги принесли {Fmt.Money(report.Taxes)}";

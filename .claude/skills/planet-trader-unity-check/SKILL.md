@@ -38,6 +38,10 @@ description: Посмотреть изменение в собранной иг�
 | Окна: шоу со вступлением, случай, «Важное за ход» | `-autoShotShow`, `-autoShotIncident tax` (id из `Balance.Incidents`), `-autoShotAlerts` |
 | «Лот недели» (ходы до лота, выбрана легенда) | `-autoShotLot` |
 | Сцена итогов сезона с кубком | `-autoShotSeasonEnd` |
+
+Сборка для плейтеста (имя «Planet Trader», архив с памяткой `docs/playtest.md`): `.claude/skills/planet-trader-unity-check/playtest.sh` →
+`unity/Build/Playtest/PlanetTrader-mac-<дата>.zip`. Сохранения и журналы плейтест-версии — в `~/Library/Application Support/com.Galaxy-Flipper.Planet-Trader`
+(после своих проверочных запусков удалить).
 | Сохранения: n ходов, сохранить, список; продолжить автосохранение | `-autoShotSaves 7`, `-autoShotContinue` (сохранения потом удалить: `~/Library/Application Support/DefaultCompany/unity/saves`) |
 
 ## Смотреть

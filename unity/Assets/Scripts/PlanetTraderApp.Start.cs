@@ -89,6 +89,7 @@ namespace PlanetTrader.Client
             _start.AddToClassList("hidden");
             NewGame(index, _startSeed);
             _playing = true;
+            StartPlaytestLog("новая партия");
             // Вступление ведущего: зачем всё это — кубок «Риелтора года».
             QueuePopup(() => OpenShow(ShowIntro));
         });

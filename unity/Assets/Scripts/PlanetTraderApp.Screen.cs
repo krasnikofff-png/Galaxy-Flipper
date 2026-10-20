@@ -116,6 +116,11 @@ namespace PlanetTrader.Client
                 Later(() => PlanetShowcase.Toggle(this));
             };
             root.Q<Button>("journalButton").clicked += OpenJournal;
+            root.Q<Button>("feedbackButton").clicked += () =>
+            {
+                _menu.AddToClassList("hidden");
+                Later(OpenPlaytestFolder);
+            };
             root.Q<Button>("journalClose").clicked += () => _journal.AddToClassList("hidden");
             // Клик мимо меню закрывает его; клик по тёмному фону журнала — закрывает журнал.
             _screen.RegisterCallback<PointerDownEvent>(e =>
@@ -318,6 +323,7 @@ namespace PlanetTrader.Client
             _logSerial++;
             if (_logEntries.Count > MaxLogLines) _logEntries.RemoveAt(_logEntries.Count - 1);
             if (!_journal.ClassListContains("hidden")) _journalList.Insert(0, EventRow(_logEntries[0]));
+            PlaytestEvent(message);
             MarkDirty();
         }
 

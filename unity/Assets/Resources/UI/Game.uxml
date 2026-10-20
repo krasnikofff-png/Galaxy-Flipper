@@ -99,6 +99,7 @@
             <ui:Button name="newGameButton" text="Новая игра" focusable="false" class="button" />
             <ui:Button name="saveButton" text="Сохранить" focusable="false" class="button" />
             <ui:Button name="loadButton" text="Загрузить" focusable="false" class="button" />
+            <ui:Button name="feedbackButton" text="Логи для отзыва" focusable="false" class="button" />
             <ui:Button name="showcaseButton" text="Витрина планет (F2)" focusable="false" class="button" />
         </ui:VisualElement>
         <ui:VisualElement name="journal" class="overlay hidden">

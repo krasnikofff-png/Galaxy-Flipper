@@ -616,7 +616,7 @@ namespace PlanetTrader.Core
             new Incident
             {
                 Id = "refugees", Title = "Беженцы", Icon = "people", Target = IncidentTarget.MyInhabited,
-                Text = "К {planet} причалил ковчег беженцев с Кометы-7. Просят приютить хотя бы до зимы (зима на комете — вечно).",
+                Text = "К планете {planet} причалил ковчег беженцев с Кометы-7. Просят приютить хотя бы до зимы (зима на комете — вечно).",
                 Choices = new[]
                 {
                     new IncidentChoice { Label = "Приютить", Cost = 200,
@@ -630,7 +630,7 @@ namespace PlanetTrader.Core
             new Incident
             {
                 Id = "filming", Title = "Съёмки шоу", Icon = "star", Target = IncidentTarget.MyPlanet,
-                Text = "Продюсеры «Риелтора года» хотят снять на {planet} выпуск «Один день из жизни риелтора».",
+                Text = "Продюсеры «Риелтора года» хотят снять на планете {planet} выпуск «Один день из жизни риелтора».",
                 Choices = new[]
                 {
                     new IncidentChoice { Label = "Снять с размахом", Cost = 300,
@@ -644,7 +644,7 @@ namespace PlanetTrader.Core
             new Incident
             {
                 Id = "inventor", Title = "Безумный изобретатель", Icon = "gear", Target = IncidentTarget.MyMine,
-                Text = "Профессор Шестерёнкин предлагает «квантовую кирку» для шахты на {planet}. Гарантия — честное слово профессора.",
+                Text = "Профессор Шестерёнкин предлагает «квантовую кирку» для шахты на планете {planet}. Гарантия — честное слово профессора.",
                 Choices = new[]
                 {
                     new IncidentChoice { Label = "Купить кирку", Cost = 400, Chance = 0.6,
@@ -657,7 +657,7 @@ namespace PlanetTrader.Core
             new Incident
             {
                 Id = "wedding", Title = "Свадьба вождя", Icon = "heart", Target = IncidentTarget.MyInhabited,
-                Text = "Жители {planet} женят вождя. По местной традиции банкет оплачивает самый богатый гость. Угадайте кто.",
+                Text = "Жители планеты {planet} женят вождя. По местной традиции банкет оплачивает самый богатый гость. Угадайте кто.",
                 Choices = new[]
                 {
                     new IncidentChoice { Label = "Оплатить банкет", Cost = 250,
@@ -672,7 +672,7 @@ namespace PlanetTrader.Core
             new Incident
             {
                 Id = "offer", Title = "Предложение магната", Icon = "tag", Target = IncidentTarget.MyPlanetAndMagnate, MinTurn = 10,
-                Text = "{magnate} хочет купить {planet} за {price} — заметно дороже рынка. «Не продашь сейчас — пожалеешь потом», — добавляет с улыбкой.",
+                Text = "{magnate} хочет купить планету {planet} за {price} — заметно дороже рынка. «Не продашь сейчас — пожалеешь потом», — добавляет с улыбкой.",
                 Choices = new[]
                 {
                     new IncidentChoice { Label = "Продать",
@@ -726,7 +726,7 @@ namespace PlanetTrader.Core
             new Incident
             {
                 Id = "truck", Title = "Сломанный грузовик", Icon = "rocket", Target = IncidentTarget.MyMine,
-                Text = "Грузовик с {planet} заглох посреди пустоты. Пилот просит денег на запчасти, иначе бросит груз и улетит на попутке.",
+                Text = "Грузовик с планеты {planet} заглох посреди пустоты. Пилот просит денег на запчасти, иначе бросит груз и улетит на попутке.",
                 Choices = new[]
                 {
                     new IncidentChoice { Label = "Оплатить ремонт", Cost = 120,
@@ -750,7 +750,7 @@ namespace PlanetTrader.Core
             new Incident
             {
                 Id = "preacher", Title = "Проповедник", Icon = "warning", Target = IncidentTarget.MyInhabited,
-                Text = "На {planet} пришёл бродячий проповедник и учит жителей, что работа — пережиток прошлого.",
+                Text = "На планету {planet} пришёл бродячий проповедник и учит жителей, что работа — пережиток прошлого.",
                 Choices = new[]
                 {
                     new IncidentChoice { Label = "Нанять его учителем", Cost = 200,
@@ -779,7 +779,7 @@ namespace PlanetTrader.Core
             new Incident
             {
                 Id = "tourists", Title = "Туристы", Icon = "planet", Target = IncidentTarget.MyPlanet,
-                Text = "У {planet} застрял автобус туристов. Гид предлагает устроить им экскурсию — за деньги, конечно.",
+                Text = "У планеты {planet} застрял автобус туристов. Гид предлагает устроить им экскурсию — за деньги, конечно.",
                 Choices = new[]
                 {
                     new IncidentChoice { Label = "Экскурсия с банкетом", Cost = 100, Chance = 0.7,

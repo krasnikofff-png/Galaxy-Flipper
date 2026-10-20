@@ -11,9 +11,43 @@ namespace PlanetTrader.EditorTools
     /// </summary>
     public static class BuildTools
     {
+        /// <summary>
+        /// Сборка для плейтеста: игра называется «Planet Trader», версия с датой, своя папка сохранений и журналов.
+        /// Настройки проекта после сборки возвращаются как были (у автора в редакторе всё по-старому).
+        /// unity run unity -- -executeMethod PlanetTrader.EditorTools.BuildTools.BuildPlaytest -buildOut "Build/Playtest/Planet Trader.app" -buildVersion "0.9 плейтест"
+        /// </summary>
+        public static void BuildPlaytest()
+        {
+            var args = System.Environment.GetCommandLineArgs();
+            string version = "0.9";
+            for (int i = 0; i < args.Length - 1; i++)
+                if (args[i] == "-buildVersion") version = args[i + 1];
+            string product = PlayerSettings.productName, company = PlayerSettings.companyName, bundle = PlayerSettings.bundleVersion;
+            PlayerSettings.productName = "Planet Trader";
+            PlayerSettings.companyName = "Galaxy Flipper";
+            PlayerSettings.bundleVersion = version;
+            try
+            {
+                Build("Build/Playtest/Planet Trader.app", false);
+            }
+            finally
+            {
+                PlayerSettings.productName = product;
+                PlayerSettings.companyName = company;
+                PlayerSettings.bundleVersion = bundle;
+            }
+            EditorApplication.Exit(_lastOk ? 0 : 1);
+        }
+
+        static bool _lastOk;
+
         public static void BuildMac()
         {
-            string output = "Build/PlanetTrader.app";
+            Build("Build/PlanetTrader.app", true);
+        }
+
+        static void Build(string output, bool exit)
+        {
             var args = System.Environment.GetCommandLineArgs();
             for (int i = 0; i < args.Length - 1; i++)
                 if (args[i] == "-buildOut") output = args[i + 1];
@@ -34,7 +68,8 @@ namespace PlanetTrader.EditorTools
                 options = BuildOptions.None,
             });
             Debug.Log($"Сборка: {report.summary.result}, {report.summary.totalErrors} ошибок, {output}");
-            EditorApplication.Exit(report.summary.result == BuildResult.Succeeded ? 0 : 1);
+            _lastOk = report.summary.result == BuildResult.Succeeded;
+            if (exit) EditorApplication.Exit(_lastOk ? 0 : 1);
         }
     }
 }

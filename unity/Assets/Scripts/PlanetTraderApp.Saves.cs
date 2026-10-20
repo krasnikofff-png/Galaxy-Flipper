@@ -120,7 +120,11 @@ namespace PlanetTrader.Client
             Write(AutosaveName);
         }
 
-        void OnApplicationQuit() => Autosave();
+        void OnApplicationQuit()
+        {
+            Autosave();
+            ClosePlaytestLog();
+        }
 
         bool Write(string name)
         {
@@ -199,6 +203,7 @@ namespace PlanetTrader.Client
 
             _game = game;
             _playing = true;
+            StartPlaytestLog("загружено сохранение");
             _lookSeed = (int)(_game.Seed % int.MaxValue);
             _rivalsTurnStarted = -1;
             _selectedId = _game.PlayerPlanets.Select(p => p.Id).DefaultIfEmpty(-1).First();
