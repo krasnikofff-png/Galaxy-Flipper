@@ -136,6 +136,7 @@ namespace PlanetTrader.Client
             _portrait = gameObject.AddComponent<PlanetPortrait>();
             _portraits = gameObject.AddComponent<MagnatePortraits>();
             CreateScreen();
+            MapBackdrop();
             // За экраном выбора персонажа уже видна карта будущей партии: выбор начнёт её с тем же сектором.
             var seed = NewSeed();
             NewGame(0, seed);

@@ -2334,3 +2334,25 @@
     -unity-text-align: middle-center;
     white-space: normal;
 }
+
+/* Картинки автора: карточка случая, легендарная планета, сцены. */
+.incident-banner {
+    align-self: center;
+    margin-bottom: 12px;
+}
+
+.legend-banner {
+    align-self: center;
+    margin: 2px 0 8px 0;
+}
+
+.season-stage.with-scene {
+    -unity-background-scale-mode: scale-and-crop;
+    border-radius: 4px;
+    padding: 10px;
+}
+
+.start-overlay.with-scene {
+    -unity-background-scale-mode: scale-and-crop;
+    background-color: rgba(0, 0, 0, 0);
+}

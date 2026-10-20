@@ -54,28 +54,50 @@ namespace PlanetTrader.Client
         /// <summary>Ведущий шоу «Риелтор года» Брэд Квазар — в золотой рамке. Нарисует автор — картинка заменит бюст сама.</summary>
         VisualElement HostPortrait(float width) => PortraitFrame("Брэд Квазар", "magnate_host", ShowGold, width, true);
 
+        /// <summary>
+        /// Картинка автора (карточка случая, легендарная планета, сцена) в рамке цвета color, шириной width; высота — по картинке.
+        /// null — картинки нет: вызывающий рисует запасной вариант. Углы срезаны по меньшей стороне, как у портретов.
+        /// </summary>
+        VisualElement PictureFrame(string key, string category, string name, Color color, float width, bool highlight = false)
+        {
+            var picture = Pictures.Load(category, name);
+            if (picture == null) return null;
+            float height = width * picture.height / picture.width;
+            float cutPx = MagnatePortraits.CornerCut * Mathf.Min(width, height);
+            var texture = _portraits.Picture(key, category, name, Mathf.RoundToInt(width * 2), cutPx / width);
+            return Framed(texture, () => _portraits.Picture(key, category, name, Mathf.RoundToInt(width * 2), cutPx / width), color, width, height, cutPx, highlight);
+        }
+
         VisualElement PortraitFrame(string key, string model, Color color, float width, bool highlight)
         {
+            float height = width * MagnatePortraits.Height / MagnatePortraits.Width;
             float cut = MagnatePortraits.CornerCut * width;
+            return Framed(_portraits.Portrait(key, model, color), () => _portraits.Portrait(key, model, color), color, width, height, cut, highlight);
+        }
+
+        /// <summary>Рамка вокруг живой текстуры: тёмная подложка, картинка, линии рамки; refresh держит камеру включённой.</summary>
+        VisualElement Framed(Texture texture, System.Action refresh, Color color, float width, float height, float cut, bool highlight)
+        {
             var frame = new VisualElement { pickingMode = PickingMode.Ignore };
             frame.AddToClassList("magnate-frame");
             frame.style.width = width;
-            frame.style.height = width * MagnatePortraits.Height / MagnatePortraits.Width;
+            frame.style.height = height;
             Frames.Attach(frame, Color.clear, Color.clear, Color.Lerp(new Color(0.03f, 0.035f, 0.06f), color, 0.13f), 1, cut);
-            var image = new Image { image = _portraits.Portrait(key, model, color), scaleMode = ScaleMode.ScaleAndCrop, pickingMode = PickingMode.Ignore };
+            var image = new Image { image = texture, scaleMode = ScaleMode.ScaleAndCrop, pickingMode = PickingMode.Ignore };
             image.AddToClassList("magnate-image");
             frame.Add(image);
             var border = new VisualElement { pickingMode = PickingMode.Ignore };
             border.AddToClassList("magnate-border");
             Frames.Attach(border, Color.Lerp(color, Color.black, highlight ? 0.1f : 0.45f), color, Color.clear, highlight ? 2.4f : 1.8f, cut);
             frame.Add(border);
-            // Портрет живой: перерисовывать, пока карточка на экране.
+            // Картинка живая: перерисовывать, пока карточка на экране.
             image.schedule.Execute(() =>
             {
-                _portraits.Portrait(key, model, color);
+                refresh();
                 image.MarkDirtyRepaint();
             }).Every(33);
             return frame;
         }
+
     }
 }

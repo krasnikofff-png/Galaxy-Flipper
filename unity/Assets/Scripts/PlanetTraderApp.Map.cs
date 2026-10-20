@@ -135,10 +135,14 @@ namespace PlanetTrader.Client
             _sector = sector;
             _zoom = 1;
             _pan = Vector2.zero;
+            MapBackdrop();
             if (!SectorLicensed) _probeMode = false;
             RefreshLegend();
             MarkDirty();
         }
+
+        /// <summary>Фон карты по сектору: своя картинка сектора, общая картинка карты или запечённые звёзды.</summary>
+        void MapBackdrop() => _map3d.SetBackdrop(Pictures.Load("backgrounds", "sector_" + _sector) ?? Pictures.Load("backgrounds", "map"));
 
         /// <summary>Лицензия на сектор, который сейчас на карте. Что открылось, пишет ядро.</summary>
         void BuyLicense()

@@ -78,6 +78,13 @@ namespace PlanetTrader.Client
             _menu.AddToClassList("hidden");
             _journal.AddToClassList("hidden");
             _startCancel.EnableInClassList("hidden", !canCancel);
+            // Заставка от автора — на весь экран за карточками персонажей.
+            var splash = Pictures.Load("scenes", "start");
+            if (splash != null)
+            {
+                _start.AddToClassList("with-scene");
+                _start.style.backgroundImage = new StyleBackground(splash);
+            }
             // «Продолжить» — только при запуске игры; из меню идущую партию и так можно продолжить.
             RefreshStartSaves(!canCancel);
             _start.RemoveFromClassList("hidden");

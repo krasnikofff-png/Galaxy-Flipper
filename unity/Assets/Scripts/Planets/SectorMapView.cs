@@ -115,6 +115,7 @@ namespace PlanetTrader.Visuals
             _stars = BakeStars(2048, 4242);
             _backdropMat = new Material(Shader.Find("PlanetTrader/PlanetSky"));
             _backdropMat.SetTexture("_MainTex", _stars);
+            SetBackdrop(null);
             _backdropMat.SetFloat("_Cull", 0);
             _backdropMesh = new Mesh { name = "Фон карты" };
             _backdrop = new GameObject("Фон карты").transform;
@@ -312,6 +313,15 @@ namespace PlanetTrader.Visuals
             _backdropMesh.uv = new[] { new Vector2(0, 0), new Vector2(u, 0), new Vector2(0, v), new Vector2(u, v) };
             _backdropMesh.triangles = new[] { 0, 2, 1, 1, 2, 3 };
             _backdropMesh.RecalculateBounds();
+        }
+
+        /// <summary>Фон карты: картинка автора (Resources/Pictures/backgrounds) или, если её нет (null), запечённые звёзды.</summary>
+        public void SetBackdrop(Texture picture)
+        {
+            if (_backdropMat == null) return;
+            _backdropMat.SetTexture("_MainTex", picture != null ? picture : _stars);
+            // Картинка автора ярче запечённых звёзд: приглушить, чтобы планеты и подписи читались.
+            _backdropMat.SetFloat("_Dim", picture != null ? 0.55f : 1f);
         }
 
         /// <summary>

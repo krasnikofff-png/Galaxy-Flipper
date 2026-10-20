@@ -4,15 +4,17 @@ using UnityEngine;
 namespace PlanetTrader.Visuals
 {
     /// <summary>
-    /// Портреты магнатов под своими камерами; кадр — в текстуру для карточки интерфейса. Камеры стоят далеко от карты
-    /// и окна планеты и работают, только пока портрет кто-то показывает.
-    /// Если у магната есть нарисованный портрет (Resources/Magnates/Portraits, готовит tools/portraits/make_depth.py), он
-    /// в 2,5D: картинка на сетке, выдавленной по карте глубины, медленно покачивается — ближнее смещается сильнее
-    /// дальнего, и портрет оживает. Иначе — 3D-бюст из tools/magnates/make_magnates.py с покачивающейся головой.
+    /// Живые картинки под своими камерами; кадр — в текстуру для карточки интерфейса. Камеры стоят далеко от карты
+    /// и окна планеты и работают, только пока картинку кто-то показывает.
+    /// Картинка автора с картой глубины (Resources/Pictures, готовит tools/pictures/make_pictures.py) — в 2,5D: лежит
+    /// на сетке, выдавленной по глубине, и медленно покачивается — ближнее смещается сильнее дальнего, и она оживает.
+    /// Так показываются портреты магнатов и ведущего, карточки случаев, легендарные планеты. У магната без портрета —
+    /// 3D-бюст из tools/magnates/make_magnates.py с покачивающейся головой.
     /// </summary>
     public sealed class MagnatePortraits : MonoBehaviour
     {
         static readonly Vector3 Origin = new Vector3(0, 20000, 0);
+        /// <summary>Кадр портрета магната.</summary>
         public const int Width = 360, Height = 440;
         /// <summary>Срез углов кадра — доля ширины; рамка интерфейса срезает углы так же.</summary>
         public const float CornerCut = 0.15f;
@@ -31,6 +33,8 @@ namespace PlanetTrader.Visuals
             public bool Flat;
             public int LastUsed = -100;
             public float Phase;
+            /// <summary>Размах покачивания: портрет живее, широкая карточка — спокойнее.</summary>
+            public float Sway = 1;
         }
 
         readonly Dictionary<string, Rig> _rigs = new Dictionary<string, Rig>();
@@ -44,9 +48,36 @@ namespace PlanetTrader.Visuals
         {
             if (!_rigs.TryGetValue(key, out var rig))
             {
-                rig = Create(model, accent, _rigs.Count);
+                string name = model.Replace("magnate_", "");
+                var picture = Client.Pictures.Load("magnates", name);
+                rig = picture != null
+                    ? CreatePicture(picture, Client.Pictures.Depth("magnates", name), Width, Height, CornerCut, 1)
+                    : CreateBust(model, accent);
                 _rigs.Add(key, rig);
             }
+            return Use(rig);
+        }
+
+        /// <summary>
+        /// Любая картинка автора из Resources/Pictures в 2,5D (карточка случая, легендарная планета): кадр шириной width
+        /// в пропорции картинки, cut — срез углов долей ширины. null — такой картинки нет (интерфейс рисует запасной вариант).
+        /// </summary>
+        public Texture Picture(string key, string category, string name, int width, float cut)
+        {
+            if (!_rigs.TryGetValue(key, out var rig))
+            {
+                var picture = Client.Pictures.Load(category, name);
+                if (picture == null) return null;
+                int height = Mathf.RoundToInt(width * picture.height / (float)picture.width);
+                // Широкая карточка качается вполовину слабее портрета: рельеф на ней заметнее.
+                rig = CreatePicture(picture, Client.Pictures.Depth(category, name), width, height, cut, height >= width ? 1 : 0.5f);
+                _rigs.Add(key, rig);
+            }
+            return Use(rig);
+        }
+
+        Texture Use(Rig rig)
+        {
             rig.LastUsed = Time.frameCount;
             if (!rig.Camera.enabled)
             {
@@ -58,82 +89,54 @@ namespace PlanetTrader.Visuals
             return rig.Texture;
         }
 
-        Rig Create(string model, Color accent, int index)
+        Rig NewRig(string name, int width, int height)
         {
-            var rig = new Rig { Phase = index * 1.7f };
-            rig.Root = new GameObject("Портрет " + model).transform;
+            var rig = new Rig { Phase = _rigs.Count * 1.7f };
+            rig.Root = new GameObject("Картинка " + name).transform;
             rig.Root.SetParent(transform, false);
-            rig.Root.position = Origin + Vector3.right * (index * 20);
-
-            string name = model.Replace("magnate_", "");
-            var picture = LoadPng("Magnates/Portraits/" + name, false);
-            var depth = LoadPng("Magnates/Portraits/" + name + "_depth", true);
-            if (picture != null && depth != null) CreateFlat(rig, picture, depth);
-            else CreateBust(rig, model, accent);
-
-            rig.Texture = new RenderTexture(Width, Height, 24, RenderTextureFormat.ARGB32) { antiAliasing = 8, name = "Портрет " + model };
-            var cam = rig.Camera = new GameObject("Камера портрета").AddComponent<Camera>();
+            rig.Root.position = Origin + Vector3.right * (_rigs.Count * 20);
+            rig.Texture = new RenderTexture(width, height, 24, RenderTextureFormat.ARGB32) { antiAliasing = 8, name = "Картинка " + name };
+            var cam = rig.Camera = new GameObject("Камера").AddComponent<Camera>();
             cam.transform.SetParent(rig.Root, false);
             cam.nearClipPlane = 1;
             cam.farClipPlane = 12;
             cam.clearFlags = CameraClearFlags.SolidColor;
+            // Срезанные углы и фон прозрачны — там видна карточка с рамкой.
+            cam.backgroundColor = new Color(0, 0, 0, 0);
             cam.targetTexture = rig.Texture;
             cam.enabled = false;
-            if (rig.Flat)
-            {
-                // Камера видит картинку чуть меньше её размера: края сетки при покачивании не выглядывают.
-                float height = PlaneWidth * picture.height / picture.width;
-                cam.transform.localPosition = new Vector3(0, height / 2, -6);
-                cam.transform.LookAt(rig.Root.position + new Vector3(0, height / 2, 0));
-                cam.fieldOfView = 2 * Mathf.Atan(height * 0.46f / 6) * Mathf.Rad2Deg;
-                // Срезанные углы прозрачны — там видна карточка с рамкой.
-                cam.backgroundColor = new Color(0, 0, 0, 0);
-            }
-            else
-            {
-                // Кадр — голова и плечи; цилиндр Гуго и причёска Новы могут чуть выходить за край.
-                cam.transform.localPosition = new Vector3(0.25f, 1.55f, -5.6f);
-                cam.transform.LookAt(rig.Root.position + new Vector3(0, 1.42f, 0));
-                cam.fieldOfView = 19;
-                // Фон прозрачный: под бюстом — подложка карточки со срезанными углами.
-                cam.backgroundColor = new Color(0, 0, 0, 0);
-            }
             return rig;
         }
 
-        /// <summary>PNG из Resources (файл .bytes) — без сжатия и растягивания импортом; null, если такого нет.</summary>
-        static Texture2D LoadPng(string path, bool linear)
+        /// <summary>2,5D: картинка на сетке, которую шейдер выдавливает по карте глубины (без глубины — плоская).</summary>
+        Rig CreatePicture(Texture2D picture, Texture2D depth, int width, int height, float cut, float sway)
         {
-            var asset = Resources.Load<TextAsset>(path);
-            if (asset == null) return null;
-            var tex = new Texture2D(2, 2, TextureFormat.RGBA32, true, linear) { name = path, wrapMode = TextureWrapMode.Clamp };
-            tex.LoadImage(asset.bytes, true);
-            tex.filterMode = FilterMode.Trilinear;
-            tex.anisoLevel = 4;
-            return tex;
-        }
-
-        /// <summary>2,5D: картинка на сетке, которую шейдер выдавливает по карте глубины.</summary>
-        void CreateFlat(Rig rig, Texture2D picture, Texture2D depth)
-        {
+            var rig = NewRig(picture.name, width, height);
+            rig.Sway = sway;
             if (_depthShader == null) _depthShader = Shader.Find("PlanetTrader/PortraitDepth");
-            var material = new Material(_depthShader) { name = "Портрет " + picture.name };
+            var material = new Material(_depthShader) { name = "Картинка " + picture.name };
             material.SetTexture("_MainTex", picture);
-            material.SetTexture("_DepthTex", depth);
-            material.SetFloat("_Cut", CornerCut);
-            material.SetFloat("_Aspect", Height / (float)Width);
-            float height = PlaneWidth * picture.height / picture.width;
+            material.SetTexture("_DepthTex", depth != null ? depth : Texture2D.blackTexture);
+            material.SetFloat("_Cut", cut);
+            material.SetFloat("_Aspect", height / (float)width);
+            float plane = PlaneWidth * picture.height / picture.width;
             var go = new GameObject("Картина");
             go.transform.SetParent(rig.Root, false);
             // Поворачивается вокруг середины рельефа, а не вокруг плоскости картинки.
-            go.transform.localPosition = new Vector3(0, height / 2, -0.32f);
+            go.transform.localPosition = new Vector3(0, plane / 2, -0.32f);
             var mesh = new GameObject("Сетка");
             mesh.transform.SetParent(go.transform, false);
-            mesh.transform.localPosition = new Vector3(0, -height / 2, 0.32f);
-            mesh.AddComponent<MeshFilter>().sharedMesh = Grid(height);
+            mesh.transform.localPosition = new Vector3(0, -plane / 2, 0.32f);
+            mesh.AddComponent<MeshFilter>().sharedMesh = Grid(plane);
             mesh.AddComponent<MeshRenderer>().sharedMaterial = material;
             rig.Model = go.transform;
             rig.Flat = true;
+            // Камера видит картинку чуть меньше её размера: края сетки при покачивании не выглядывают.
+            var cam = rig.Camera;
+            cam.transform.localPosition = new Vector3(0, plane / 2, -6);
+            cam.transform.LookAt(rig.Root.position + new Vector3(0, plane / 2, 0));
+            cam.fieldOfView = 2 * Mathf.Atan(plane * 0.46f / 6) * Mathf.Rad2Deg;
+            return rig;
         }
 
         /// <summary>Плоская сетка картинки: снизу вверх от 0 до height, по ширине — от −PlaneWidth/2 до PlaneWidth/2.</summary>
@@ -164,14 +167,20 @@ namespace PlanetTrader.Visuals
             return mesh;
         }
 
-        void CreateBust(Rig rig, string model, Color accent)
+        Rig CreateBust(string model, Color accent)
         {
+            var rig = NewRig(model, Width, Height);
+            // Кадр — голова и плечи; цилиндр Гуго и причёска Новы могут чуть выходить за край.
+            var cam = rig.Camera;
+            cam.transform.localPosition = new Vector3(0.25f, 1.55f, -5.6f);
+            cam.transform.LookAt(rig.Root.position + new Vector3(0, 1.42f, 0));
+            cam.fieldOfView = 19;
             var prefab = Resources.Load<GameObject>("Magnates/" + model) ?? Resources.Load<GameObject>("Magnates/magnate_shadow");
             if (_bustShader == null) _bustShader = Shader.Find("PlanetTrader/Portrait");
             var material = new Material(_bustShader) { name = "Портрет " + model };
             material.SetColor("_Accent", accent);
             material.SetColor("_RimColor", Color.Lerp(accent, Color.white, 0.15f) * 1.2f);
-            if (prefab == null) return;
+            if (prefab == null) return rig;
             var go = Instantiate(prefab, rig.Root, false);
             go.name = model;
             rig.Model = go.transform;
@@ -181,6 +190,7 @@ namespace PlanetTrader.Visuals
             foreach (var t in go.GetComponentsInChildren<Transform>())
                 if (t.name.EndsWith("__head")) rig.Head = t;
             if (rig.Head != null) rig.HeadRest = rig.Head.localRotation;
+            return rig;
         }
 
         void LateUpdate()
@@ -199,7 +209,7 @@ namespace PlanetTrader.Visuals
             float t = Time.unscaledTime + rig.Phase;
             if (rig.Flat)
             {
-                rig.Model.localRotation = Quaternion.Euler(Mathf.Sin(t * 0.53f) * 3.5f, Mathf.Sin(t * 0.37f) * 9f, 0);
+                rig.Model.localRotation = Quaternion.Euler(Mathf.Sin(t * 0.53f) * 3.5f * rig.Sway, Mathf.Sin(t * 0.37f) * 9f * rig.Sway, 0);
                 return;
             }
             if (rig.Head != null)

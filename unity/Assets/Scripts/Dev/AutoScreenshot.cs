@@ -123,6 +123,9 @@ namespace PlanetTrader.Client
                 app.StartAs(_character);
                 yield return null;
                 yield return null;
+                // Вступление шоу открывается само; для снимков других окон — закрыть (кроме снимка самого вступления).
+                if (!_showWindow) app.ClosePopupsForShot();
+                yield return null;
             }
             if (app != null && _lotShot)
             {

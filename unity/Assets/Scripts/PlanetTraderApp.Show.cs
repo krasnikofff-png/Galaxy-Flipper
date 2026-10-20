@@ -29,6 +29,10 @@ namespace PlanetTrader.Client
         readonly Queue<Action> _popups = new Queue<Action>();
 
         static readonly Color ShowGold = new Color(0.94f, 0.77f, 0.35f);
+        static readonly Color IncidentPurple = new Color(0.78f, 0.66f, 1f);
+
+        /// <summary>Легенда «Лота недели» по планете; null — планета обычная.</summary>
+        LegendaryPlanet LegendOf(Planet p) => p?.Legend == null ? null : _game.Balance.Legends.FirstOrDefault(l => l.Name == p.Legend);
 
         const string ShowIntro =
             "Брэд Квазар: «Добро пожаловать в „Риелтора года“ — самое безжалостное реалити галактики! Участники — вы и магнаты сектора. " +
@@ -188,6 +192,13 @@ namespace PlanetTrader.Client
             _seasonBody.Add(new Label($"Итоги сезона {s.Number}").WithClass("season-title"));
 
             var stage = new VisualElement().WithClass("season-stage");
+            // Сцена от автора — фоном за ведущим и кубком.
+            var scene = Pictures.Load("scenes", s.Place == 1 ? "season_win" : "season_lose");
+            if (scene != null)
+            {
+                stage.AddToClassList("with-scene");
+                stage.style.backgroundImage = new StyleBackground(scene);
+            }
             // Слева — ведущий с репликой.
             var host = new VisualElement().WithClass("season-host");
             host.Add(HostPortrait(150));
@@ -271,10 +282,17 @@ namespace PlanetTrader.Client
             if (a == null) return;
             HideTooltip();
             _incidentBody.Clear();
+            // Картинка случая от автора — широкой карточкой сверху; без неё — портрет магната или значок.
+            var banner = PictureFrame("incident:" + a.Def.Id, "incidents", a.Def.Id, IncidentPurple, 644);
+            if (banner != null)
+            {
+                banner.AddToClassList("incident-banner");
+                _incidentBody.Add(banner);
+            }
             var head = new VisualElement().WithClass("incident-head");
             var m = a.MagnateId >= 0 ? g.GetMagnate(a.MagnateId) : null;
             if (m != null) head.Add(MagnatePortrait(m, 70));
-            else
+            else if (banner == null)
             {
                 var badge = new VisualElement().WithClass("alert-badge");
                 badge.Add(Icons.Make(Icons.Has(a.Def.Icon) ? a.Def.Icon : "info", "alert-badge-icon").WithClass("incident-icon"));
@@ -360,10 +378,17 @@ namespace PlanetTrader.Client
             var lot = g.Lot;
             var b = g.Balance;
             int left = lot.ResolveTurn - g.Turn + 1;
-            string legend = b.Legends.FirstOrDefault(l => l.Name == lot.Legend)?.Description;
+            var legendary = b.Legends.FirstOrDefault(l => l.Name == lot.Legend);
+            string legend = legendary?.Description;
             ui.Section("Лот недели");
             using (ui.Card())
             {
+                var picture = legendary == null ? null : PictureFrame("legend:" + legendary.Id, "legends", legendary.Id, ShowGold, 408);
+                if (picture != null)
+                {
+                    picture.AddToClassList("legend-banner");
+                    ui.Add(picture);
+                }
                 ui.Small($"<color=#f0c45a><b>«{lot.Legend}»</b></color> — {legend}");
                 ui.Small($"Торги в конце хода {lot.ResolveTurn} ({(left <= 1 ? "в этот ход" : "через " + Words.Count(left, "ход", "хода", "ходов"))}). " +
                          $"Ставки закрытые, стартовая цена {Fmt.Money(lot.StartPrice)}. Деньги спишутся только при победе — держите их до торгов, иначе ставка сгорит.");
@@ -382,6 +407,16 @@ namespace PlanetTrader.Client
                     () => Act(() => g.PlaceLotBid(f), $"Ставка на «{lot.Legend}»: {Fmt.Money(price)}. Торги в конце хода {lot.ResolveTurn}."), accent: f == b.LotBidFactors[0]);
             }
         }
+
+        /// <summary>Для автоснимка: закрыть все окна и очередь (вступление шоу открывается само при старте).</summary>
+        internal void ClosePopupsForShot() => Later(() =>
+        {
+            _popups.Clear();
+            _show.AddToClassList("hidden");
+            _alerts.AddToClassList("hidden");
+            _incident.AddToClassList("hidden");
+            _season.AddToClassList("hidden");
+        });
 
         /// <summary>Для автоснимка: сыграть пустые ходы до «Лота недели», закрыть окна и выбрать легендарную планету.</summary>
         internal void LotForShot() => Later(() =>

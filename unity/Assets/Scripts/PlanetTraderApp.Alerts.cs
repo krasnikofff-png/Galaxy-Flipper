@@ -69,7 +69,10 @@ namespace PlanetTrader.Client
             card.AddToClassList("alert-" + look);
 
             var m = a.MagnateId >= 0 ? _game.GetMagnate(a.MagnateId) : null;
-            if (m != null) card.Add(MagnatePortrait(m, 70));
+            var legendary = LegendOf(a.PlanetId >= 0 ? _game.GetPlanet(a.PlanetId) : null);
+            var legendPicture = legendary == null ? null : PictureFrame("legend:" + legendary.Id, "legends", legendary.Id, ShowGold, 140);
+            if (legendPicture != null) card.Add(legendPicture);
+            else if (m != null) card.Add(MagnatePortrait(m, 70));
             else if (a.Kind == AlertKind.Show) card.Add(HostPortrait(70));
             else
             {
