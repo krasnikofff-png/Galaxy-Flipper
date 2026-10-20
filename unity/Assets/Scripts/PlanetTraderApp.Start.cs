@@ -89,6 +89,8 @@ namespace PlanetTrader.Client
             _start.AddToClassList("hidden");
             NewGame(index, _startSeed);
             _playing = true;
+            // Вступление ведущего: зачем всё это — кубок «Риелтора года».
+            QueuePopup(() => OpenShow(ShowIntro));
         });
 
         static ulong NewSeed() => (ulong)DateTime.Now.Ticks;

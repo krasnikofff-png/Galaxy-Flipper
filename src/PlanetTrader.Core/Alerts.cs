@@ -15,6 +15,8 @@ namespace PlanetTrader.Core
         Good,
         /// <summary>Банкротство — партия окончена.</summary>
         Bankrupt,
+        /// <summary>Шоу «Риелтор года» и «Лот недели»: новый сезон, задание выполнено, итоги, лот.</summary>
+        Show,
     }
 
     /// <summary>

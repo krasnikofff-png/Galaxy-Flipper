@@ -311,7 +311,12 @@ namespace PlanetTrader.Client
                         MapLabel(ref used, at, _game.GetMagnate(p.MagnateId)?.Name.Split(' ')[0] ?? "ИИ", RingColor(p), null, false);
                         break;
                     default:
-                        if (!p.IsDepleted) MapLabel(ref used, at, null, default, Fmt.Money(p.ListPrice(b)) + marks, true);
+                        if (_game.IsLot(p))
+                        {
+                            int left = _game.Lot.ResolveTurn - _game.Turn + 1;
+                            MapLabel(ref used, at, "ЛОТ НЕДЕЛИ", ShowGold, left <= 1 ? "торги в этот ход" : $"торги через {left} х.", false);
+                        }
+                        else if (!p.IsDepleted) MapLabel(ref used, at, null, default, Fmt.Money(p.ListPrice(b)) + marks, true);
                         break;
                 }
             }

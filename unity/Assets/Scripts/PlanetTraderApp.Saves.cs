@@ -217,6 +217,7 @@ namespace PlanetTrader.Client
             var selected = Selected;
             if (selected != null) ShowSector(selected.Sector);
             Log($"Партия загружена: ход {_game.Turn}.");
+            if (_game.Incident != null) QueuePopup(OpenIncident);
             MarkDirty();
         }
 

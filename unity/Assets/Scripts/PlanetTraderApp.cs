@@ -358,6 +358,18 @@ namespace PlanetTrader.Client
                 return;
             }
             // Пока выбирают персонажа, ход не кончается; Esc возвращает к партии, если это можно.
+            // Окно шоу закрывают так же; окно случая — только Esc («подумать»): ответ — кнопкой.
+            if (ShowOpen)
+            {
+                if (Input.GetKeyDown(KeyCode.Space) || Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.KeypadEnter) || Input.GetKeyDown(KeyCode.Escape))
+                    Later(CloseShow);
+                return;
+            }
+            if (IncidentOpen)
+            {
+                if (Input.GetKeyDown(KeyCode.Escape)) Later(CloseIncident);
+                return;
+            }
             // Окно «Важное за ход» закрывают пробел, Enter или Esc — следующий ход не начнётся случайно.
             if (AlertsOpen)
             {
@@ -396,8 +408,9 @@ namespace PlanetTrader.Client
             foreach (var e in report.Events) Log(e);
             if (report.Seizures > 0) Log("Денег не хватило: недостача ушла в долг, а долг превысил кредитный лимит.");
             if (_game.Bankrupt) Log("<color=#ff8a7a>Банкротство: планет не осталось, а долг есть. Партия окончена — нажмите «Новая игра».</color>");
-            // Важное — окном, чтобы не потерялось в журнале.
-            ShowAlerts(report.Alerts, report.Turn);
+            // Важное — окном, чтобы не потерялось в журнале; потом — случай, если пришёл.
+            if (report.Alerts.Count > 0) QueuePopup(() => ShowAlerts(report.Alerts, report.Turn));
+            if (_game.Incident != null) QueuePopup(OpenIncident);
         }
 
         /// <summary>Коротко, что галактическое событие меняет.</summary>
@@ -424,7 +437,7 @@ namespace PlanetTrader.Client
         // ------------------------------------------------------------------
 
         /// <summary>Цвет кольца: владелец, у магнатов — свой цвет у каждого.</summary>
-        Color RingColor(Planet p) => RingColor(p.Owner, p.MagnateId, p.FoundByProbe);
+        Color RingColor(Planet p) => _game.IsLot(p) ? ShowGold : RingColor(p.Owner, p.MagnateId, p.FoundByProbe);
 
         /// <summary>Кольцо планеты на карте: у каждого магната свой цвет — тот же, что у рамки его портрета.</summary>
         Color RingColor(Owner owner, int magnateId, bool foundByProbe) =>

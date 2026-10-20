@@ -41,6 +41,9 @@ namespace PlanetTrader.Sim
         public int MagnatePlanets;
         /// <summary>Богатство среднего магната на контрольных ходах.</summary>
         public readonly Dictionary<int, double> MagnateWealthAt = new Dictionary<int, double>();
+        /// <summary>Шоу «Риелтор года»: места в сезонах, кубки; лоты; сколько было случаев.</summary>
+        public List<int> SeasonPlaces = new List<int>();
+        public int Cups, LotsWon, LotsTotal, Incidents;
         public readonly Dictionary<string, (double invested, double returned)> ByType = new Dictionary<string, (double, double)>();
     }
 
@@ -321,6 +324,11 @@ namespace PlanetTrader.Sim
                 r.Rivalry = g.Rivalry;
             }
             r.Colonies = g.Deeds.Count(d => d.Kind == DeedKind.Colony);
+            r.SeasonPlaces = g.Current.SeasonPlaces.ToList();
+            r.Cups = g.Current.Cups;
+            r.LotsWon = g.Current.Stats.LotsWon;
+            r.LotsTotal = g.AllPlanets.Count(p => p.Legend != null && !g.IsLot(p));
+            r.Incidents = g.Current.Stats.IncidentsSeen;
 
             // Доход на вложенное по типам: всё, что планета принесла, + её текущая стоимость.
             foreach (var p in g.AllPlanets.Where(p => p.Invested > 0))
@@ -489,6 +497,14 @@ namespace PlanetTrader.Sim
                           $"{N(Median(active.Select(r => r.MagnateWealth)))}, планет {F(Median(active.Select(r => (double)r.MagnatePlanets)), "0")}, ×{F(Median(active.Select(r => r.Rivalry)), "0.0")} | |");
             sb.AppendLine($"| Аукционы (этап 5) | бот выигрывает 40–80% своих ставок | {F(winRate * 100, "0")}% | {Check(winRate >= 0.4 && winRate <= 0.8)} |");
             sb.AppendLine($"| Подкуп жителей (этап 5) | заботливый теряет ≤1 планеты за партию, тот, кто жителей не замечает, — больше | {F(lostCare, "0.0")} против {F(lostIgnore, "0.0")} | {Check(lostCare <= 1 && lostIgnore > lostCare)} |");
+            double CupShare(List<RunResult> list) => list.Sum(r => r.Cups) / (double)Math.Max(1, list.Sum(r => r.SeasonPlaces.Count));
+            double MeanPlace(List<RunResult> list) => list.SelectMany(r => r.SeasonPlaces).DefaultIfEmpty(0).Average();
+            double cupsActive = CupShare(active), cupsPassive = CupShare(passive);
+            sb.AppendLine($"| Шоу «Риелтор года»: кубок по силам, но не даром (этап 9) | «Активный» берёт кубок в 25–70% сезонов, «Пассивный» — реже | " +
+                          $"{F(cupsActive * 100, "0")}% (среднее место {F(MeanPlace(active), "0.0")}) против {F(cupsPassive * 100, "0")}% ({F(MeanPlace(passive), "0.0")}) | {Check(cupsActive >= 0.25 && cupsActive <= 0.7 && cupsPassive < cupsActive)} |");
+            double lotShare = active.Sum(r => r.LotsWon) / (double)Math.Max(1, active.Sum(r => r.LotsTotal));
+            sb.AppendLine($"| «Лот недели» (этап 9) | «Активный» выигрывает 10–60% лотов | {F(lotShare * 100, "0")}% (лотов за партию {F(active.Average(r => (double)r.LotsTotal), "0")}) | {Check(lotShare >= 0.1 && lotShare <= 0.6)} |");
+            sb.AppendLine($"| Случаи (этап 9) | для справки: сколько случаев за партию | {F(active.Average(r => (double)r.Incidents), "0")} | |");
             double regenShare = active.Sum(r => r.RegeneratingTurns) / (double)Math.Max(1, active.Sum(r => r.PlanetTurns));
             sb.AppendLine($"| Месторождения восстанавливаются (этап 7) | для справки: доля планет-ходов, когда основное месторождение восстанавливается | {F(regenShare * 100, "0")}% | |");
             sb.AppendLine($"| Развитие (этап 7) | для справки: технологий и экстракторов у «Активного» к {End} | {F(Median(active.Select(r => (double)r.Techs)), "0")} технологий, {F(Median(active.Select(r => (double)r.Extractors)), "0")} экстракторов | |");

@@ -1942,3 +1942,272 @@
     background-color: rgba(150, 94, 28, 1);
     color: #ffe2b0;
 }
+
+/* Шоу «Риелтор года»: верхняя плашка, окно с заданиями и рейтингом, случаи, лот. */
+.stat.show > .stat-icon,
+.stat.show .stat-value {
+    color: #f0c45a;
+}
+
+.pill.lot {
+    color: #f0c45a;
+    border-color: rgba(240, 196, 90, 0.75);
+    background-color: rgba(120, 90, 20, 0.35);
+}
+
+.incident-chip {
+    flex-direction: row;
+    align-items: center;
+    height: 42px;
+    margin: 0 10px 0 0;
+    padding: 0 14px;
+    background-color: rgba(40, 30, 70, 0.95);
+    border-width: 1px;
+    border-color: #a77bff;
+    border-radius: 3px;
+    color: #d9c6ff;
+}
+
+.incident-chip:hover {
+    background-color: rgba(60, 44, 100, 1);
+}
+
+.incident-chip > .icon {
+    width: 18px;
+    height: 18px;
+    margin-right: 8px;
+}
+
+.incident-chip-text {
+    font-size: 15px;
+    -unity-font-definition: url("project://database/Assets/Resources/UI/Fonts/Inter-SemiBold.ttf");
+}
+
+.show-card {
+    width: 760px;
+}
+
+.show-host {
+    flex-direction: row;
+    align-items: flex-start;
+    padding: 10px 12px;
+    margin-bottom: 6px;
+    background-color: rgba(240, 196, 90, 0.07);
+    border-left-width: 3px;
+    border-color: #f0c45a;
+    border-radius: 3px;
+}
+
+.show-host-icon {
+    width: 28px;
+    height: 28px;
+    margin-right: 10px;
+    color: #f0c45a;
+}
+
+.show-host-text {
+    flex-shrink: 1;
+    white-space: normal;
+    font-size: 14px;
+    color: var(--text);
+}
+
+.show-section {
+    font-size: 13px;
+    color: var(--muted);
+    margin: 10px 0 4px 0;
+    -unity-font-definition: url("project://database/Assets/Resources/UI/Fonts/Inter-SemiBold.ttf");
+}
+
+.show-task {
+    flex-direction: row;
+    align-items: center;
+    padding: 8px 10px;
+    margin-bottom: 5px;
+    background-color: var(--card-bg);
+    border-radius: 3px;
+}
+
+.show-task-icon {
+    width: 18px;
+    height: 18px;
+    margin-right: 10px;
+    color: var(--muted);
+}
+
+.show-task.done .show-task-icon,
+.show-task.done .show-task-title,
+.show-task.done .show-task-amount {
+    color: var(--green);
+}
+
+.show-task-text {
+    flex-shrink: 1;
+    width: 420px;
+}
+
+.show-task-title {
+    font-size: 15px;
+    -unity-font-definition: url("project://database/Assets/Resources/UI/Fonts/Inter-SemiBold.ttf");
+}
+
+.show-task-bar {
+    height: 4px;
+    margin-top: 5px;
+    border-radius: 2px;
+    background-color: rgba(255, 255, 255, 0.08);
+}
+
+.show-task-fill {
+    height: 4px;
+    border-radius: 2px;
+    background-color: #f0c45a;
+}
+
+.show-task.done .show-task-fill {
+    background-color: var(--green);
+}
+
+.show-task-amount {
+    font-size: 13px;
+    color: var(--text-dim);
+    margin-right: 14px;
+}
+
+.show-task-points {
+    font-size: 15px;
+    color: #f0c45a;
+    width: 40px;
+    -unity-text-align: middle-right;
+    -unity-font-definition: url("project://database/Assets/Resources/UI/Fonts/Inter-SemiBold.ttf");
+}
+
+.show-rank {
+    flex-direction: row;
+    align-items: center;
+    height: 32px;
+    padding: 0 10px;
+    border-bottom-width: 1px;
+    border-color: rgba(255, 255, 255, 0.05);
+}
+
+.show-rank.mine {
+    background-color: rgba(88, 214, 141, 0.07);
+}
+
+.show-rank-place {
+    width: 22px;
+    font-size: 15px;
+    color: var(--muted);
+}
+
+.show-rank-crown {
+    width: 16px;
+    height: 16px;
+    margin-right: 6px;
+    color: #f0c45a;
+}
+
+.show-rank-name {
+    font-size: 15px;
+    -unity-font-definition: url("project://database/Assets/Resources/UI/Fonts/Inter-SemiBold.ttf");
+}
+
+.show-rank-done {
+    font-size: 12px;
+    color: var(--muted);
+    margin-right: 16px;
+}
+
+.show-rank-points {
+    font-size: 17px;
+    width: 46px;
+    -unity-text-align: middle-right;
+    -unity-font-definition: url("project://database/Assets/Resources/UI/Fonts/Inter-SemiBold.ttf");
+}
+
+.show-note {
+    margin-top: 10px;
+    white-space: normal;
+}
+
+.incident-card {
+    width: 700px;
+}
+
+.incident-head {
+    flex-direction: row;
+    align-items: flex-start;
+    margin-bottom: 12px;
+}
+
+.incident-icon {
+    color: #c6a8ff;
+}
+
+.incident-kicker {
+    font-size: 12px;
+    color: #c6a8ff;
+    -unity-font-definition: url("project://database/Assets/Resources/UI/Fonts/Inter-SemiBold.ttf");
+}
+
+.incident-title {
+    margin-bottom: 4px;
+}
+
+.incident-text {
+    font-size: 15px;
+    color: var(--text);
+}
+
+.incident-choices {
+    margin-bottom: 4px;
+}
+
+.incident-choice {
+    flex-direction: row;
+    align-items: center;
+    height: 42px;
+    margin: 0 0 6px 0;
+    padding: 0 14px;
+    background-color: var(--button-bg);
+    border-width: 1px;
+    border-color: var(--button-line);
+    border-radius: 3px;
+}
+
+.incident-choice:hover {
+    background-color: var(--button-hover);
+    border-color: rgba(240, 164, 58, 0.7);
+}
+
+.incident-choice:disabled {
+    opacity: 0.45;
+}
+
+.incident-choice-label {
+    font-size: 15px;
+    color: var(--text);
+    -unity-font-definition: url("project://database/Assets/Resources/UI/Fonts/Inter-SemiBold.ttf");
+}
+
+.incident-choice-cost {
+    font-size: 13px;
+    color: #f0c45a;
+}
+
+.incident-result {
+    padding: 6px 2px 12px 2px;
+}
+
+.alert-show { border-left-color: #f0c45a; }
+.alert-show .alert-title, .alert-show .alert-kind-icon, .alert-show .alert-badge-icon { color: #f0c45a; }
+
+.show-note,
+.alerts-note {
+    font-size: 12px;
+    color: var(--muted);
+    white-space: normal;
+    flex-shrink: 1;
+    margin-right: 10px;
+}

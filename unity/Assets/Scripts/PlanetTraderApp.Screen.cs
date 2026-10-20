@@ -156,6 +156,7 @@ namespace PlanetTrader.Client
             CreateStart(root);
             CreateSaves(root);
             CreateAlerts(root);
+            CreateShow(root);
             Icons.AttachAll(root);
             Frames.AttachAll(root);
         }
@@ -425,6 +426,7 @@ namespace PlanetTrader.Client
             _statValues["costs"].text = $"{Fmt.Money(g.CostsPerTurn)} / ход";
             _statValues["actions"].text = $"{g.ActionsLeft}/{g.ActionsPerTurn}";
             _statValues["reputation"].text = Mathf.RoundToInt((float)g.Reputation).ToString();
+            RefreshShowStat();
             for (int i = 0; i < _tabs.childCount; i++)
                 _tabs[i].EnableInClassList("selected", i == (int)_tab);
         }

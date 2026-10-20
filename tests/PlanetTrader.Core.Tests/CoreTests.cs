@@ -353,7 +353,7 @@ public class DiscoveryTests
     [Fact]
     public void DiscoveredPlanetsAppearInRegistryAtExpectedRate()
     {
-        var b = new Balance { AiBuyChance = 0, AiResaleChance = 0, AiStartShare = 0, AccidentChance = 0, MaxSectorPlanets = 1000 };
+        var b = new Balance { AiBuyChance = 0, AiResaleChance = 0, AiStartShare = 0, AccidentChance = 0, MaxSectorPlanets = 1000, LotGapMax = 0, IncidentGapMax = 0, SeasonTurns = 0 };
         var g = Game.New(b, 9);
         int before = g.AllPlanets.Count;
         for (int i = 0; i < 700; i++) g.EndTurn();
@@ -366,7 +366,7 @@ public class DiscoveryTests
     [Fact]
     public void FullSectorHasNoMoreDiscoveries()
     {
-        var b = new Balance { AiBuyChance = 0, AiResaleChance = 0, AiStartShare = 0, AccidentChance = 0 };
+        var b = new Balance { AiBuyChance = 0, AiResaleChance = 0, AiStartShare = 0, AccidentChance = 0, LotGapMax = 0, IncidentGapMax = 0, SeasonTurns = 0 };
         var g = Game.New(b, 9);
         for (int i = 0; i < 1000; i++) g.EndTurn();
         Assert.True(g.IsSectorFull());
@@ -376,7 +376,8 @@ public class DiscoveryTests
     [Fact]
     public void NoDiscoveriesWhenChanceIsZero()
     {
-        var g = Game.New(new Balance { DiscoveryChancePerTurn = 0 }, 9);
+        // Легендарные планеты «Лота недели» — не открытия: их здесь нет.
+        var g = Game.New(new Balance { DiscoveryChancePerTurn = 0, LotGapMax = 0, IncidentGapMax = 0, SeasonTurns = 0 }, 9);
         int before = g.AllPlanets.Count;
         for (int i = 0; i < 100; i++) g.EndTurn();
         Assert.Equal(before, g.AllPlanets.Count);

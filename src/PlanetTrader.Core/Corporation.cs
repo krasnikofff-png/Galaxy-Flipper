@@ -47,6 +47,18 @@ namespace PlanetTrader.Core
         /// <summary>Поступки с жителями: их помнят магнаты.</summary>
         public readonly List<Deed> Deeds = new List<Deed>();
 
+        /// <summary>Счётчики для заданий шоу «Риелтор года» (в старых сохранениях их нет — создаются сами).</summary>
+        public ShowStats Stats => _stats ??= new ShowStats();
+        ShowStats _stats;
+        /// <summary>Кубки шоу — за первые места в сезонах.</summary>
+        public int Cups;
+        /// <summary>Места в прошедших сезонах, с единицы.</summary>
+        public readonly List<int> SeasonPlaces = new List<int>();
+        /// <summary>Случай, который ждёт ответа; null — нет.</summary>
+        public ActiveIncident Incident;
+        public int NextIncidentTurn;
+        public string LastIncidentId;
+
         // Статистика для симулятора и плейтестов.
         public int TotalSeizures;
         public int TurnsActionsExhausted;

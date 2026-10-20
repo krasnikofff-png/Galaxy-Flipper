@@ -70,19 +70,78 @@ namespace PlanetTrader.Sim
                 g.HireManager(BestCandidate(g));
             _ranOutOfActions = false;
 
+            HandleIncident(g);
             FulfillOrders(g);
             if (_s.CaresForPeople) ManagePeople(g);
             SellResources(g);
             BuildMines(g);
             BuyLicenses(g);
             BuyPlanets(g);
+            BidOnLot(g);
             // Развитие — на то, что осталось после покупок: новая планета обычно окупается быстрее.
             if (_s.Develops && !_saving) Develop(g);
             ExploreAhead(g);
             ManageDebt(g);
         }
 
-        static double Buffer(Game g) => CashBufferTurns * g.CostsPerTurn;
+        /// <summary>Запас денег: на несколько ходов расходов и на ставку в «Лоте недели» (без денег ставка сгорит).</summary>
+        static double Buffer(Game g) => CashBufferTurns * g.CostsPerTurn + (g.MyLotBid?.Amount ?? 0);
+
+        /// <summary>Случай: вариант с лучшей ожидаемой выгодой — деньги, репутация, лояльность (если жители важны), очки шоу.</summary>
+        void HandleIncident(Game g)
+        {
+            var a = g.Incident;
+            if (a == null) return;
+            int best = a.Def.Choices.Length - 1;
+            double bestScore = double.MinValue;
+            for (int i = 0; i < a.Def.Choices.Length; i++)
+            {
+                var c = a.Def.Choices[i];
+                double cost = g.IncidentCost(a, c);
+                if (cost > 0 && g.Money - cost < Buffer(g)) continue;
+                double score = -cost + c.Chance * Value(g, a, c.Success) + (1 - c.Chance) * Value(g, a, c.Failure ?? c.Success);
+                if (score > bestScore)
+                {
+                    bestScore = score;
+                    best = i;
+                }
+            }
+            g.ResolveIncident(best, out _);
+        }
+
+        /// <summary>Во что бот ценит исход случая.</summary>
+        double Value(Game g, ActiveIncident a, IncidentOutcome o)
+        {
+            var p = g.GetPlanet(a.PlanetId);
+            double v = o.Money * a.Scale + o.Reputation * 40 + o.ShowPoints * 30 + o.QuietTurns * 30;
+            if (_s.CaresForPeople && p != null && p.Inhabited) v += o.Loyalty * 25;
+            var r = o.Resource ?? p?.Resource ?? Resource.Ice;
+            v += o.Stock * g.Market.Price(r);
+            if (p != null)
+            {
+                v += o.ReserveShare * p.Capacity * g.Market.Price(p.Resource) * 0.5;
+                v -= o.AccidentTurns * p.Type.OutputPerTurn * g.Market.Price(p.Resource);
+                if (o.SalePremium > 0) v += p.MarketValue(g.Balance) * (o.SalePremium - 1);
+            }
+            return v;
+        }
+
+        /// <summary>«Лот недели»: ставка, если планета стоит своих денег и после неё останется запас.</summary>
+        void BidOnLot(Game g)
+        {
+            var lot = g.Lot;
+            if (lot == null || g.ActionsLeft == 0 || g.MyLotBid != null) return;
+            var p = g.GetPlanet(lot.PlanetId);
+            if (p == null || !g.HasLicense(p.Sector)) return;
+            double worth = p.MarketValue(g.Balance) + p.RuinsValue + (p.Inhabited ? 1500 : 0);
+            foreach (double f in g.Balance.LotBidFactors.OrderByDescending(x => x))
+            {
+                double price = g.LotBidPrice(f);
+                if (price > worth * 1.1 || g.Money - price < Buffer(g)) continue;
+                g.PlaceLotBid(f);
+                return;
+            }
+        }
 
         /// <summary>Лицензия на следующий сектор — когда она по уровню и после неё останется на планету в этом секторе.</summary>
         void BuyLicenses(Game g)

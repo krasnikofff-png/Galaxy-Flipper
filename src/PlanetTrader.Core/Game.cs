@@ -59,7 +59,7 @@ namespace PlanetTrader.Core
     /// Действия (покупка, шахта, продажа планеты, запуск зонда, найм) тратят очки действий,
     /// торговля на бирже, заказы и кредит — бесплатны.
     /// </summary>
-    public sealed class Game
+    public sealed partial class Game
     {
         static readonly string[] Customers =
         {
@@ -178,7 +178,7 @@ namespace PlanetTrader.Core
         public int PlayerPlanetCount => _planets.Count(p => p.OwnerCorp == _current);
 
         /// <summary>Планеты, которые игрок может купить прямо сейчас.</summary>
-        public IEnumerable<Planet> PlanetsForSale => _planets.Where(p => p.Owner == Owner.Registry && !p.IsDepleted && HasLicense(p.Sector));
+        public IEnumerable<Planet> PlanetsForSale => _planets.Where(p => p.Owner == Owner.Registry && !p.IsDepleted && HasLicense(p.Sector) && !IsLot(p));
 
         public double Stock(Resource r) => _stock[(int)r];
 
@@ -291,6 +291,7 @@ namespace PlanetTrader.Core
             }
             g._current = g._corps[0];
             g.Market.SectorFactor = Math.Pow(Math.Max(1, players), balance.MarketGrowthPower);
+            if (g.ShowOn) g.StartSeason();
             return g;
         }
 
@@ -753,6 +754,7 @@ namespace PlanetTrader.Core
         {
             var p = GetPlanet(planetId);
             if (p == null || p.Owner != Owner.Registry) return ActionResult.Fail("Планета не продаётся");
+            if (IsLot(p)) return LotOnly;
             if (!HasLicense(p.Sector)) return NoLicense(p);
             if (p.IsDepleted) return ActionResult.Fail("Планета выработана");
             if (p.Inhabited)
@@ -770,6 +772,8 @@ namespace PlanetTrader.Core
             return ActionResult.Success;
         }
 
+        static readonly ActionResult LotOnly = ActionResult.Fail("Это «Лот недели»: планету продают только на торгах");
+
         ActionResult NoLicense(Planet p) => ActionResult.Fail($"Нет лицензии на сектор «{Balance.Sectors[p.Sector].Name}»");
 
         const string NeedExploration = "Жители говорят только с тем, кто разведал планету: сначала разведайте её зондом";
@@ -780,6 +784,7 @@ namespace PlanetTrader.Core
 
         void Acquire(Planet p, double price)
         {
+            _current.Stats.PlanetsBought++;
             Money -= price;
             p.OwnerCorp = _current;
             p.BoughtOnTurn = Turn;
@@ -823,6 +828,7 @@ namespace PlanetTrader.Core
             accepted = false;
             var p = GetPlanet(planetId);
             if (p == null || p.Owner != Owner.Registry) return ActionResult.Fail("Планета не продаётся");
+            if (IsLot(p)) return LotOnly;
             if (!HasLicense(p.Sector)) return NoLicense(p);
             if (!p.Inhabited) return ActionResult.Fail("Планета необитаема, её продаёт реестр");
             if (p.IsDepleted) return ActionResult.Fail("Планета выработана");
@@ -899,6 +905,7 @@ namespace PlanetTrader.Core
             p.Earned -= Balance.FestivalCost;
             p.Loyalty = Clamp(p.Loyalty + festival);
             RecordDeed(DeedKind.Festival, p);
+            _current.Stats.Festivals++;
             return ActionResult.Success;
         }
 
@@ -980,6 +987,7 @@ namespace PlanetTrader.Core
             p.Tax = TaxLevel.None;
             p.OnStrike = false;
             RecordDeed(DeedKind.Colony, p);
+            _current.Stats.Colonies++;
             return ActionResult.Success;
         }
 
@@ -1065,6 +1073,7 @@ namespace PlanetTrader.Core
                     {
                         p.Education++;
                         RecordDeed(DeedKind.Education, p);
+                        _current.Stats.EducationLevels++;
                         report.Events.Add($"Жители {p.Type.Name} #{p.Id} выучились: {p.Specialty.RuName()}, уровень {p.Education}. " +
                                           $"Умственный труд — {Math.Round(IntellectIncome(p))} за ход.");
                     }
@@ -1158,6 +1167,7 @@ namespace PlanetTrader.Core
 
             Money += proceeds;
             p.Earned += proceeds;
+            if (p.Earned > p.Invested) _current.Stats.ProfitableSales++;
             ReleaseToRegistry(p);
             SoldPlanets.Add(p);
             return ActionResult.Success;
@@ -1213,6 +1223,7 @@ namespace PlanetTrader.Core
             won = false;
             var p = GetPlanet(planetId);
             if (p == null || !p.SoldAtAuction) return ActionResult.Fail("Планета не продаётся с аукциона");
+            if (IsLot(p)) return LotOnly;
             if (!HasLicense(p.Sector)) return NoLicense(p);
             if (p.IsDepleted) return ActionResult.Fail("Планета выработана");
             double bid = BidPrice(p, factor);
@@ -1512,6 +1523,7 @@ namespace PlanetTrader.Core
                 found.Knowledge = Knowledge.Scanned;
                 _planets.Add(found);
                 line += $". Найдена скрытая планета {found.Type.Name} #{found.Id}: её видите только вы";
+                _current.Stats.HiddenFound++;
             }
             report.Events.Add(line + ".");
         }
@@ -1521,6 +1533,7 @@ namespace PlanetTrader.Core
             var p = GetPlanet(probe.TargetPlanetId);
             if (p == null) return;
             p.Knowledge = Knowledge.Explored;
+            _current.Stats.PlanetsExplored++;
             report.Events.Add(DescribeExploration(p));
             if (IsMine(p)) LootRuins(p, report.Events);
         }
@@ -1590,7 +1603,9 @@ namespace PlanetTrader.Core
             if (amount <= 0) return ActionResult.Fail("Нечего продавать");
             if (_stock[(int)r] + 1e-9 < amount) return ActionResult.Fail("Столько ресурса нет на складе");
             _stock[(int)r] -= amount;
-            Money += Market.Sell(r, amount, MarketDepthFactor) * (1 - CartelCut);
+            double proceeds = Market.Sell(r, amount, MarketDepthFactor) * (1 - CartelCut);
+            Money += proceeds;
+            _current.Stats.SoldOnExchange += proceeds;
             return ActionResult.Success;
         }
 
@@ -1605,6 +1620,7 @@ namespace PlanetTrader.Core
             Money += OrderNetPayout(o);
             ChangeReputation(Balance.ReputationPerOrder);
             _orders.Remove(o);
+            _current.Stats.OrdersFulfilled++;
             return ActionResult.Success;
         }
 
@@ -1672,6 +1688,8 @@ namespace PlanetTrader.Core
                 _current = caller;
             }
 
+            // Кто не ответил на случай до конца хода — промолчал.
+            Each(ExpireIncident);
             EachCorp(ProducePlayer);
             Regenerate(shared);
             EachCorp(r =>
@@ -1700,6 +1718,8 @@ namespace PlanetTrader.Core
             Market.Tick(_rng);
             Market.SectorFactor = Math.Pow(Math.Max(1, active.Count), Balance.MarketGrowthPower);
             UpdateEvent(shared);
+            ResolveLot(reports, shared);
+            UpdateShow(reports, shared);
 
             Turn++;
             EachCorp(_ => ResetActions());
@@ -1707,6 +1727,9 @@ namespace PlanetTrader.Core
             Each(r => UpdateLevel(r, true));
             Run(rivals, r => UpdateLevel(r, false));
             Each(_ => { if (Turn >= _current.NextCandidatesTurn) RefreshCandidates(); });
+            NextSeason(reports, active);
+            AnnounceLot(reports, active);
+            Each(_ => OfferIncident());
             _lastReports = reports;
             return shared;
         }
@@ -1950,6 +1973,7 @@ namespace PlanetTrader.Core
         {
             if (CurrentResearch == null || --CurrentResearch.TurnsLeft > 0) return;
             _researched.Add(CurrentResearch.Technology.Id);
+            _current.Stats.ResearchDone++;
             report.Events.Add($"Исследование «{CurrentResearch.Technology.Name}» завершено: {CurrentResearch.Technology.Description}");
             CurrentResearch = null;
         }
@@ -2275,7 +2299,7 @@ namespace PlanetTrader.Core
                 if (!_rng.Chance(Balance.AiBuyChance * buyer.AuctionInterest / 0.45)) continue;
                 double budget = buyer.Money - MagnateReserve(buyer);
                 var best = _planets
-                    .Where(p => p.Owner == Owner.Registry && !p.IsDepleted && p.Sector == buyer.Sector && !p.FoundByProbe && p.ListPrice(Balance) <= budget)
+                    .Where(p => p.Owner == Owner.Registry && !p.IsDepleted && p.Sector == buyer.Sector && !p.FoundByProbe && !IsLot(p) && p.ListPrice(Balance) <= budget)
                     // ИИ знает о планетах то же, что реестр.
                     .OrderByDescending(p => p.EstimatedValue(Balance) / Math.Max(1, p.ListPrice(Balance)))
                     .FirstOrDefault();

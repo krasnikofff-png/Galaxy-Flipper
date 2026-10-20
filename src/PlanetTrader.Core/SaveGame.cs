@@ -91,6 +91,8 @@ namespace PlanetTrader.Core
             foreach (var c in b.Characters) Add(c, "character:" + c.Name);
             for (int i = 0; i < b.CorporationLevels.Length; i++) Add(b.CorporationLevels[i], "level:" + i);
             for (int i = 0; i < b.Magnates.Length; i++) Add(b.Magnates[i], "magnate:" + i);
+            foreach (var t in b.ShowTasks) Add(t, "showtask:" + t.Kind);
+            foreach (var x in b.Incidents) Add(x, "incident:" + x.Id);
             return keys;
         }
 

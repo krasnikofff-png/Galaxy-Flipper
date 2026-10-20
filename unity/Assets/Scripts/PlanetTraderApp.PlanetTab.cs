@@ -43,7 +43,10 @@ namespace PlanetTrader.Client
                 head.Add(new Label($"осталось {g.ActionsLeft} из {g.ActionsPerTurn}").WithClass("actions-left"));
                 switch (p.Owner)
                 {
-                    case Owner.Registry: RegistryActions(ui, p, silhouette, exact); break;
+                    case Owner.Registry:
+                        if (g.IsLot(p)) LotActions(ui, p);
+                        else RegistryActions(ui, p, silhouette, exact);
+                        break;
                     case Owner.Player: OwnActions(ui, p, exact); break;
                     default: RivalActions(ui, p, silhouette); break;
                 }
@@ -67,12 +70,16 @@ namespace PlanetTrader.Client
         void PlanetHead(PanelBuilder ui, Planet p, bool silhouette)
         {
             var head = ui.Add(new VisualElement()).WithClass("planet-head");
-            head.Add(new Label(silhouette ? $"Силуэт #{p.Id}" : $"{p.Type.Name} #{p.Id}").WithClass("planet-title"));
-            string pill = p.Owner == Owner.Player ? "Ваша планета"
+            // У легендарной планеты («Лот недели») — своё имя.
+            string title = silhouette ? $"Силуэт #{p.Id}" : p.Legend != null ? $"«{p.Legend}»" : $"{p.Type.Name} #{p.Id}";
+            head.Add(new Label(title).WithClass("planet-title"));
+            bool lot = _game.IsLot(p);
+            string pill = lot ? "Лот недели"
+                : p.Owner == Owner.Player ? "Ваша планета"
                 : p.Owner == Owner.Ai ? "Планета " + (_game.GetMagnate(p.MagnateId)?.Name.Split(' ')[0] ?? "магната")
                 : silhouette ? "Силуэт" : p.FoundByProbe ? "Нашёл ваш зонд" : "Свободна";
             var tag = new Label(pill).WithClass("pill");
-            tag.AddToClassList(p.Owner == Owner.Player ? "mine" : p.Owner == Owner.Ai ? "rival" : p.FoundByProbe ? "found" : "free");
+            tag.AddToClassList(lot ? "lot" : p.Owner == Owner.Player ? "mine" : p.Owner == Owner.Ai ? "rival" : p.FoundByProbe ? "found" : "free");
             head.Add(tag);
             head.Add(new VisualElement { pickingMode = PickingMode.Ignore }.WithClass("spacer"));
             var coords = new VisualElement().WithClass("coords");

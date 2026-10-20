@@ -27,6 +27,7 @@ namespace PlanetTrader.Client
             [AlertKind.Disaster] = ("flame", "disaster", 3),
             [AlertKind.Trick] = ("tophat", "trick", 4),
             [AlertKind.Good] = ("star", "good", 5),
+            [AlertKind.Show] = ("crown", "show", 6),
         };
 
         void CreateAlerts(VisualElement root)
@@ -56,6 +57,7 @@ namespace PlanetTrader.Client
         {
             _alerts.AddToClassList("hidden");
             _alertsList.Clear();
+            Later(NextPopup);
         }
 
         /// <summary>Карточка события: портрет виноватого магната (или значок), заголовок, подробности, «Показать планету».</summary>

@@ -525,6 +525,320 @@ namespace PlanetTrader.Core
         public double BasePrice(Resource r) => BaseResourcePrice[(int)r];
         public double Depth(Resource r) => MarketDepth[(int)r];
 
+        // ------------------------------------------------------------------
+        // Шоу «Риелтор года» — цель партии (решение автора). Сезон с заданиями на очки против магнатов.
+        // ------------------------------------------------------------------
+
+        /// <summary>Длина сезона в ходах; 0 — шоу выключено.</summary>
+        public int SeasonTurns = 40;
+        public int SeasonTasks = 3;
+        /// <summary>Сколько магнатов соревнуется с игроками: самые богатые в секторах с лицензией.</summary>
+        public int ShowRivals = 3;
+        /// <summary>
+        /// Шанс магната за ход выполнить задание, которое честно не посчитать (колонисты, учёба, разведка…).
+        /// Рост капитала и лоты у магнатов считаются по-настоящему.
+        /// </summary>
+        public double MagnateTaskChance = 0.017;
+        /// <summary>Призы за 1-е, 2-е и 3-е место (× масштаб уровня корпорации) и прибавка к репутации.</summary>
+        public double[] ShowPrize = { 1200, 600, 300 };
+        public double[] ShowPrizeReputation = { 5, 2, 0 };
+        /// <summary>Масштаб денег в призах и случаях по уровню корпорации: Стартап, Контора, Компания, Корпорация, Концерн.</summary>
+        public double[] ShowLevelScale = { 1, 1.6, 2.5, 4, 6 };
+
+        public ShowTaskSpec[] ShowTasks =
+        {
+            new ShowTaskSpec { Kind = ShowTaskKind.BuyPlanets, Title = "Скупщик", Text = "Купить {0}", Noun = new[] { "планету", "планеты", "планет" }, Target = 2, TargetPerLevel = 0.5, Points = 15 },
+            new ShowTaskSpec { Kind = ShowTaskKind.FlipPlanet, Title = "Флиппер", Text = "Продать {0}, которая принесла больше, чем в неё вложено", Noun = new[] { "планету", "планеты", "планет" }, Target = 1, Points = 20 },
+            new ShowTaskSpec { Kind = ShowTaskKind.GrowCapital, Title = "Рост", Text = "Вырастить капитал на {0}% за сезон", Target = 40, TargetPerLevel = -5, Points = 20 },
+            new ShowTaskSpec { Kind = ShowTaskKind.WinLot, Title = "Лот недели", Text = "Выиграть «Лот недели»", Target = 1, Points = 25 },
+            new ShowTaskSpec { Kind = ShowTaskKind.SettleColony, Title = "Новосёлы", Text = "Заселить колонистов: {0}", Noun = new[] { "планета", "планеты", "планет" }, Target = 1, Points = 15 },
+            new ShowTaskSpec { Kind = ShowTaskKind.Educate, Title = "Учитель года", Text = "Выучить жителей: {0} образования", Noun = new[] { "уровень", "уровня", "уровней" }, Target = 1, TargetPerLevel = 0.5, Points = 20 },
+            new ShowTaskSpec { Kind = ShowTaskKind.FindHidden, Title = "Следопыт", Text = "Найти зондом {0}", Noun = new[] { "скрытую планету", "скрытые планеты", "скрытых планет" }, Target = 1, Points = 15 },
+            new ShowTaskSpec { Kind = ShowTaskKind.ExplorePlanets, Title = "Разведчик", Text = "Полностью разведать {0}", Noun = new[] { "планету", "планеты", "планет" }, Target = 3, TargetPerLevel = 1, Points = 10 },
+            new ShowTaskSpec { Kind = ShowTaskKind.FulfillOrders, Title = "Поставщик", Text = "Выполнить {0}", Noun = new[] { "заказ", "заказа", "заказов" }, Target = 2, TargetPerLevel = 1, Points = 15 },
+            new ShowTaskSpec { Kind = ShowTaskKind.Research, Title = "Прорыв", Text = "Завершить {0}", Noun = new[] { "исследование", "исследования", "исследований" }, Target = 1, Points = 10 },
+            new ShowTaskSpec { Kind = ShowTaskKind.Festivals, Title = "Душа компании", Text = "Устроить {0}", Noun = new[] { "праздник", "праздника", "праздников" }, Target = 2, Points = 10 },
+            new ShowTaskSpec { Kind = ShowTaskKind.SellOnExchange, Title = "Биржевик", Text = "Продать на бирже ресурсов на {0}", Target = 4000, TargetPerLevel = 4000, Points = 10 },
+        };
+
+        /// <summary>Реплики ведущего, Брэда Квазара.</summary>
+        public string[] ShowHostStart =
+        {
+            "«Новый сезон, новые планеты, старые долги!»",
+            "«Мы снова в эфире! Приготовьте кошельки и нервы!»",
+            "«Дамы, господа и прочие формы жизни — поехали!»",
+        };
+        public string[] ShowHostWin =
+        {
+            "«Невероятно! Кубок уезжает к тому, кто умеет считать не только чужие деньги!»",
+            "«Магнаты в слезах, зрители в восторге, рейтинги в открытом космосе!»",
+            "«Встречайте риелтора сезона! Аплодисменты — щупальцами, кто чем может!»",
+        };
+        public string[] ShowHostLose =
+        {
+            "«Не расстраивайтесь: это первое место среди проигравших!»",
+            "«Зрители вас любят. Особенно когда вы проигрываете!»",
+            "«В следующем сезоне всё будет иначе. Наверное.»",
+        };
+        public string[] ShowHostLot =
+        {
+            "«Продано! Кто-то сегодня спит на мешке с кредитами — и это не магнаты!»",
+            "«Сделка недели! Мои поздравления и соболезнования вашему бухгалтеру!»",
+        };
+
+        // ------------------------------------------------------------------
+        // Случаи: раз в несколько ходов — гость, сделка или беда с вариантами ответа.
+        // Деньги в случаях умножаются на ShowLevelScale. Последний вариант выбирается за игрока, если тот промолчал.
+        // ------------------------------------------------------------------
+
+        public int IncidentFirstTurn = 3;
+        /// <summary>Сколько ходов между случаями; IncidentGapMax = 0 — случаев нет.</summary>
+        public int IncidentGapMin = 2, IncidentGapMax = 4;
+
+        public Incident[] Incidents =
+        {
+            new Incident
+            {
+                Id = "tax", Title = "Налоговая проверка", Icon = "clipboard", Target = IncidentTarget.None,
+                Text = "Инспектор Галактической налоговой нашёл в ваших бумагах «творческий подход к арифметике».",
+                Choices = new[]
+                {
+                    new IncidentChoice { Label = "Сунуть конверт", Cost = 120, Chance = 0.7,
+                        Success = new IncidentOutcome { Reputation = -2, Text = "Инспектор внезапно нашёл ошибку в собственных расчётах." },
+                        Failure = new IncidentOutcome { Money = -500, Reputation = -6, Text = "Инспектор оказался честным. Штраф вырос, а по бирже пошли слухи." } },
+                    new IncidentChoice { Label = "Спорить в суде", Chance = 0.5,
+                        Success = new IncidentOutcome { Text = "Суд признал ваш «творческий подход» искусством." },
+                        Failure = new IncidentOutcome { Money = -450, Text = "Суд не оценил искусство. Штраф с процентами." } },
+                    new IncidentChoice { Label = "Заплатить штраф", Cost = 300,
+                        Success = new IncidentOutcome { Text = "Инспектор пересчитал деньги дважды и ушёл довольный." } },
+                },
+            },
+            new Incident
+            {
+                Id = "refugees", Title = "Беженцы", Icon = "people", Target = IncidentTarget.MyInhabited,
+                Text = "К {planet} причалил ковчег беженцев с Кометы-7. Просят приютить хотя бы до зимы (зима на комете — вечно).",
+                Choices = new[]
+                {
+                    new IncidentChoice { Label = "Приютить", Cost = 200,
+                        Success = new IncidentOutcome { Loyalty = 12, Reputation = 3, Text = "Беженцы оказались отличными соседями и научили всех печь пироги из метеоритов." } },
+                    new IncidentChoice { Label = "Дать денег на дорогу", Cost = 80,
+                        Success = new IncidentOutcome { Reputation = 1, Text = "Беженцы улетели к соседям. Соседи вам это припомнят." } },
+                    new IncidentChoice { Label = "Отказать",
+                        Success = new IncidentOutcome { Reputation = -3, Loyalty = -5, Text = "Ковчег развернулся. Ваши жители долго смотрели ему вслед." } },
+                },
+            },
+            new Incident
+            {
+                Id = "filming", Title = "Съёмки шоу", Icon = "star", Target = IncidentTarget.MyPlanet,
+                Text = "Продюсеры «Риелтора года» хотят снять на {planet} выпуск «Один день из жизни риелтора».",
+                Choices = new[]
+                {
+                    new IncidentChoice { Label = "Снять с размахом", Cost = 300,
+                        Success = new IncidentOutcome { ShowPoints = 10, Reputation = 2, Text = "Брэд Квазар прошёлся по вашей шахте в белом костюме. Рейтинги взлетели: +10 очков в шоу." } },
+                    new IncidentChoice { Label = "Согласиться",
+                        Success = new IncidentOutcome { Money = 150, ShowPoints = 4, Loyalty = -4, Text = "Съёмочная группа вытоптала газон, но выпуск вышел бодрым: +4 очка в шоу." } },
+                    new IncidentChoice { Label = "Отказаться",
+                        Success = new IncidentOutcome { Text = "Продюсеры пожали плечами и поехали снимать магнатов." } },
+                },
+            },
+            new Incident
+            {
+                Id = "inventor", Title = "Безумный изобретатель", Icon = "gear", Target = IncidentTarget.MyMine,
+                Text = "Профессор Шестерёнкин предлагает «квантовую кирку» для шахты на {planet}. Гарантия — честное слово профессора.",
+                Choices = new[]
+                {
+                    new IncidentChoice { Label = "Купить кирку", Cost = 400, Chance = 0.6,
+                        Success = new IncidentOutcome { ReserveShare = 0.25, Text = "Кирка прошла сквозь скалу и нашла новую жилу: запас +25%." },
+                        Failure = new IncidentOutcome { AccidentTurns = 2, Text = "Кирка оказалась квантовой в худшем смысле: шахта на 2 хода встала." } },
+                    new IncidentChoice { Label = "Вежливо отказать",
+                        Success = new IncidentOutcome { Text = "Профессор ушёл предлагать кирку магнатам. Пусть у них что-нибудь взорвётся." } },
+                },
+            },
+            new Incident
+            {
+                Id = "wedding", Title = "Свадьба вождя", Icon = "heart", Target = IncidentTarget.MyInhabited,
+                Text = "Жители {planet} женят вождя. По местной традиции банкет оплачивает самый богатый гость. Угадайте кто.",
+                Choices = new[]
+                {
+                    new IncidentChoice { Label = "Оплатить банкет", Cost = 250,
+                        Success = new IncidentOutcome { Loyalty = 12, Text = "Банкет удался: вас трижды подбросили к потолку купола." } },
+                    new IncidentChoice { Label = "Прийти и сказать речь", Chance = 0.6,
+                        Success = new IncidentOutcome { Loyalty = 6, Text = "Речь тронула всех — особенно место про снижение налогов." },
+                        Failure = new IncidentOutcome { Loyalty = -6, Text = "Речь про эффективность добычи гостям не зашла." } },
+                    new IncidentChoice { Label = "Прислать открытку",
+                        Success = new IncidentOutcome { Loyalty = -4, Text = "Открытку повесили на видное место. Рядом — список обид." } },
+                },
+            },
+            new Incident
+            {
+                Id = "offer", Title = "Предложение магната", Icon = "tag", Target = IncidentTarget.MyPlanetAndMagnate, MinTurn = 10,
+                Text = "{magnate} хочет купить {planet} за {price} — заметно дороже рынка. «Не продашь сейчас — пожалеешь потом», — добавляет с улыбкой.",
+                Choices = new[]
+                {
+                    new IncidentChoice { Label = "Продать",
+                        Success = new IncidentOutcome { SalePremium = 1.35, Text = "Сделка закрыта. {magnate} уже рассказывает в эфире, как обвёл вас вокруг пальца." } },
+                    new IncidentChoice { Label = "Отказать",
+                        Success = new IncidentOutcome { Text = "{magnate} пожимает плечами. Кажется, это запомнят." } },
+                },
+            },
+            new Incident
+            {
+                Id = "comet", Title = "Ледяная комета", Icon = "ice", Target = IncidentTarget.None,
+                Text = "Мимо проносится ледяная комета. Если поймать её сетью, весь лёд ваш.",
+                Choices = new[]
+                {
+                    new IncidentChoice { Label = "Поймать сетью", Cost = 150, Chance = 0.75,
+                        Success = new IncidentOutcome { Stock = 60, Resource = PlanetTrader.Core.Resource.Ice, Text = "Комета в сети! На склад биржи упало 60 льда." },
+                        Failure = new IncidentOutcome { Text = "Комета порвала сеть и улетела, помахав хвостом." } },
+                    new IncidentChoice { Label = "Пусть летит",
+                        Success = new IncidentOutcome { Text = "Комета улетела. Кто-то на соседней планете загадал желание." } },
+                },
+            },
+            new Incident
+            {
+                Id = "museum", Title = "Музей риелторов", Icon = "flag", Target = IncidentTarget.None,
+                Text = "Галактический музей готовит выставку «Риелторы прошлого и настоящего» и просит пожертвование.",
+                Choices = new[]
+                {
+                    new IncidentChoice { Label = "Пожертвовать", Cost = 300,
+                        Success = new IncidentOutcome { Reputation = 5, ShowPoints = 3, Text = "Ваш портрет повесили между основателями галактики. Немного криво." } },
+                    new IncidentChoice { Label = "Отдать старый офисный стул",
+                        Success = new IncidentOutcome { Reputation = 1, Text = "Стул выставили с табличкой «Трон молодого риелтора». Ходят смотреть." } },
+                    new IncidentChoice { Label = "Отказать",
+                        Success = new IncidentOutcome { Reputation = -1, Text = "Музей обиделся и повесил на ваше место портрет магната." } },
+                },
+            },
+            new Incident
+            {
+                Id = "tabloid", Title = "Жёлтая пресса", Icon = "journal", Target = IncidentTarget.None,
+                Text = "Таблоид «Галактический сплетник» пишет, что вы держите жителей на диете из вакуума.",
+                Choices = new[]
+                {
+                    new IncidentChoice { Label = "Нанять пиарщика", Cost = 300,
+                        Success = new IncidentOutcome { Reputation = 4, Text = "Пиарщик развернул историю: теперь вы держите жителей на здоровой диете." } },
+                    new IncidentChoice { Label = "Подать в суд", Chance = 0.5,
+                        Success = new IncidentOutcome { Money = 400, Text = "Таблоид извинился и заплатил. Извинение напечатали мелко, деньги — крупно." },
+                        Failure = new IncidentOutcome { Money = -300, Reputation = -2, Text = "Суд решил, что вакуум — это всё-таки диета." } },
+                    new IncidentChoice { Label = "Не обращать внимания",
+                        Success = new IncidentOutcome { Reputation = -3, Text = "Слух прожил неделю и умер своей смертью. Осадок остался." } },
+                },
+            },
+            new Incident
+            {
+                Id = "truck", Title = "Сломанный грузовик", Icon = "rocket", Target = IncidentTarget.MyMine,
+                Text = "Грузовик с {planet} заглох посреди пустоты. Пилот просит денег на запчасти, иначе бросит груз и улетит на попутке.",
+                Choices = new[]
+                {
+                    new IncidentChoice { Label = "Оплатить ремонт", Cost = 120,
+                        Success = new IncidentOutcome { Text = "Грузовик снова в пути. Пилот прислал селфи на фоне туманности." } },
+                    new IncidentChoice { Label = "Пусть бросает груз",
+                        Success = new IncidentOutcome { Stock = -25, Text = "25 единиц ({resource}) дрейфуют где-то между звёзд." } },
+                },
+            },
+            new Incident
+            {
+                Id = "warehouse", Title = "Забытый склад", Icon = "cube", Target = IncidentTarget.None,
+                Text = "В подвале биржи нашли склад с вашим именем на двери. Хранение не оплачено с прошлого года.",
+                Choices = new[]
+                {
+                    new IncidentChoice { Label = "Оплатить и забрать", Cost = 150,
+                        Success = new IncidentOutcome { Stock = 40, Resource = PlanetTrader.Core.Resource.Metal, Text = "Внутри 40 металла и чей-то бутерброд. Бутерброд оставили." } },
+                    new IncidentChoice { Label = "Отказаться",
+                        Success = new IncidentOutcome { Text = "Склад продали с молотка. Бутерброд ушёл за 3 кредита." } },
+                },
+            },
+            new Incident
+            {
+                Id = "preacher", Title = "Проповедник", Icon = "warning", Target = IncidentTarget.MyInhabited,
+                Text = "На {planet} пришёл бродячий проповедник и учит жителей, что работа — пережиток прошлого.",
+                Choices = new[]
+                {
+                    new IncidentChoice { Label = "Нанять его учителем", Cost = 200,
+                        Success = new IncidentOutcome { Loyalty = 4, Text = "Проповедник ведёт в школе философию. Жители спорят, но работают." } },
+                    new IncidentChoice { Label = "Выслать с планеты",
+                        Success = new IncidentOutcome { Loyalty = -5, Text = "Проповедника выслали. Его последователи обиделись." } },
+                    new IncidentChoice { Label = "Пусть говорит", Chance = 0.5,
+                        Success = new IncidentOutcome { Text = "Проповедника никто не слушал: все были на смене." },
+                        Failure = new IncidentOutcome { Loyalty = -12, Text = "Проповедь нашла отклик. На площади уже рисуют плакаты." } },
+                },
+            },
+            new Incident
+            {
+                Id = "spy", Title = "Шпион магната", Icon = "eye", Target = IncidentTarget.Magnate, MinTurn = 8,
+                Text = "Охрана поймала шпиона, которого подослал(а) {magnate}. Шпион готов перейти на вашу сторону — за скромное вознаграждение.",
+                Choices = new[]
+                {
+                    new IncidentChoice { Label = "Перевербовать", Cost = 250,
+                        Success = new IncidentOutcome { QuietTurns = 8, Text = "Шпион кормит хозяина ложными сводками: 8 ходов {magnate} занят(а) ерундой и вам не пакостит." } },
+                    new IncidentChoice { Label = "Сдать в реестр",
+                        Success = new IncidentOutcome { Reputation = 3, Text = "Реестр поблагодарил за бдительность. {magnate} делает вид, что впервые видит этого человека." } },
+                    new IncidentChoice { Label = "Отпустить",
+                        Success = new IncidentOutcome { Text = "Шпион ушёл, прихватив ваш степлер." } },
+                },
+            },
+            new Incident
+            {
+                Id = "tourists", Title = "Туристы", Icon = "planet", Target = IncidentTarget.MyPlanet,
+                Text = "У {planet} застрял автобус туристов. Гид предлагает устроить им экскурсию — за деньги, конечно.",
+                Choices = new[]
+                {
+                    new IncidentChoice { Label = "Экскурсия с банкетом", Cost = 100, Chance = 0.7,
+                        Success = new IncidentOutcome { Money = 400, ShowPoints = 2, Text = "Туристы в восторге и оставили щедрые чаевые." },
+                        Failure = new IncidentOutcome { Text = "Половина туристов уснула. Чаевые — пуговица и билет в один конец." } },
+                    new IncidentChoice { Label = "Простая экскурсия",
+                        Success = new IncidentOutcome { Money = 120, Loyalty = -2, Text = "Туристы скупили сувениры, включая образцы породы. Жители недовольны толпой." } },
+                    new IncidentChoice { Label = "Не пускать",
+                        Success = new IncidentOutcome { Text = "Туристы уехали фотографировать чужие планеты." } },
+                },
+            },
+        };
+
+        // ------------------------------------------------------------------
+        // Лот недели: легендарная планета на закрытых торгах против магнатов сектора.
+        // ------------------------------------------------------------------
+
+        public int LotFirstTurn = 12;
+        /// <summary>Сколько ходов между торгами; LotGapMax = 0 — лотов нет.</summary>
+        public int LotGapMin = 12, LotGapMax = 18;
+        /// <summary>За сколько ходов до торгов объявляют лот.</summary>
+        public int LotNoticeTurns = 4;
+        /// <summary>Ставки игрока: доли стартовой цены.</summary>
+        public double[] LotBidFactors = { 1.0, 1.25, 1.5, 2.0 };
+        /// <summary>Стартовая цена — от рыночной стоимости с руинами.</summary>
+        public double LotPriceFactor = 0.9;
+        /// <summary>Лот не дороже такой доли капитала самого богатого игрока (иначе запас планеты урезается, но не ниже обычного).</summary>
+        public double LotBudgetShare = 0.8;
+        /// <summary>Интерес магната к лоту — его интерес к аукционам, умноженный на это.</summary>
+        public double LotInterestFactor = 1.6;
+        /// <summary>Ставка магната — случайная доля стартовой цены, не больше свободных денег.</summary>
+        public double LotRivalBidMin = 1.0, LotRivalBidMax = 1.6;
+        /// <summary>Сколько магнатов самое большее приходит на торги (в большом секторе их десятки).</summary>
+        public int LotMaxRivals = 3;
+        /// <summary>Наследник на торгах не уступает: ставит больше.</summary>
+        public double HeirLotMarkup = 1.15;
+        /// <summary>Репутация, если на ставку не хватило денег.</summary>
+        public double LotVoidReputation = -5;
+
+        public LegendaryPlanet[] Legends =
+        {
+            new LegendaryPlanet { Id = "eden", Name = "Алмазный Эдем", Resource = PlanetTrader.Core.Resource.Crystals, ReserveFactor = 2.5,
+                Description = "Кристаллы здесь растут на деревьях. Местные птицы вьют из них гнёзда." },
+            new LegendaryPlanet { Id = "sanatorium", Name = "Санаторий Туманность", Inhabited = true, Loyalty = 85, Education = 2, Specialty = Specialty.Physicists, HasSchool = true, ReserveFactor = 1.2,
+                Description = "Жители — академики на пенсии. Любят тишину, кроссворды и платить налоги вовремя." },
+            new LegendaryPlanet { Id = "capital", Name = "Старая столица", Ruins = 4000, ReserveFactor = 1.5,
+                Description = "Бывшая столица древней империи. Под каждым камнем — артефакт, под каждым артефактом — проклятие (по слухам)." },
+            new LegendaryPlanet { Id = "chest", Name = "Сундук пирата", ExtraDeposits = 2, ReserveFactor = 1.6,
+                Description = "Пираты прятали здесь добычу. Добычу растащили, а месторождения остались." },
+            new LegendaryPlanet { Id = "forge", Name = "Кузница богов", Resource = PlanetTrader.Core.Resource.Metal, ReserveFactor = 2.2, MineBuilt = true,
+                Description = "Тут уже стоит мегашахта. Кто её построил — неизвестно. Работает без выходных." },
+            new LegendaryPlanet { Id = "resort", Name = "Курорт Аква-Лакс", Resource = PlanetTrader.Core.Resource.Biomass, Inhabited = true, Loyalty = 75, ReserveFactor = 1.8,
+                Description = "Пляжи, коктейли и плантации биомассы. Жители загорелые и довольные." },
+            new LegendaryPlanet { Id = "volcano", Name = "Вечный вулкан", OnlySector = 1, Resource = PlanetTrader.Core.Resource.Plasma, ReserveFactor = 2.5,
+                Description = "Вулкан извергается строго по расписанию — удобно для добычи плазмы." },
+            new LegendaryPlanet { Id = "abyss", Name = "Дно бездны", OnlySector = 2, Resource = PlanetTrader.Core.Resource.Deuterium, ReserveFactor = 2.5, ExtraDeposits = 1,
+                Description = "Самый глубокий океан галактики. На дне что-то светится и, кажется, машет." },
+        };
+
         /// <summary>
         /// Множитель содержания всех планет при числе планет L. Растёт до L1 (×1,5),
         /// держится до L2, потом растёт снова.

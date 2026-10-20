@@ -33,6 +33,8 @@ namespace PlanetTrader.Core
         public int AccidentTurnsLeft;
         /// <summary>Найдена зондом игрока: её видит только игрок, покупка без надбавки ИИ.</summary>
         public bool FoundByProbe;
+        /// <summary>Имя легендарной планеты («Лот недели»); null — обычная.</summary>
+        public string Legend;
         /// <summary>Ход, на котором игрок купил планету (для статистики).</summary>
         public int BoughtOnTurn = -1;
         /// <summary>Сколько игрок вложил в планету: покупка + шахта.</summary>

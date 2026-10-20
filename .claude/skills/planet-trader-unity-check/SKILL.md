@@ -35,6 +35,9 @@ description: Посмотреть изменение в собранной иг�
 | Режим зонда, разведанную карту, жителей | `-autoShotProbe`, `-autoShotReveal`, `-autoShotPeople` |
 | Клики, колесо, перетаскивание (экран 1600×900) | `-autoShotClicks "x,y;x,y"`, `-autoShotWheel "x,y,шаги"`, `-autoShotPan "x,y,dx,dy"` |
 | Задержку перед снимком (планеты запекаются) | `-autoShotDelay 8` |
+| Окна: шоу со вступлением, случай, «Важное за ход» | `-autoShotShow`, `-autoShotIncident tax` (id из `Balance.Incidents`), `-autoShotAlerts` |
+| «Лот недели» (ходы до лота, выбрана легенда) | `-autoShotLot` |
+| Сохранения: n ходов, сохранить, список; продолжить автосохранение | `-autoShotSaves 7`, `-autoShotContinue` (сохранения потом удалить: `~/Library/Application Support/DefaultCompany/unity/saves`) |
 
 ## Смотреть
 

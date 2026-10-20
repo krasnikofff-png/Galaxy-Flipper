@@ -11,6 +11,10 @@
             </ui:VisualElement>
             <ui:VisualElement name="stats" class="stats" picking-mode="Ignore" />
             <ui:VisualElement class="spacer" picking-mode="Ignore" />
+            <ui:Button name="incidentChip" focusable="false" class="incident-chip hidden">
+                <ui:VisualElement class="icon icon-info" picking-mode="Ignore" />
+                <ui:Label name="incidentChipText" class="incident-chip-text" picking-mode="Ignore" />
+            </ui:Button>
             <ui:Button name="endTurnButton" focusable="false" class="end-turn">
                 <ui:Label text="Следующий ход" class="end-turn-text" picking-mode="Ignore" />
                 <ui:VisualElement class="icon icon-arrow" />
@@ -143,6 +147,19 @@
                     <ui:Button name="alertsOk" text="Понятно" focusable="false" class="alerts-ok" />
                 </ui:VisualElement>
             </ui:VisualElement>
+        </ui:VisualElement>
+        <ui:VisualElement name="show" class="overlay hidden">
+            <ui:VisualElement class="alerts-card show-card frame">
+                <ui:Label name="showTitle" class="title alerts-title" />
+                <ui:ScrollView name="showBody" mode="Vertical" horizontal-scroller-visibility="Hidden" touch-scroll-type="Clamped" class="alerts-list" />
+                <ui:VisualElement class="alerts-footer">
+                    <ui:VisualElement class="spacer" />
+                    <ui:Button name="showOk" text="Понятно" focusable="false" class="alerts-ok" />
+                </ui:VisualElement>
+            </ui:VisualElement>
+        </ui:VisualElement>
+        <ui:VisualElement name="incident" class="overlay hidden">
+            <ui:VisualElement name="incidentBody" class="alerts-card incident-card frame" />
         </ui:VisualElement>
         <ui:VisualElement name="saves" class="overlay hidden">
             <ui:VisualElement class="journal-card saves-card frame">
