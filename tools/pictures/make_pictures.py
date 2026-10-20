@@ -12,6 +12,7 @@ unity/Assets/Editor/PictureImporter.cs: цвет сжимается (BC7 на к
     legends     легендарные планеты «Лота недели» (Id из Balance.Legends), 2:1
     scenes      start, season_win, season_lose — экраны, 16:9, без глубины
     backgrounds map, sector_1, sector_2 — фон карты, 16:10, без глубины
+    ui          frame, panel, button, tab — элементы интерфейса (9-slice), как есть, без обрезки и глубины
 
 Картинка подгоняется под пропорцию категории: обрезается по центру (широкое — с боков, высокое — снизу и сверху).
 У портретов с нарисованной рамкой рамку срезает --crop слева,сверху,справа,снизу в долях (0.03,0.02,0.03,0.035).
@@ -38,7 +39,9 @@ OUT = os.path.join(REPO, "unity", "Assets", "Resources", "Pictures")
 EXTS = (".png", ".webp", ".jpg", ".jpeg")
 
 # Категория: (ширина, высота) картинки в игре и нужна ли карта глубины. Стороны кратны 4 — так сжимает BC7.
+# Размер None — картинка берётся как есть (элементы интерфейса режутся на 9 частей по своим краям).
 CATEGORIES = {
+    "ui": (None, False),
     "magnates": ((720, 900), True),
     "incidents": ((800, 400), True),
     "legends": ((800, 400), True),
@@ -119,17 +122,18 @@ def main():
         out = os.path.join(folder, name + ".png")
         if not force and os.path.exists(out) and os.path.getmtime(out) >= os.path.getmtime(src):
             continue
-        im = Image.open(src).convert("RGB")
+        im = Image.open(src).convert("RGBA" if size is None else "RGB")
         if crop_shares:
             im = crop(im, crop_shares)
-        im = fit(im, size)
+        if size is not None:
+            im = fit(im, size)
         im.save(out, format="PNG", optimize=True)
         if with_depth:
             if session is None:
                 import onnxruntime as ort
                 session = ort.InferenceSession(MODEL, providers=["CPUExecutionProvider"])
             depth(session, im, (size[0] // 2, size[1] // 2)).save(os.path.join(folder, name + "_depth.png"), format="PNG", optimize=True)
-        print(f"{category}/{name}: {size[0]}×{size[1]}" + (" + глубина" if with_depth else ""))
+        print(f"{category}/{name}: {im.size[0]}×{im.size[1]}" + (" + глубина" if with_depth else ""))
         done += 1
     print("Готово:", done, "картинок" if done != 1 else "картинка")
 

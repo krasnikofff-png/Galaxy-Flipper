@@ -38,6 +38,8 @@
 
 **Плейтест.** `.claude/skills/planet-trader-unity-check/playtest.sh` собирает игру под Mac и Windows (своё имя «Planet Trader», версия с датой) и кладёт в архивы вместе с памяткой [docs/playtest.md](docs/playtest.md) — `unity/Build/Playtest/PlanetTrader-mac-<дата>.zip` и `PlanetTrader-windows-<дата>.zip`. Для Windows нужен модуль Unity «Windows Build Support (Mono)» (установлен). Игра пишет журнал сессии (ходы, время на ход, события) в папку `playtest` рядом с сохранениями; меню → «Логи для отзыва» открывает её.
 
+Рендер — URP (Forward+), настройки в `unity/Assets/Settings` (создаёт `Assets/Editor/RenderPipelineSetup.cs`); планеты запекаются на видеокарте (`PlanetBakerGpu`). Подробности и правила — [docs/art/README.md](docs/art/README.md).
+
 Интерфейс — на UI Toolkit: разметка `unity/Assets/Resources/UI/Game.uxml`, вид — `Game.uss` и `Theme.tss` (своя тема вместо стандартной, шрифт Inter с кириллицей). Код экрана — `PlanetTraderApp.Screen.cs`, карта — `PlanetTraderApp.Map.cs`, вкладки — `PlanetTraderApp.Tabs.cs`; панели собираются из состояния игры через `PanelBuilder` и пересобираются после каждого действия. Планеты уже настоящие: на карте и в окне планеты — вращающиеся 3D-планеты по типу, в окне планеты на них видны постройки (модели из Blender, с движущимися частями); базу можно облететь мышью, F2 — витрина крупным планом. Как это устроено и как проверить без человека — [docs/art/README.md](docs/art/README.md).
 
 ## Запуск ядра и симулятора
