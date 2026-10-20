@@ -35,6 +35,16 @@ Shader "PlanetTrader/Planet"
                 float4 _AtmoColor;
                 float _RimPower, _Ambient, _SpecPower, _SpecStrength, _Saturation, _Brightness;
             CBUFFER_END
+            // Освещение подобрано в гамме (как смотрит глаз). В линейном проекте входы переводим обратно в sRGB (GAM),
+            // считаем по-старому и один раз переводим итог в линейный цвет (OUT) — облик не меняется.
+            #include "Packages/com.unity.render-pipelines.core/ShaderLibrary/Color.hlsl"
+            #ifdef UNITY_COLORSPACE_GAMMA
+            #define GAM(c) (c)
+            #define OUT(c) (c)
+            #else
+            #define GAM(c) LinearToSRGB(c)
+            #define OUT(c) SRGBToLinear(c)
+            #endif
 
             struct Attributes
             {
@@ -63,32 +73,34 @@ Shader "PlanetTrader/Planet"
 
             float4 frag (Varyings i) : SV_Target
             {
+                // Цвет планеты в текстуре — как нарисован (sRGB-числа без перевода): шейдер считает в них.
                 float4 albedo = SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, i.uv);
                 float3 nObj = SAMPLE_TEXTURE2D(_NormalTex, sampler_NormalTex, i.uv).xyz * 2 - 1;
                 float3 n = normalize(TransformObjectToWorldNormal(nObj));
                 float3 geo = normalize(i.normalWS);
                 Light light = GetMainLight();
+                float3 lightColor = GAM(light.color);
                 float3 L = normalize(light.direction);
                 // Направление на камеру; у ортографической (карта сектора) оно одно для всех точек.
                 float3 V = unity_OrthoParams.w > 0.5 ? normalize(UNITY_MATRIX_V[2].xyz) : normalize(_WorldSpaceCameraPos - i.positionWS);
 
                 float sun = saturate(dot(geo, L) * 1.8 + 0.25);      // мягкий терминатор
                 float diff = saturate(dot(n, L) * 0.8 + 0.2);         // рельеф с «заворотом» света
-                float3 col = albedo.rgb * (_Ambient + (1 - _Ambient) * diff * sun) * light.color;
+                float3 col = albedo.rgb * (_Ambient + (1 - _Ambient) * diff * sun) * lightColor;
 
                 float3 H = normalize(L + V);
-                col += pow(saturate(dot(n, H)), _SpecPower) * albedo.a * sun * _SpecStrength * light.color;
+                col += pow(saturate(dot(n, H)), _SpecPower) * albedo.a * sun * _SpecStrength * lightColor;
 
                 float3 glow = SAMPLE_TEXTURE2D(_EmissionTex, sampler_EmissionTex, i.uv).rgb;
                 col += glow * (0.6 + 0.4 * (1 - sun));
 
                 float fres = pow(1 - saturate(dot(geo, V)), _RimPower);
-                col += _AtmoColor.rgb * fres * (0.7 * sun + 0.12);
+                col += GAM(_AtmoColor.rgb) * fres * (0.7 * sun + 0.12);
 
                 // Силуэт на карте — серый, выработанная планета — тусклая.
                 float gray = dot(col, float3(0.3, 0.59, 0.11));
                 col = lerp(gray.xxx, col, _Saturation) * _Brightness;
-                return float4(col, 1);
+                return float4(OUT(col), 1);
             }
             ENDHLSL
         }

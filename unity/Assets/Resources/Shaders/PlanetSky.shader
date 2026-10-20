@@ -26,6 +26,16 @@ Shader "PlanetTrader/PlanetSky"
             CBUFFER_START(UnityPerMaterial)
                 float _Dim, _Cull;
             CBUFFER_END
+            // Освещение подобрано в гамме (как смотрит глаз). В линейном проекте входы переводим обратно в sRGB (GAM),
+            // считаем по-старому и один раз переводим итог в линейный цвет (OUT) — облик не меняется.
+            #include "Packages/com.unity.render-pipelines.core/ShaderLibrary/Color.hlsl"
+            #ifdef UNITY_COLORSPACE_GAMMA
+            #define GAM(c) (c)
+            #define OUT(c) (c)
+            #else
+            #define GAM(c) LinearToSRGB(c)
+            #define OUT(c) SRGBToLinear(c)
+            #endif
 
             struct Attributes { float4 positionOS : POSITION; float2 uv : TEXCOORD0; };
             struct Varyings { float4 positionCS : SV_POSITION; float2 uv : TEXCOORD0; };
@@ -38,7 +48,11 @@ Shader "PlanetTrader/PlanetSky"
                 return o;
             }
 
-            float4 frag (Varyings i) : SV_Target { return SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, i.uv) * _Dim; }
+            float4 frag (Varyings i) : SV_Target
+            {
+                float4 sky = SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, i.uv);
+                return float4(OUT(GAM(sky.rgb) * _Dim), sky.a);
+            }
             ENDHLSL
         }
     }

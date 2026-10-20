@@ -146,13 +146,13 @@ namespace PlanetTrader.Visuals
         public int Width, Height;
         public Color32[] Albedo, Normal, Emission, Clouds;
 
-        /// <summary>Сделать текстуры. Только из главного потока.</summary>
+        /// <summary>Сделать текстуры. Только из главного потока. Все — «как нарисованы», без перевода цвета (как у GPU-пути).</summary>
         public PlanetTextures ToTextures() => new PlanetTextures
         {
-            Albedo = PlanetBaker.Make(Albedo, Width, Height, linear: false),
+            Albedo = PlanetBaker.Make(Albedo, Width, Height, linear: true),
             Normal = PlanetBaker.Make(Normal, Width, Height, linear: true),
-            Emission = Emission != null ? PlanetBaker.Make(Emission, Width, Height, linear: false) : Texture2D.blackTexture,
-            Clouds = Clouds != null ? PlanetBaker.Make(Clouds, Width, Height, linear: false) : null,
+            Emission = Emission != null ? PlanetBaker.Make(Emission, Width, Height, linear: true) : Texture2D.blackTexture,
+            Clouds = Clouds != null ? PlanetBaker.Make(Clouds, Width, Height, linear: true) : null,
         };
     }
 }

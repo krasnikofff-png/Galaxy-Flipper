@@ -9,7 +9,8 @@ namespace PlanetTrader.EditorTools
     /// Настройка URP (Universal Render Pipeline) для проекта: рендерер Forward+ и ресурс конвейера в Assets/Settings,
     /// назначение во все уровни качества. Из меню: Planet Trader → Настроить URP. Из командной строки:
     /// unity run unity -- -executeMethod PlanetTrader.EditorTools.RenderPipelineSetup.ApplyFromCommandLine [-linear]
-    /// -linear — заодно перевести проект в линейное цветовое пространство.
+    /// -linear / -gamma — заодно переключить цветовое пространство проекта (сейчас — Gamma: в Linear интерфейс
+    /// на UI Toolkit смешивает полупрозрачные заливки иначе и вся тёмная тема светлеет; см. docs/art/README.md).
     /// Запуск повторно безопасен: ресурсы не пересоздаются.
     /// </summary>
     public static class RenderPipelineSetup
@@ -19,18 +20,19 @@ namespace PlanetTrader.EditorTools
         const string AssetPath = Dir + "/UniversalRP.asset";
 
         [MenuItem("Planet Trader/Настроить URP")]
-        public static void Apply() => Apply(false);
+        public static void Apply() => Apply(false, false);
 
         public static void ApplyFromCommandLine()
         {
-            bool linear = System.Array.IndexOf(System.Environment.GetCommandLineArgs(), "-linear") >= 0;
+            var args = System.Environment.GetCommandLineArgs();
+            bool linear = System.Array.IndexOf(args, "-linear") >= 0, gamma = System.Array.IndexOf(args, "-gamma") >= 0;
             int code = 0;
-            try { Apply(linear); }
+            try { Apply(linear, gamma); }
             catch (System.Exception e) { Debug.LogException(e); code = 1; }
             EditorApplication.Exit(code);
         }
 
-        static void Apply(bool linear)
+        static void Apply(bool linear, bool gamma = false)
         {
             if (!AssetDatabase.IsValidFolder(Dir)) AssetDatabase.CreateFolder("Assets", "Settings");
 
@@ -64,6 +66,7 @@ namespace PlanetTrader.EditorTools
             QualitySettings.SetQualityLevel(current, false);
 
             if (linear) PlayerSettings.colorSpace = ColorSpace.Linear;
+            if (gamma) PlayerSettings.colorSpace = ColorSpace.Gamma;
             AssetDatabase.SaveAssets();
             // URP создаёт глобальные настройки и профиль в корне Assets — переложить к остальным.
             foreach (var name in new[] { "UniversalRenderPipelineGlobalSettings.asset", "DefaultVolumeProfile.asset" })

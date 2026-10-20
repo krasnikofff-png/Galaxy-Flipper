@@ -29,6 +29,16 @@ Shader "PlanetTrader/PlanetAtmosphere"
                 float4 _Color;
                 float _Inner, _Power, _Strength;
             CBUFFER_END
+            // Освещение подобрано в гамме (как смотрит глаз). В линейном проекте входы переводим обратно в sRGB (GAM),
+            // считаем по-старому и один раз переводим итог в линейный цвет (OUT) — облик не меняется.
+            #include "Packages/com.unity.render-pipelines.core/ShaderLibrary/Color.hlsl"
+            #ifdef UNITY_COLORSPACE_GAMMA
+            #define GAM(c) (c)
+            #define OUT(c) (c)
+            #else
+            #define GAM(c) LinearToSRGB(c)
+            #define OUT(c) SRGBToLinear(c)
+            #endif
 
             struct Attributes
             {
@@ -65,7 +75,7 @@ Shader "PlanetTrader/PlanetAtmosphere"
                 float glow = pow(saturate(d / edge), _Power);
                 float3 L = normalize(GetMainLight().direction);
                 float side = saturate(dot(normalize(i.positionWS - i.centerWS), L) * 0.6 + 0.55);
-                return float4(_Color.rgb * glow * side * _Strength, 1);
+                return float4(OUT(GAM(_Color.rgb) * glow * side * _Strength), 1);
             }
             ENDHLSL
         }

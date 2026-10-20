@@ -28,6 +28,16 @@ Shader "PlanetTrader/PlanetRing"
             CBUFFER_START(UnityPerMaterial)
                 float _Brightness, _Saturation;
             CBUFFER_END
+            // Освещение подобрано в гамме (как смотрит глаз). В линейном проекте входы переводим обратно в sRGB (GAM),
+            // считаем по-старому и один раз переводим итог в линейный цвет (OUT) — облик не меняется.
+            #include "Packages/com.unity.render-pipelines.core/ShaderLibrary/Color.hlsl"
+            #ifdef UNITY_COLORSPACE_GAMMA
+            #define GAM(c) (c)
+            #define OUT(c) (c)
+            #else
+            #define GAM(c) LinearToSRGB(c)
+            #define OUT(c) SRGBToLinear(c)
+            #endif
 
             struct Attributes
             {
@@ -61,6 +71,7 @@ Shader "PlanetTrader/PlanetRing"
             float4 frag (Varyings i) : SV_Target
             {
                 float4 band = SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, float2(i.uv.x, 0.5));
+                band.rgb = GAM(band.rgb);
                 Light light = GetMainLight();
                 float3 L = normalize(light.direction);
                 float lit = 0.35 + 0.65 * abs(dot(normalize(i.normalWS), L));
@@ -69,9 +80,9 @@ Shader "PlanetTrader/PlanetRing"
                 float t = dot(d, L);
                 float miss = length(d - t * L) - i.radiusWS;
                 float shadow = t < 0 ? smoothstep(-0.03, 0.03, miss / i.radiusWS) : 1;
-                float3 col = band.rgb * lit * (0.2 + 0.8 * shadow) * light.color * _Brightness;
+                float3 col = band.rgb * lit * (0.2 + 0.8 * shadow) * GAM(light.color) * _Brightness;
                 float gray = dot(col, float3(0.3, 0.59, 0.11));
-                return float4(lerp(gray.xxx, col, _Saturation), band.a);
+                return float4(OUT(lerp(gray.xxx, col, _Saturation)), band.a);
             }
             ENDHLSL
         }

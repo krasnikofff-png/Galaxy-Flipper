@@ -27,12 +27,21 @@ Shader "PlanetTrader/Building"
             #pragma fragment frag
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Lighting.hlsl"
-            #include "Packages/com.unity.render-pipelines.core/ShaderLibrary/Color.hlsl"
 
             CBUFFER_START(UnityPerMaterial)
                 float4 _Accent, _Skin, _Cloth, _Cloth2;
                 float _Glow, _Pulse, _Ambient;
             CBUFFER_END
+            // Освещение подобрано в гамме (как смотрит глаз). В линейном проекте входы переводим обратно в sRGB (GAM),
+            // считаем по-старому и один раз переводим итог в линейный цвет (OUT) — облик не меняется.
+            #include "Packages/com.unity.render-pipelines.core/ShaderLibrary/Color.hlsl"
+            #ifdef UNITY_COLORSPACE_GAMMA
+            #define GAM(c) (c)
+            #define OUT(c) (c)
+            #else
+            #define GAM(c) LinearToSRGB(c)
+            #define OUT(c) SRGBToLinear(c)
+            #endif
 
             struct Attributes
             {
@@ -56,11 +65,7 @@ Shader "PlanetTrader/Building"
             {
                 Varyings o;
                 o.positionCS = TransformObjectToHClip(v.positionOS.xyz);
-                o.color = v.color;
-                // Цвет вершин нарисован в sRGB; в линейном проекте его надо перевести, как текстуру.
-                #ifndef UNITY_COLORSPACE_GAMMA
-                o.color.rgb = SRGBToLinear(v.color.rgb);
-                #endif
+                o.color = v.color;   // цвет вершин — в sRGB, как нарисован: шейдер считает в нём
                 o.normalWS = TransformObjectToWorldNormal(v.normalOS);
                 // «Вверх» постройки — от центра планеты: по нему видно, день здесь или ночь.
                 o.upWS = TransformObjectToWorldNormal(float3(0, 1, 0));
@@ -77,14 +82,15 @@ Shader "PlanetTrader/Building"
                 float isAccent = step(0.375, role) * step(role, 0.625);
                 float isCloth = step(0.625, role) * step(role, 0.8125);
                 float isCloth2 = step(0.8125, role) * step(role, 0.9375);
-                float3 tint = 1 + isSkin * (_Skin.rgb - 1) + isAccent * (_Accent.rgb - 1) + isCloth * (_Cloth.rgb - 1) + isCloth2 * (_Cloth2.rgb - 1);
+                float3 tint = 1 + isSkin * (GAM(_Skin.rgb) - 1) + isAccent * (GAM(_Accent.rgb) - 1) + isCloth * (GAM(_Cloth.rgb) - 1) + isCloth2 * (GAM(_Cloth2.rgb) - 1);
                 float3 base = i.color.rgb * tint;
 
                 Light light = GetMainLight();
+                float3 lightColor = GAM(light.color);
                 float3 L = normalize(light.direction);
                 float day = saturate(dot(normalize(i.upWS), L) * 2.5 + 0.35);   // на ночной стороне планеты темно
                 float diff = saturate(dot(normalize(i.normalWS), L) * 0.7 + 0.3);
-                float3 col = base * (_Ambient + (1 - _Ambient) * diff * day) * light.color;
+                float3 col = base * (_Ambient + (1 - _Ambient) * diff * day) * lightColor;
 
                 // Блик: чем выше блеск детали, тем он ярче и резче. Камера окна планеты перспективная.
                 float3 V = normalize(_WorldSpaceCameraPos - i.positionWS);
@@ -92,11 +98,11 @@ Shader "PlanetTrader/Building"
                 float3 n = normalize(i.normalWS);
                 float spec = pow(saturate(dot(n, H)), 8 + 120 * i.shine * i.shine) * i.shine * day;
                 float fres = pow(1 - saturate(dot(n, V)), 3) * i.shine * 0.25;
-                col += (spec * 0.9 + fres * day) * light.color;
+                col += (spec * 0.9 + fres * day) * lightColor;
 
                 float pulse = 1 - _Pulse * (0.5 + 0.5 * sin(_Time.y * 4));
                 float3 glow = base * _Glow * pulse;
-                return float4(lerp(col, glow, isLight), 1);
+                return float4(OUT(lerp(col, glow, isLight)), 1);
             }
             ENDHLSL
         }

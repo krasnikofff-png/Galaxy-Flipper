@@ -39,6 +39,16 @@ Shader "PlanetTrader/Smoke"
                 float4 _Color, _Wind, _FireA, _FireB;
                 float _T, _Life, _Rise, _Size0, _Size1, _Fire, _DstBlend;
             CBUFFER_END
+            // Освещение подобрано в гамме (как смотрит глаз). В линейном проекте входы переводим обратно в sRGB (GAM),
+            // считаем по-старому и один раз переводим итог в линейный цвет (OUT) — облик не меняется.
+            #include "Packages/com.unity.render-pipelines.core/ShaderLibrary/Color.hlsl"
+            #ifdef UNITY_COLORSPACE_GAMMA
+            #define GAM(c) (c)
+            #define OUT(c) (c)
+            #else
+            #define GAM(c) LinearToSRGB(c)
+            #define OUT(c) SRGBToLinear(c)
+            #endif
 
             struct Attributes
             {
@@ -77,9 +87,9 @@ Shader "PlanetTrader/Smoke"
                 Light light = GetMainLight();
                 float3 up = normalize(TransformObjectToWorldDir(float3(0, 1, 0)));
                 float day = saturate(dot(up, normalize(light.direction)) * 2.5 + 0.35);
-                float3 smoke = _Color.rgb * (0.2 + 0.8 * day) * light.color;
-                float3 fire = lerp(_FireA.rgb, _FireB.rgb, saturate(age * 1.4)) * 1.6;
-                o.color = float4(lerp(smoke, fire, _Fire), alpha);
+                float3 smoke = GAM(_Color.rgb) * (0.2 + 0.8 * day) * GAM(light.color);
+                float3 fire = lerp(GAM(_FireA.rgb), GAM(_FireB.rgb), saturate(age * 1.4)) * 1.6;
+                o.color = float4(OUT(lerp(smoke, fire, _Fire)), alpha);
                 return o;
             }
 

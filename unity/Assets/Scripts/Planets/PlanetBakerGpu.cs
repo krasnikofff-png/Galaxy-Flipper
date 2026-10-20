@@ -6,6 +6,7 @@ namespace PlanetTrader.Visuals
     /// Запекание текстур планеты на видеокарте (Resources/Shaders/PlanetBake.compute) — тот же облик, что у
     /// <see cref="PlanetBaker"/>, но за миллисекунды вместо секунд, и без копирования в память: текстуры рождаются
     /// на видеокарте и сразу идут в материал. Кэш на диске не нужен — видеокарта быстрее диска.
+    /// Текстуры создаются линейными и хранят цвета «как нарисованы» (sRGB-числа): шейдер планеты считает в них.
     /// Где compute shader не работает (<see cref="Supported"/>), планеты пекутся по-старому на процессоре.
     /// </summary>
     public static class PlanetBakerGpu
@@ -57,8 +58,6 @@ namespace PlanetTrader.Visuals
             shader.SetInt("_Look", (int)look);
             shader.SetFloat("_CloudAmount", style.Clouds);
             shader.SetInt("_Smooth", style.Smooth ? 1 : 0);
-            // Цвета поверхности придуманы в sRGB; в линейном проекте их переводит compute shader (текстура создаётся линейной).
-            shader.SetInt("_Linear", QualitySettings.activeColorSpace == ColorSpace.Linear ? 1 : 0);
             foreach (int kernel in new[] { _surfaceKernel, _normalsKernel })
             {
                 shader.SetBuffer(kernel, "_Perm", perm);

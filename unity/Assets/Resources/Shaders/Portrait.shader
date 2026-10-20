@@ -24,12 +24,21 @@ Shader "PlanetTrader/Portrait"
             #pragma vertex vert
             #pragma fragment frag
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
-            #include "Packages/com.unity.render-pipelines.core/ShaderLibrary/Color.hlsl"
 
             CBUFFER_START(UnityPerMaterial)
                 float4 _Accent, _KeyDir, _KeyColor, _FillDir, _FillColor, _RimColor, _Ambient;
                 float _Glow;
             CBUFFER_END
+            // Освещение подобрано в гамме (как смотрит глаз). В линейном проекте входы переводим обратно в sRGB (GAM),
+            // считаем по-старому и один раз переводим итог в линейный цвет (OUT) — облик не меняется.
+            #include "Packages/com.unity.render-pipelines.core/ShaderLibrary/Color.hlsl"
+            #ifdef UNITY_COLORSPACE_GAMMA
+            #define GAM(c) (c)
+            #define OUT(c) (c)
+            #else
+            #define GAM(c) LinearToSRGB(c)
+            #define OUT(c) SRGBToLinear(c)
+            #endif
 
             struct Attributes
             {
@@ -52,11 +61,7 @@ Shader "PlanetTrader/Portrait"
             {
                 Varyings o;
                 o.positionCS = TransformObjectToHClip(v.positionOS.xyz);
-                o.color = v.color;
-                // Цвет вершин нарисован в sRGB; в линейном проекте его надо перевести, как текстуру.
-                #ifndef UNITY_COLORSPACE_GAMMA
-                o.color.rgb = SRGBToLinear(v.color.rgb);
-                #endif
+                o.color = v.color;   // цвет вершин — в sRGB, как нарисован: шейдер считает в нём
                 o.normalWS = TransformObjectToWorldNormal(v.normalOS);
                 o.positionWS = TransformObjectToWorld(v.positionOS.xyz);
                 o.shine = v.uv.x;
@@ -68,7 +73,7 @@ Shader "PlanetTrader/Portrait"
                 float role = i.color.a;
                 float isLight = step(role, 0.125);
                 float isAccent = step(0.375, role) * step(role, 0.625);
-                float3 base = i.color.rgb * lerp(float3(1, 1, 1), _Accent.rgb, isAccent);
+                float3 base = i.color.rgb * lerp(float3(1, 1, 1), GAM(_Accent.rgb), isAccent);
 
                 float3 n = normalize(i.normalWS);
                 float3 V = normalize(_WorldSpaceCameraPos - i.positionWS);
@@ -79,19 +84,19 @@ Shader "PlanetTrader/Portrait"
                 float key = saturate(dot(n, K) * 0.75 + 0.25);
                 key = key * key * (3 - 2 * key);
                 float fill = saturate(dot(n, F) * 0.5 + 0.5);
-                float3 col = base * (_Ambient.rgb + key * _KeyColor.rgb + fill * _FillColor.rgb * 0.7);
+                float3 col = base * (GAM(_Ambient.rgb) + key * GAM(_KeyColor.rgb) + fill * GAM(_FillColor.rgb) * 0.7);
 
                 // Блик: чем выше блеск детали (UV.x), тем он ярче и уже — золото, стекло, жемчуг.
                 float3 H = normalize(K + V);
                 float spec = pow(saturate(dot(n, H)), 10 + 140 * i.shine * i.shine) * i.shine;
-                col += spec * _KeyColor.rgb * 1.1;
+                col += spec * GAM(_KeyColor.rgb) * 1.1;
 
                 // Контровой свет по краю силуэта — цвет магната, как в рамке.
                 float rim = pow(1 - saturate(dot(n, V)), 3);
                 float rimSide = saturate(dot(n, normalize(float3(0.4, 0.5, 0.8))) * 0.5 + 0.6);
-                col += _RimColor.rgb * rim * rimSide * 0.85;
+                col += GAM(_RimColor.rgb) * rim * rimSide * 0.85;
 
-                return float4(lerp(col, base * _Glow, isLight), 1);
+                return float4(OUT(lerp(col, base * _Glow, isLight)), 1);
             }
             ENDHLSL
         }
