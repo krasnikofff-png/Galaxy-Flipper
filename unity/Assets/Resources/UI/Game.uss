@@ -316,6 +316,15 @@
     bottom: 0;
 }
 
+/* Слои карты: кадр 3D-камеры и рисунок поверх него — во весь прямоугольник карты. */
+.map-layer {
+    position: absolute;
+    left: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+}
+
 .map-labels {
     position: absolute;
     left: 0;

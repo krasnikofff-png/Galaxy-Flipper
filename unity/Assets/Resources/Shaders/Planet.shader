@@ -1,5 +1,5 @@
 // Поверхность планеты: запечённый цвет и рельеф, мягкий край ночи, блик на воде и льду,
-// свечение (кристаллы, разломы аномалии) и подсветка атмосферы по краю диска.
+// свечение (кристаллы, разломы аномалии) и подсветка атмосферы по краю диска. URP; свет — главный направленный.
 Shader "PlanetTrader/Planet"
 {
     Properties
@@ -17,56 +17,69 @@ Shader "PlanetTrader/Planet"
     }
     SubShader
     {
-        Tags { "RenderType" = "Opaque" "Queue" = "Geometry" }
+        Tags { "RenderType" = "Opaque" "Queue" = "Geometry" "RenderPipeline" = "UniversalPipeline" }
         Pass
         {
-            Tags { "LightMode" = "ForwardBase" }
-            CGPROGRAM
+            Name "Forward"
+            Tags { "LightMode" = "UniversalForward" }
+            HLSLPROGRAM
             #pragma vertex vert
             #pragma fragment frag
-            #include "UnityCG.cginc"
-            #include "Lighting.cginc"
+            #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
+            #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Lighting.hlsl"
 
-            sampler2D _MainTex, _NormalTex, _EmissionTex;
-            float4 _AtmoColor;
-            float _RimPower, _Ambient, _SpecPower, _SpecStrength, _Saturation, _Brightness;
+            TEXTURE2D(_MainTex); SAMPLER(sampler_MainTex);
+            TEXTURE2D(_NormalTex); SAMPLER(sampler_NormalTex);
+            TEXTURE2D(_EmissionTex); SAMPLER(sampler_EmissionTex);
+            CBUFFER_START(UnityPerMaterial)
+                float4 _AtmoColor;
+                float _RimPower, _Ambient, _SpecPower, _SpecStrength, _Saturation, _Brightness;
+            CBUFFER_END
 
-            struct v2f
+            struct Attributes
             {
-                float4 pos : SV_POSITION;
+                float4 positionOS : POSITION;
+                float3 normalOS : NORMAL;
                 float2 uv : TEXCOORD0;
-                float3 posW : TEXCOORD1;
-                float3 normalW : TEXCOORD2;
             };
 
-            v2f vert (appdata_base v)
+            struct Varyings
             {
-                v2f o;
-                o.pos = UnityObjectToClipPos(v.vertex);
-                o.uv = v.texcoord.xy;
-                o.posW = mul(unity_ObjectToWorld, v.vertex).xyz;
-                o.normalW = UnityObjectToWorldNormal(v.normal);
+                float4 positionCS : SV_POSITION;
+                float2 uv : TEXCOORD0;
+                float3 positionWS : TEXCOORD1;
+                float3 normalWS : TEXCOORD2;
+            };
+
+            Varyings vert (Attributes v)
+            {
+                Varyings o;
+                o.positionCS = TransformObjectToHClip(v.positionOS.xyz);
+                o.uv = v.uv;
+                o.positionWS = TransformObjectToWorld(v.positionOS.xyz);
+                o.normalWS = TransformObjectToWorldNormal(v.normalOS);
                 return o;
             }
 
-            fixed4 frag (v2f i) : SV_Target
+            float4 frag (Varyings i) : SV_Target
             {
-                float4 albedo = tex2D(_MainTex, i.uv);
-                float3 nObj = tex2D(_NormalTex, i.uv).xyz * 2 - 1;
-                float3 n = normalize(UnityObjectToWorldNormal(nObj));
-                float3 geo = normalize(i.normalW);
-                float3 L = normalize(_WorldSpaceLightPos0.xyz);
+                float4 albedo = SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, i.uv);
+                float3 nObj = SAMPLE_TEXTURE2D(_NormalTex, sampler_NormalTex, i.uv).xyz * 2 - 1;
+                float3 n = normalize(TransformObjectToWorldNormal(nObj));
+                float3 geo = normalize(i.normalWS);
+                Light light = GetMainLight();
+                float3 L = normalize(light.direction);
                 // Направление на камеру; у ортографической (карта сектора) оно одно для всех точек.
-                float3 V = unity_OrthoParams.w > 0.5 ? normalize(UNITY_MATRIX_V[2].xyz) : normalize(_WorldSpaceCameraPos - i.posW);
+                float3 V = unity_OrthoParams.w > 0.5 ? normalize(UNITY_MATRIX_V[2].xyz) : normalize(_WorldSpaceCameraPos - i.positionWS);
 
                 float sun = saturate(dot(geo, L) * 1.8 + 0.25);      // мягкий терминатор
                 float diff = saturate(dot(n, L) * 0.8 + 0.2);         // рельеф с «заворотом» света
-                float3 col = albedo.rgb * (_Ambient + (1 - _Ambient) * diff * sun) * _LightColor0.rgb;
+                float3 col = albedo.rgb * (_Ambient + (1 - _Ambient) * diff * sun) * light.color;
 
                 float3 H = normalize(L + V);
-                col += pow(saturate(dot(n, H)), _SpecPower) * albedo.a * sun * _SpecStrength * _LightColor0.rgb;
+                col += pow(saturate(dot(n, H)), _SpecPower) * albedo.a * sun * _SpecStrength * light.color;
 
-                float3 glow = tex2D(_EmissionTex, i.uv).rgb;
+                float3 glow = SAMPLE_TEXTURE2D(_EmissionTex, sampler_EmissionTex, i.uv).rgb;
                 col += glow * (0.6 + 0.4 * (1 - sun));
 
                 float fres = pow(1 - saturate(dot(geo, V)), _RimPower);
@@ -75,10 +88,9 @@ Shader "PlanetTrader/Planet"
                 // Силуэт на карте — серый, выработанная планета — тусклая.
                 float gray = dot(col, float3(0.3, 0.59, 0.11));
                 col = lerp(gray.xxx, col, _Saturation) * _Brightness;
-                return fixed4(col, 1);
+                return float4(col, 1);
             }
-            ENDCG
+            ENDHLSL
         }
     }
-    FallBack "Diffuse"
 }

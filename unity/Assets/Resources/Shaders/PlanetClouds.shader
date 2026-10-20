@@ -1,4 +1,4 @@
-// Облака: отдельная прозрачная сфера чуть больше планеты, освещённая солнцем.
+// Облака: отдельная прозрачная сфера чуть больше планеты, освещённая солнцем. URP.
 Shader "PlanetTrader/PlanetClouds"
 {
     Properties
@@ -8,45 +8,56 @@ Shader "PlanetTrader/PlanetClouds"
     }
     SubShader
     {
-        Tags { "Queue" = "Transparent" "RenderType" = "Transparent" "IgnoreProjector" = "True" }
+        Tags { "Queue" = "Transparent" "RenderType" = "Transparent" "IgnoreProjector" = "True" "RenderPipeline" = "UniversalPipeline" }
         Blend SrcAlpha OneMinusSrcAlpha
         ZWrite Off
         Pass
         {
-            Tags { "LightMode" = "ForwardBase" }
-            CGPROGRAM
+            Name "Forward"
+            Tags { "LightMode" = "UniversalForward" }
+            HLSLPROGRAM
             #pragma vertex vert
             #pragma fragment frag
-            #include "UnityCG.cginc"
-            #include "Lighting.cginc"
+            #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
+            #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Lighting.hlsl"
 
-            sampler2D _MainTex;
-            float4 _Color;
+            TEXTURE2D(_MainTex); SAMPLER(sampler_MainTex);
+            CBUFFER_START(UnityPerMaterial)
+                float4 _Color;
+            CBUFFER_END
 
-            struct v2f
+            struct Attributes
             {
-                float4 pos : SV_POSITION;
+                float4 positionOS : POSITION;
+                float3 normalOS : NORMAL;
                 float2 uv : TEXCOORD0;
-                float3 normalW : TEXCOORD1;
             };
 
-            v2f vert (appdata_base v)
+            struct Varyings
             {
-                v2f o;
-                o.pos = UnityObjectToClipPos(v.vertex);
-                o.uv = v.texcoord.xy;
-                o.normalW = UnityObjectToWorldNormal(v.normal);
+                float4 positionCS : SV_POSITION;
+                float2 uv : TEXCOORD0;
+                float3 normalWS : TEXCOORD1;
+            };
+
+            Varyings vert (Attributes v)
+            {
+                Varyings o;
+                o.positionCS = TransformObjectToHClip(v.positionOS.xyz);
+                o.uv = v.uv;
+                o.normalWS = TransformObjectToWorldNormal(v.normalOS);
                 return o;
             }
 
-            fixed4 frag (v2f i) : SV_Target
+            float4 frag (Varyings i) : SV_Target
             {
-                float a = tex2D(_MainTex, i.uv).a;
-                float3 L = normalize(_WorldSpaceLightPos0.xyz);
-                float light = 0.2 + 0.9 * saturate(dot(normalize(i.normalW), L) * 0.9 + 0.35);
-                return fixed4(_Color.rgb * light * _LightColor0.rgb, a);
+                float a = SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, i.uv).a;
+                Light light = GetMainLight();
+                float3 L = normalize(light.direction);
+                float lit = 0.2 + 0.9 * saturate(dot(normalize(i.normalWS), L) * 0.9 + 0.35);
+                return float4(_Color.rgb * lit * light.color, a);
             }
-            ENDCG
+            ENDHLSL
         }
     }
 }

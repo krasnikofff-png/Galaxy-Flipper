@@ -159,7 +159,7 @@ namespace PlanetTrader.EditorTools
                 floor.AddComponent<MeshFilter>().sharedMesh = fm;
                 floor.AddComponent<MeshRenderer>().sharedMaterial = material;
 
-                var rt = new RenderTexture(w, h, 24, RenderTextureFormat.ARGB32) { antiAliasing = 8 };
+                var rt = new RenderTexture(w, h, 24, RenderTextureFormat.ARGB32) { antiAliasing = CameraRender.Msaa };
                 cam.targetTexture = rt;
                 int rows = (count + cols - 1) / cols;
                 var sheet = new Texture2D(w * cols, h * rows, TextureFormat.RGB24, false);
@@ -182,7 +182,7 @@ namespace PlanetTrader.EditorTools
                         BuildingMotion.Attach(r, k * 0.31f);
                     }
                     foreach (var m in group.GetComponentsInChildren<BuildingMotion>()) m.Pose(0.4f);
-                    cam.Render();
+                    CameraRender.Now(cam);
                     RenderTexture.active = rt;
                     sheet.ReadPixels(new Rect(0, 0, w, h), (i % cols) * w, (rows - 1 - i / cols) * h);
                     RenderTexture.active = null;
@@ -252,7 +252,7 @@ namespace PlanetTrader.EditorTools
                 sky.gameObject.AddComponent<MeshFilter>().sharedMesh = SphereMesh.Build(64, 32);
                 sky.gameObject.AddComponent<MeshRenderer>().sharedMaterial = skyMat;
 
-                var rt = new RenderTexture(w, h, 24, RenderTextureFormat.ARGB32) { antiAliasing = 8 };
+                var rt = new RenderTexture(w, h, 24, RenderTextureFormat.ARGB32) { antiAliasing = CameraRender.Msaa };
                 cam.targetTexture = rt;
                 int rows = (count + cols - 1) / cols;
                 var sheet = new Texture2D(w * cols, h * rows, TextureFormat.RGB24, false);
@@ -286,7 +286,7 @@ namespace PlanetTrader.EditorTools
                     foreach (var sm in place.GetComponentsInChildren<SmokeEmitter>()) sm.Pose(1.5f);
                     PlanetPortrait.PlaceCamera(cam.transform, place, 1, focus, view.transform.position, yaw: 0, elevation: 14, zoom: 0.27f);
                     sky.position = cam.transform.position;
-                    cam.Render();
+                    CameraRender.Now(cam);
                     RenderTexture.active = rt;
                     sheet.ReadPixels(new Rect(0, 0, w, h), (i % cols) * w, (rows - 1 - i / cols) * h);
                     RenderTexture.active = null;
@@ -388,7 +388,7 @@ namespace PlanetTrader.EditorTools
                 var motions = root.GetComponentsInChildren<BuildingMotion>();
                 var smokes = root.GetComponentsInChildren<SmokeEmitter>();
 
-                var rt = new RenderTexture(w, h, 24, RenderTextureFormat.ARGB32) { antiAliasing = 8 };
+                var rt = new RenderTexture(w, h, 24, RenderTextureFormat.ARGB32) { antiAliasing = CameraRender.Msaa };
                 cam.targetTexture = rt;
                 var frame = new Texture2D(w, h, TextureFormat.RGB24, false);
                 for (int f = 0; f < frames; f++)
@@ -400,7 +400,7 @@ namespace PlanetTrader.EditorTools
                     PlanetPortrait.PlaceCamera(cam.transform, root.transform, 1, focus, view.transform.position,
                         yaw: -25 + 50 * sweep, elevation: 18, zoom: 0.3f);
                     sky.position = cam.transform.position;
-                    cam.Render();
+                    CameraRender.Now(cam);
                     RenderTexture.active = rt;
                     frame.ReadPixels(new Rect(0, 0, w, h), 0, 0);
                     RenderTexture.active = null;
@@ -522,7 +522,7 @@ namespace PlanetTrader.EditorTools
                 var smokes = root.GetComponentsInChildren<SmokeEmitter>();
                 Debug.Log($"Видео: подвижных частей {motions.Length}, источников дыма и огня {smokes.Length}");
 
-                var rt = new RenderTexture(w, h, 24, RenderTextureFormat.ARGB32) { antiAliasing = 8 };
+                var rt = new RenderTexture(w, h, 24, RenderTextureFormat.ARGB32) { antiAliasing = CameraRender.Msaa };
                 cam.targetTexture = rt;
                 var sheet = new Texture2D(w * 2, h * 2, TextureFormat.RGB24, false);
                 for (int f = 0; f < frames; f++)
@@ -536,7 +536,7 @@ namespace PlanetTrader.EditorTools
                         PlanetPortrait.PlaceCamera(cam.transform, places[i], 1, focus[i], views[i].transform.position,
                             yaw: -35 + 70 * sweep, elevation: 22 + 8 * Mathf.Sin(sweep * Mathf.PI));
                         sky.position = cam.transform.position;
-                        cam.Render();
+                        CameraRender.Now(cam);
                         RenderTexture.active = rt;
                         sheet.ReadPixels(new Rect(0, 0, w, h), (i % 2) * w, (1 - i / 2) * h);
                         RenderTexture.active = null;
@@ -586,7 +586,7 @@ namespace PlanetTrader.EditorTools
                 sun.intensity = 1.1f;
                 sun.transform.rotation = Quaternion.LookRotation(-new Vector3(-0.5f, 0.4f, -0.78f).normalized);
 
-                var rt = new RenderTexture(w, h, 24, RenderTextureFormat.ARGB32) { antiAliasing = 8 };
+                var rt = new RenderTexture(w, h, 24, RenderTextureFormat.ARGB32) { antiAliasing = CameraRender.Msaa };
                 cam.targetTexture = rt;
                 var sheet = new Texture2D(w * 2, h * 2, TextureFormat.RGB24, false);
                 for (int i = 0; i < looks.Length; i++)
@@ -617,7 +617,7 @@ namespace PlanetTrader.EditorTools
                     Debug.Log($"Подвижные части на {looks[i]}: {moving.Length} — " + string.Join(", ", System.Array.ConvertAll(moving, m => m.name)));
                     PlanetPortrait.PlaceCamera(cam.transform, root.transform, 1, view.Surface.TransformPoint(buildings.Focus), view.transform.position);
 
-                    cam.Render();
+                    CameraRender.Now(cam);
                     RenderTexture.active = rt;
                     sheet.ReadPixels(new Rect(0, 0, w, h), (i % 2) * w, (1 - i / 2) * h);
                     RenderTexture.active = null;
@@ -661,7 +661,7 @@ namespace PlanetTrader.EditorTools
                 sun.intensity = 1.1f;
                 sun.transform.rotation = Quaternion.LookRotation(-new Vector3(-0.5f, 0.4f, -0.78f).normalized);
 
-                var rt = new RenderTexture(Tile, Tile, 24, RenderTextureFormat.ARGB32) { antiAliasing = 8 };
+                var rt = new RenderTexture(Tile, Tile, 24, RenderTextureFormat.ARGB32) { antiAliasing = CameraRender.Msaa };
                 cam.targetTexture = rt;
                 // Все облики: шесть исходных и два этапа 8 (вулканическая, океан) — четыре в ряд.
                 int looks = System.Enum.GetValues(typeof(PlanetLook)).Length;
@@ -683,7 +683,7 @@ namespace PlanetTrader.EditorTools
                     view.Resolution = resolution;
                     view.Rebuild();
 
-                    cam.Render();
+                    CameraRender.Now(cam);
                     RenderTexture.active = rt;
                     sheet.ReadPixels(new Rect(0, 0, Tile, Tile), (i % cols) * Tile, (rows - 1 - i / cols) * Tile);
                     RenderTexture.active = null;

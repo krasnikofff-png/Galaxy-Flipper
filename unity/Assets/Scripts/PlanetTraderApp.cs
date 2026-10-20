@@ -244,6 +244,7 @@ namespace PlanetTrader.Client
                     _mapPlanets.Add(m);
                 }
             _map3d.Show(MapPixels, _mapPlanets);
+            if (_mapImage.image != _map3d.Texture) _mapImage.image = _map3d.Texture;
 
             var b = _game.Balance;
             var exchange = ToPixels(ToMap(b.ExchangeX, b.ExchangeY));

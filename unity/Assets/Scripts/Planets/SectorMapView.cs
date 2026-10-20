@@ -77,6 +77,10 @@ namespace PlanetTrader.Visuals
 
         Transform _root;
         Camera _camera;
+        RenderTexture _rt;
+
+        /// <summary>Кадр карты: камера рисует в эту текстуру, интерфейс показывает её картинкой в своём прямоугольнике.</summary>
+        public Texture Texture => _rt;
         Transform _backdrop;
         Mesh _backdropMesh;
         Material _backdropMat;
@@ -296,13 +300,26 @@ namespace PlanetTrader.Visuals
             return view;
         }
 
-        /// <summary>Камера рисует только прямоугольник карты; один пиксель экрана — одна единица мира.</summary>
+        /// <summary>
+        /// Камера рисует карту в текстуру размером с её прямоугольник на экране; один пиксель — одна единица мира.
+        /// В текстуру, а не в окно: тогда интерфейс (подписи, легенда, окна) всегда поверх карты при любом конвейере.
+        /// </summary>
         void Frame(Rect box)
         {
             _box = box;
             _screen = new Vector2Int(Screen.width, Screen.height);
-            float w = Screen.width, h = Screen.height;
-            _camera.rect = new Rect(box.x / w, (h - box.yMax) / h, box.width / w, box.height / h);
+            int w = Mathf.Clamp(Mathf.RoundToInt(box.width), 16, 8192), h = Mathf.Clamp(Mathf.RoundToInt(box.height), 16, 8192);
+            if (_rt == null || _rt.width != w || _rt.height != h)
+            {
+                _camera.targetTexture = null;
+                if (_rt != null)
+                {
+                    _rt.Release();
+                    Destroy(_rt);
+                }
+                _rt = new RenderTexture(w, h, 24, RenderTextureFormat.ARGB32) { antiAliasing = CameraRender.Msaa, name = "Карта сектора" };
+                _camera.targetTexture = _rt;
+            }
             _camera.orthographicSize = box.height / 2;
 
             // Фон закрывает весь прямоугольник; звёзды не растягиваются по одной оси.
@@ -390,6 +407,11 @@ namespace PlanetTrader.Visuals
         void OnDestroy()
         {
             if (_root != null) Destroy(_root.gameObject);
+            if (_rt != null)
+            {
+                _rt.Release();
+                Destroy(_rt);
+            }
             if (_stars != null) Destroy(_stars);
             if (_backdropMat != null) Destroy(_backdropMat);
             if (_backdropMesh != null) Destroy(_backdropMesh);

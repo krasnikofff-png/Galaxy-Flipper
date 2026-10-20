@@ -58,7 +58,7 @@ dotnet run --project src/PlanetTrader.Sim -c Release -- --runs 10 --set SectorPl
 Выбран путь «картинки автора + процедурные планеты», не покупные пакеты и не AI-3D для всего. По порядку:
 1. ✅ Конвейер картинок (`tools/pictures`, `docs/art/prompts.md`) — автор рисует ~35 картинок по листу промптов.
 2. ✅ Планеты пекутся на видеокарте (`PlanetBakerGpu`, `PlanetBake.compute`): 1,6 / 8 / 19 мс на планету (256 / 1024 / 2048) вместо 39 / 528 / 2000 мс на CPU; облик сверен снимками (`-snapCpu`), кэш на диске не нужен. CPU-путь — запасной.
-3. Переезд на URP и Linear (Built-in Unity хоронит с 6.5, поддержка до 6.7 LTS); у нас 9 своих шейдеров — сверить снимками до/после.
+3. 🟡 URP сделан (Forward+, `Assets/Settings`, `RenderPipelineSetup`, все 9 шейдеров на HLSL; лист планет совпал с Built-in, разница 0,5/255). Правила: камеры-в-текстуру — через `CameraRender.Now` и `CameraRender.Msaa`; карта рисуется в текстуру (`SectorMapView.Texture`). Осталось: Linear (запуск `RenderPipelineSetup … -linear`, перевод цвета уже заложен: compute shader `_Linear`, вершинные цвета в Building/Portrait) — сверить снимками и подстроить.
 4. «Кожа» интерфейса в 2,5D по листу автора (9-slice поверх Painter2D-рамок).
 5. 3D-детали на планетах, 2–3 «героя» через картинка→3D — по надобности.
 Не делать: Unity AI-генераторы, пакеты планет из Asset Store, WebGL.

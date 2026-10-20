@@ -84,7 +84,7 @@ namespace PlanetTrader.Visuals
                 rig.Camera.enabled = true;
                 Pose(rig);
                 // Первый кадр — сразу, чтобы карточка не мигнула пустой.
-                rig.Camera.Render();
+                CameraRender.Now(rig.Camera);
             }
             return rig.Texture;
         }
@@ -95,7 +95,7 @@ namespace PlanetTrader.Visuals
             rig.Root = new GameObject("Картинка " + name).transform;
             rig.Root.SetParent(transform, false);
             rig.Root.position = Origin + Vector3.right * (_rigs.Count * 20);
-            rig.Texture = new RenderTexture(width, height, 24, RenderTextureFormat.ARGB32) { antiAliasing = 8, name = "Картинка " + name };
+            rig.Texture = new RenderTexture(width, height, 24, RenderTextureFormat.ARGB32) { antiAliasing = CameraRender.Msaa, name = "Картинка " + name };
             var cam = rig.Camera = new GameObject("Камера").AddComponent<Camera>();
             cam.transform.SetParent(rig.Root, false);
             cam.nearClipPlane = 1;

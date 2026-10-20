@@ -301,7 +301,7 @@ namespace PlanetTrader.Client
         void RefreshScreen()
         {
             _pixelScale = _screen.layout.width > 1 ? Screen.width / _screen.layout.width : 1;
-            _mapCanvas.MarkDirtyRepaint();
+            _mapPaint.MarkDirtyRepaint();
             if (_mapDirty && !_dirty) RefreshMap();
             if (!_dirty) return;
             _dirty = false;

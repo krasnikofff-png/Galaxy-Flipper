@@ -17,6 +17,7 @@ int _Width, _Height;
 int _Look;          // PlanetLook: 0 Jungle, 1 Ice, 2 Rocky, 3 Gas, 4 Crystal, 5 Anomaly, 6 Volcanic, 7 Ocean
 float _CloudAmount; // PlanetStyle.Clouds
 int _Smooth;        // 1 — рельеф не наклоняет нормаль (газовый гигант)
+int _Linear;        // 1 — проект в линейном цвете: цвета поверхности нарисованы в sRGB, перевести (как текстуру)
 
 static const float PI = 3.14159265358979f;
 
@@ -366,6 +367,12 @@ float Cloud(float3 q, float amount)
     return saturate((cl - thr + 0.15f) * 3.5f) * 0.9f;
 }
 
+/// sRGB → линейный цвет, как при чтении sRGB-текстуры в линейном проекте.
+float3 SrgbToLinear(float3 c)
+{
+    return c <= 0.04045 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4);
+}
+
 /// Точка сферы по координатам развёртки (PlanetBaker.Direction).
 float3 Direction(float u, float v)
 {
@@ -382,8 +389,14 @@ void Surface(uint3 id : SV_DispatchThreadID)
     float3 q = Direction((id.x + 0.5f) / _Width, (id.y + 0.5f) / _Height);
     Sample s = Evaluate(q);
     _Heights[id.y * _Width + id.x] = s.Height;
-    _Albedo[id.xy] = float4(s.Color, saturate(s.Spec));
-    _Emission[id.xy] = float4(s.Glow, 1);
+    float3 color = saturate(s.Color), glow = saturate(s.Glow);
+    if (_Linear != 0)
+    {
+        color = SrgbToLinear(color);
+        glow = SrgbToLinear(glow);
+    }
+    _Albedo[id.xy] = float4(color, saturate(s.Spec));
+    _Emission[id.xy] = float4(glow, 1);
     _Clouds[id.xy] = float4(1, 1, 1, Cloud(q, _CloudAmount));
 }
 

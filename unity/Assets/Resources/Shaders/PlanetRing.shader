@@ -1,5 +1,5 @@
 // Кольца планеты: плоское кольцо с полосами и просветами (текстура по радиусу), освещено солнцем с обеих сторон,
-// на солнечной стороне ярче; на кольцо падает тень планеты — проверка, закрывает ли шар солнце.
+// на солнечной стороне ярче; на кольцо падает тень планеты — проверка, закрывает ли шар солнце. URP.
 Shader "PlanetTrader/PlanetRing"
 {
     Properties
@@ -10,60 +10,70 @@ Shader "PlanetTrader/PlanetRing"
     }
     SubShader
     {
-        Tags { "Queue" = "Transparent" "RenderType" = "Transparent" "IgnoreProjector" = "True" }
+        Tags { "Queue" = "Transparent" "RenderType" = "Transparent" "IgnoreProjector" = "True" "RenderPipeline" = "UniversalPipeline" }
         Blend SrcAlpha OneMinusSrcAlpha
         ZWrite Off
         Cull Off
         Pass
         {
-            Tags { "LightMode" = "ForwardBase" }
-            CGPROGRAM
+            Name "Forward"
+            Tags { "LightMode" = "UniversalForward" }
+            HLSLPROGRAM
             #pragma vertex vert
             #pragma fragment frag
-            #include "UnityCG.cginc"
-            #include "Lighting.cginc"
+            #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
+            #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Lighting.hlsl"
 
-            sampler2D _MainTex;
-            float _Brightness, _Saturation;
+            TEXTURE2D(_MainTex); SAMPLER(sampler_MainTex);
+            CBUFFER_START(UnityPerMaterial)
+                float _Brightness, _Saturation;
+            CBUFFER_END
 
-            struct v2f
+            struct Attributes
             {
-                float4 pos : SV_POSITION;
+                float4 positionOS : POSITION;
                 float2 uv : TEXCOORD0;
-                float3 posW : TEXCOORD1;
-                float3 centerW : TEXCOORD2;
-                float3 normalW : TEXCOORD3;
-                float radiusW : TEXCOORD4;
             };
 
-            v2f vert (appdata_base v)
+            struct Varyings
             {
-                v2f o;
-                o.pos = UnityObjectToClipPos(v.vertex);
-                o.uv = v.texcoord.xy;
-                o.posW = mul(unity_ObjectToWorld, v.vertex).xyz;
-                o.centerW = mul(unity_ObjectToWorld, float4(0, 0, 0, 1)).xyz;
-                o.normalW = UnityObjectToWorldNormal(float3(0, 1, 0));
+                float4 positionCS : SV_POSITION;
+                float2 uv : TEXCOORD0;
+                float3 positionWS : TEXCOORD1;
+                float3 centerWS : TEXCOORD2;
+                float3 normalWS : TEXCOORD3;
+                float radiusWS : TEXCOORD4;
+            };
+
+            Varyings vert (Attributes v)
+            {
+                Varyings o;
+                o.positionCS = TransformObjectToHClip(v.positionOS.xyz);
+                o.uv = v.uv;
+                o.positionWS = TransformObjectToWorld(v.positionOS.xyz);
+                o.centerWS = TransformObjectToWorld(float3(0, 0, 0));
+                o.normalWS = TransformObjectToWorldNormal(float3(0, 1, 0));
                 // Радиус планеты в мире: кольцо в пространстве планеты, её радиус — 1.
-                o.radiusW = length(mul((float3x3)unity_ObjectToWorld, float3(1, 0, 0)));
+                o.radiusWS = length(mul((float3x3)UNITY_MATRIX_M, float3(1, 0, 0)));
                 return o;
             }
 
-            fixed4 frag (v2f i) : SV_Target
+            float4 frag (Varyings i) : SV_Target
             {
-                fixed4 band = tex2D(_MainTex, float2(i.uv.x, 0.5));
-                float3 L = normalize(_WorldSpaceLightPos0.xyz);
-                float lit = 0.35 + 0.65 * abs(dot(normalize(i.normalW), L));
+                float4 band = SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, float2(i.uv.x, 0.5));
+                Light light = GetMainLight();
+                float3 L = normalize(light.direction);
+                float lit = 0.35 + 0.65 * abs(dot(normalize(i.normalWS), L));
                 // Тень планеты: луч от точки к солнцу проходит через шар?
-                float3 d = i.posW - i.centerW;
+                float3 d = i.positionWS - i.centerWS;
                 float t = dot(d, L);
-                float miss = length(d - t * L) - i.radiusW;
-                float shadow = t < 0 ? smoothstep(-0.03, 0.03, miss / i.radiusW) : 1;
-                float3 col = band.rgb * lit * (0.2 + 0.8 * shadow) * _LightColor0.rgb * _Brightness;
+                float miss = length(d - t * L) - i.radiusWS;
+                float shadow = t < 0 ? smoothstep(-0.03, 0.03, miss / i.radiusWS) : 1;
+                float3 col = band.rgb * lit * (0.2 + 0.8 * shadow) * light.color * _Brightness;
                 float gray = dot(col, float3(0.3, 0.59, 0.11));
-                return fixed4(lerp(gray.xxx, col, _Saturation), band.a);
+                return float4(lerp(gray.xxx, col, _Saturation), band.a);
             }
-            ENDCG
+            ENDHLSL
         }
     }
 }

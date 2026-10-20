@@ -1,5 +1,5 @@
 // Портрет магната: цвет из вершин (как у построек), своя студийная схема света —
-// тёплый ключевой свет, холодный заполняющий и контровой в цвет магната. Свет сцены не нужен.
+// тёплый ключевой свет, холодный заполняющий и контровой в цвет магната. Свет сцены не нужен. URP.
 Shader "PlanetTrader/Portrait"
 {
     Properties
@@ -15,54 +15,63 @@ Shader "PlanetTrader/Portrait"
     }
     SubShader
     {
-        Tags { "RenderType" = "Opaque" "Queue" = "Geometry" }
+        Tags { "RenderType" = "Opaque" "Queue" = "Geometry" "RenderPipeline" = "UniversalPipeline" }
         Pass
         {
-            CGPROGRAM
+            Name "Forward"
+            Tags { "LightMode" = "UniversalForward" }
+            HLSLPROGRAM
             #pragma vertex vert
             #pragma fragment frag
-            #include "UnityCG.cginc"
+            #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
+            #include "Packages/com.unity.render-pipelines.core/ShaderLibrary/Color.hlsl"
 
-            float4 _Accent, _KeyDir, _KeyColor, _FillDir, _FillColor, _RimColor, _Ambient;
-            float _Glow;
+            CBUFFER_START(UnityPerMaterial)
+                float4 _Accent, _KeyDir, _KeyColor, _FillDir, _FillColor, _RimColor, _Ambient;
+                float _Glow;
+            CBUFFER_END
 
-            struct appdata
+            struct Attributes
             {
-                float4 vertex : POSITION;
-                float3 normal : NORMAL;
+                float4 positionOS : POSITION;
+                float3 normalOS : NORMAL;
                 float4 color : COLOR;
                 float2 uv : TEXCOORD0;
             };
 
-            struct v2f
+            struct Varyings
             {
-                float4 pos : SV_POSITION;
+                float4 positionCS : SV_POSITION;
                 float4 color : COLOR;
-                float3 normalW : TEXCOORD0;
-                float3 posW : TEXCOORD1;
+                float3 normalWS : TEXCOORD0;
+                float3 positionWS : TEXCOORD1;
                 float shine : TEXCOORD2;
             };
 
-            v2f vert (appdata v)
+            Varyings vert (Attributes v)
             {
-                v2f o;
-                o.pos = UnityObjectToClipPos(v.vertex);
+                Varyings o;
+                o.positionCS = TransformObjectToHClip(v.positionOS.xyz);
                 o.color = v.color;
-                o.normalW = UnityObjectToWorldNormal(v.normal);
-                o.posW = mul(unity_ObjectToWorld, v.vertex).xyz;
+                // Цвет вершин нарисован в sRGB; в линейном проекте его надо перевести, как текстуру.
+                #ifndef UNITY_COLORSPACE_GAMMA
+                o.color.rgb = SRGBToLinear(v.color.rgb);
+                #endif
+                o.normalWS = TransformObjectToWorldNormal(v.normalOS);
+                o.positionWS = TransformObjectToWorld(v.positionOS.xyz);
                 o.shine = v.uv.x;
                 return o;
             }
 
-            fixed4 frag (v2f i) : SV_Target
+            float4 frag (Varyings i) : SV_Target
             {
                 float role = i.color.a;
                 float isLight = step(role, 0.125);
                 float isAccent = step(0.375, role) * step(role, 0.625);
                 float3 base = i.color.rgb * lerp(float3(1, 1, 1), _Accent.rgb, isAccent);
 
-                float3 n = normalize(i.normalW);
-                float3 V = normalize(_WorldSpaceCameraPos - i.posW);
+                float3 n = normalize(i.normalWS);
+                float3 V = normalize(_WorldSpaceCameraPos - i.positionWS);
                 float3 K = normalize(_KeyDir.xyz);
                 float3 F = normalize(_FillDir.xyz);
 
@@ -82,9 +91,9 @@ Shader "PlanetTrader/Portrait"
                 float rimSide = saturate(dot(n, normalize(float3(0.4, 0.5, 0.8))) * 0.5 + 0.6);
                 col += _RimColor.rgb * rim * rimSide * 0.85;
 
-                return fixed4(lerp(col, base * _Glow, isLight), 1);
+                return float4(lerp(col, base * _Glow, isLight), 1);
             }
-            ENDCG
+            ENDHLSL
         }
     }
 }

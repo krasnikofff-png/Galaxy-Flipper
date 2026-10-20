@@ -17,6 +17,10 @@
 
 ## В Unity
 
+**Конвейер рендера — URP (Universal Render Pipeline), Forward+.** Настройки — `Assets/Settings` (`UniversalRP.asset`, `UniversalRenderer.asset`, глобальные настройки и профиль), создаёт и назначает `Assets/Editor/RenderPipelineSetup.cs` (меню Planet Trader → Настроить URP; из командной строки `-executeMethod PlanetTrader.EditorTools.RenderPipelineSetup.ApplyFromCommandLine [-linear]`). Все свои шейдеры (`Resources/Shaders`) написаны под URP на HLSL: свет — главный направленный (`GetMainLight`), свойства материала — в `CBUFFER UnityPerMaterial` (SRP Batcher). Два правила, без которых в URP чёрный экран или дыры:
+- камеры, которые рисуют в текстуру (карта, окно планеты, портреты, снимки в редакторе), рисуют по запросу `CameraRender.Now` и с одинаковым сглаживанием `CameraRender.Msaa` = MSAA в `UniversalRP.asset` — при несовпадении URP не записывает кадр;
+- карта сектора рисуется в текстуру и показывается картинкой в интерфейсе (`SectorMapView.Texture` → `_mapImage`), а не камерой в окно: иначе в URP камера карты перекрывает интерфейс.
+
 - `Assets/Scripts/Planets/` — шум (`PlanetNoise`), правила типов (`PlanetSurface`), запекание текстур (`PlanetBaker`), планета на сцене (`PlanetView`), витрина (`PlanetShowcase`), карта сектора (`SectorMapView`), крупный план в окне планеты (`PlanetPortrait`).
 - `Assets/Resources/Shaders/` — поверхность, облака, ореол атмосферы, звёздное небо. Встроенный рендер Unity.
 - В игре: **F2** или кнопка «Планеты (F2)» — витрина. 1–6 — тип, R — другая планета, мышь — вращать, колесо — масштаб, F2/Esc — назад.

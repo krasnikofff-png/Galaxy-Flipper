@@ -1,6 +1,6 @@
-// Портрет магната в 2,5D: картинка автора на сетке, выдавленной по карте глубины (белое — ближе).
-// Свет не нужен: портрет уже нарисован со светом. Углы кадра срезаны, как у рамки интерфейса:
-// сильно — левый верхний и правый нижний, чуть-чуть — два других. Там прозрачно, и видна карточка.
+// Картинка автора в 2,5D: на сетке, выдавленной по карте глубины (белое — ближе).
+// Свет не нужен: картинка уже нарисована со светом. Углы кадра срезаны, как у рамки интерфейса:
+// сильно — левый верхний и правый нижний, чуть-чуть — два других. Там прозрачно, и видна карточка. URP.
 Shader "PlanetTrader/PortraitDepth"
 {
     Properties
@@ -13,54 +13,59 @@ Shader "PlanetTrader/PortraitDepth"
     }
     SubShader
     {
-        Tags { "RenderType" = "Opaque" "Queue" = "Geometry" }
+        Tags { "RenderType" = "Opaque" "Queue" = "Geometry" "RenderPipeline" = "UniversalPipeline" }
         Cull Off
         Pass
         {
-            CGPROGRAM
+            Name "Forward"
+            Tags { "LightMode" = "UniversalForward" }
+            HLSLPROGRAM
             #pragma vertex vert
             #pragma fragment frag
-            #pragma target 3.0
-            #include "UnityCG.cginc"
+            #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
 
-            sampler2D _MainTex, _DepthTex;
-            float _Depth, _Cut, _Aspect;
+            TEXTURE2D(_MainTex); SAMPLER(sampler_MainTex);
+            TEXTURE2D(_DepthTex); SAMPLER(sampler_DepthTex);
+            CBUFFER_START(UnityPerMaterial)
+                float _Depth, _Cut, _Aspect;
+            CBUFFER_END
 
-            struct appdata
+            struct Attributes
             {
-                float4 vertex : POSITION;
+                float4 positionOS : POSITION;
                 float2 uv : TEXCOORD0;
             };
 
-            struct v2f
+            struct Varyings
             {
-                float4 pos : SV_POSITION;
+                float4 positionCS : SV_POSITION;
                 float2 uv : TEXCOORD0;
                 float4 screen : TEXCOORD1;
             };
 
-            v2f vert (appdata v)
+            Varyings vert (Attributes v)
             {
-                v2f o;
-                float d = tex2Dlod(_DepthTex, float4(v.uv, 0, 0)).r;
+                Varyings o;
+                float d = SAMPLE_TEXTURE2D_LOD(_DepthTex, sampler_DepthTex, v.uv, 0).r;
                 // Ближнее — к камере (она смотрит вдоль +Z).
-                v.vertex.z -= d * _Depth;
-                o.pos = UnityObjectToClipPos(v.vertex);
+                v.positionOS.z -= d * _Depth;
+                o.positionCS = TransformObjectToHClip(v.positionOS.xyz);
                 o.uv = v.uv;
-                o.screen = ComputeScreenPos(o.pos);
+                // Координаты кадра 0…1 (как ComputeScreenPos в Built-in): y переворачивается там, где клип-пространство вверх ногами.
+                o.screen = float4((o.positionCS.xy * float2(1, _ProjectionParams.x) + o.positionCS.w) * 0.5, o.positionCS.zw);
                 return o;
             }
 
-            fixed4 frag (v2f i) : SV_Target
+            float4 frag (Varyings i) : SV_Target
             {
                 // Срез углов — в координатах кадра, чтобы совпасть с рамкой интерфейса при любом покачивании.
                 float2 s = i.screen.xy / i.screen.w;
                 float top = (1 - s.y) * _Aspect, bottom = s.y * _Aspect;
                 if (s.x + top < _Cut || (1 - s.x) + bottom < _Cut) discard;
                 if ((1 - s.x) + top < _Cut * 0.35 || s.x + bottom < _Cut * 0.35) discard;
-                return fixed4(tex2D(_MainTex, i.uv).rgb, 1);
+                return float4(SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, i.uv).rgb, 1);
             }
-            ENDCG
+            ENDHLSL
         }
     }
 }

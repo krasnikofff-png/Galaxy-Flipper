@@ -1,5 +1,5 @@
-// Фон: тёмный космос со звёздами и туманностью; текстура запекается в коде.
-// В витрине — изнанка большой сферы, на карте сектора — плоский прямоугольник (_Cull = 0).
+// Фон: тёмный космос со звёздами и туманностью; текстура запекается в коде или рисуется автором.
+// В витрине — изнанка большой сферы, на карте сектора — плоский прямоугольник (_Cull = 0). URP, без света.
 Shader "PlanetTrader/PlanetSky"
 {
     Properties
@@ -10,21 +10,36 @@ Shader "PlanetTrader/PlanetSky"
     }
     SubShader
     {
-        Tags { "Queue" = "Background" "RenderType" = "Background" }
+        Tags { "Queue" = "Background" "RenderType" = "Background" "RenderPipeline" = "UniversalPipeline" }
         ZWrite Off
         Cull [_Cull]
         Pass
         {
-            CGPROGRAM
+            Name "Forward"
+            Tags { "LightMode" = "UniversalForward" }
+            HLSLPROGRAM
             #pragma vertex vert
             #pragma fragment frag
-            #include "UnityCG.cginc"
-            sampler2D _MainTex;
-            struct v2f { float4 pos : SV_POSITION; float2 uv : TEXCOORD0; };
-            v2f vert (appdata_base v) { v2f o; o.pos = UnityObjectToClipPos(v.vertex); o.uv = v.texcoord.xy; return o; }
-            float _Dim;
-            fixed4 frag (v2f i) : SV_Target { return tex2D(_MainTex, i.uv) * _Dim; }
-            ENDCG
+            #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
+
+            TEXTURE2D(_MainTex); SAMPLER(sampler_MainTex);
+            CBUFFER_START(UnityPerMaterial)
+                float _Dim, _Cull;
+            CBUFFER_END
+
+            struct Attributes { float4 positionOS : POSITION; float2 uv : TEXCOORD0; };
+            struct Varyings { float4 positionCS : SV_POSITION; float2 uv : TEXCOORD0; };
+
+            Varyings vert (Attributes v)
+            {
+                Varyings o;
+                o.positionCS = TransformObjectToHClip(v.positionOS.xyz);
+                o.uv = v.uv;
+                return o;
+            }
+
+            float4 frag (Varyings i) : SV_Target { return SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, i.uv) * _Dim; }
+            ENDHLSL
         }
     }
 }

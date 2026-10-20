@@ -215,7 +215,7 @@ namespace PlanetTrader.Visuals
                     _rt.Release();
                     Destroy(_rt);
                 }
-                _rt = new RenderTexture(w, h, 24, RenderTextureFormat.ARGB32) { antiAliasing = 4, name = "Окно планеты" };
+                _rt = new RenderTexture(w, h, 24, RenderTextureFormat.ARGB32) { antiAliasing = CameraRender.Msaa, name = "Окно планеты" };
                 _camera.targetTexture = _rt;
             }
 

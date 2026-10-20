@@ -33,6 +33,9 @@ namespace PlanetTrader.Client
         /// <summary>Карту приблизили или сдвинули — переставить подписи (правую панель пересобирать незачем).</summary>
         bool _mapDirty;
         VisualElement _map, _mapCanvas, _mapLabels, _legend, _probeBar, _probeTypes, _probeMissions;
+        /// <summary>Кадр 3D-карты (текстура камеры) и слой поверх него, где рисуются кольца, пути и подписи.</summary>
+        Image _mapImage;
+        VisualElement _mapPaint;
         readonly List<MapLabelView> _mapLabelPool = new List<MapLabelView>();
         /// <summary>Курсор над картой, в точках относительно карты; null — курсор не над картой.</summary>
         Vector2? _mapPointer;
@@ -81,7 +84,13 @@ namespace PlanetTrader.Client
             _probeMissions = root.Q("probeMissions");
             root.Q<Button>("probeDone").clicked += () => Later(() => _probeMode = false);
 
-            _mapCanvas.generateVisualContent += PaintMap;
+            _mapImage = new Image { scaleMode = ScaleMode.StretchToFill, pickingMode = PickingMode.Ignore };
+            _mapImage.AddToClassList("map-layer");
+            _mapCanvas.Add(_mapImage);
+            _mapPaint = new VisualElement { pickingMode = PickingMode.Ignore };
+            _mapPaint.AddToClassList("map-layer");
+            _mapPaint.generateVisualContent += PaintMap;
+            _mapCanvas.Add(_mapPaint);
             _mapCanvas.RegisterCallback<PointerMoveEvent>(e => OnMapPointer(e.localPosition, e.position, e.deltaPosition));
             _mapCanvas.RegisterCallback<PointerLeaveEvent>(_ =>
             {

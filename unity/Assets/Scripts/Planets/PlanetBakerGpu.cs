@@ -57,6 +57,8 @@ namespace PlanetTrader.Visuals
             shader.SetInt("_Look", (int)look);
             shader.SetFloat("_CloudAmount", style.Clouds);
             shader.SetInt("_Smooth", style.Smooth ? 1 : 0);
+            // Цвета поверхности придуманы в sRGB; в линейном проекте их переводит compute shader (текстура создаётся линейной).
+            shader.SetInt("_Linear", QualitySettings.activeColorSpace == ColorSpace.Linear ? 1 : 0);
             foreach (int kernel in new[] { _surfaceKernel, _normalsKernel })
             {
                 shader.SetBuffer(kernel, "_Perm", perm);
